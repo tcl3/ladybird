@@ -8,6 +8,7 @@ interface Internals {
     undefined signalTextTestIsDone();
     undefined gc();
     object hitTest(double x, double y);
+    object hitTestForTextCursor(double x, double y);
 
     undefined sendText(HTMLElement target, DOMString text);
     undefined commitText();

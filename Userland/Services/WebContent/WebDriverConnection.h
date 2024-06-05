@@ -17,6 +17,7 @@
 #include <LibJS/Forward.h>
 #include <LibJS/Heap/MarkedVector.h>
 #include <LibWeb/Forward.h>
+#include <LibWeb/UIEvents/KeyCode.h>
 #include <LibWeb/WebDriver/ElementLocationStrategies.h>
 #include <LibWeb/WebDriver/Response.h>
 #include <LibWeb/WebDriver/TimeoutsConfiguration.h>
@@ -25,6 +26,177 @@
 #include <WebContent/WebDriverServerEndpoint.h>
 
 namespace WebContent {
+
+// https://w3c.github.io/webdriver/#dfn-global-key-state
+struct GlobalKeyState {
+    Vector<Web::UIEvents::KeyCode> pressed {};
+    bool alt_key { false };
+    bool ctrl_key { false };
+    bool meta_key { false };
+    bool shift_key { false };
+};
+
+// https://www.w3.org/TR/webdriver/#dfn-actions-options
+struct ActionsOptions {
+    Function<bool(JsonValue const&)> is_element_origin;
+    Function<ErrorOr<Web::DOM::Element*, Web::WebDriver::Error>(JsonValue const&)> get_element_origin;
+};
+
+enum class ActionType {
+    None,
+    Pointer,
+    Key,
+    Wheel
+};
+
+enum class ActionSubtype {
+    None,
+    Pause,
+    PointerDown,
+    PointerUp,
+    PointerMove,
+    PointerCancel,
+    KeyDown,
+    KeyUp,
+    Scroll
+};
+
+// https://w3c.github.io/webdriver/#dfn-action-object
+struct ActionObject {
+    ActionObject(String id, ActionType type, ActionSubtype subtype)
+        : id(move(id))
+        , type(type)
+        , subtype(subtype)
+    {
+    }
+
+    virtual ~ActionObject() = default;
+
+    String id;
+    ActionType type;
+    ActionSubtype subtype;
+    // FIXME: This shouldn't be necessary on all ActionObjects
+    Optional<u32> duration {};
+};
+
+enum class PointerType {
+    Mouse
+};
+
+enum class PointerSubtype {
+    Mouse,
+    Pen,
+    Touch,
+};
+
+struct PointerActionObject : ActionObject {
+    PointerActionObject(String id, ActionSubtype subtype)
+        : ActionObject(move(id), ActionType::Pointer, subtype)
+    {
+    }
+
+    PointerActionObject(ActionObject& action_object)
+        : ActionObject(action_object)
+    {
+    }
+
+    PointerType pointer_type { PointerType::Mouse };
+    u32 button { 0 };
+};
+
+struct PointerUpActionObject : PointerActionObject {
+    PointerUpActionObject(String id)
+        : PointerActionObject(move(id), ActionSubtype::PointerUp)
+    {
+    }
+
+    PointerUpActionObject(ActionObject& action_object)
+        : PointerActionObject(action_object)
+    {
+    }
+};
+
+struct PointerDownActionObject : PointerActionObject {
+    PointerDownActionObject(String id)
+        : PointerActionObject(move(id), ActionSubtype::PointerDown)
+    {
+    }
+
+    u32 width { 0 };
+    u32 height { 0 };
+    u32 pressure { 0 };
+    u32 tangential_pressure { 0 };
+    u32 tilt_x { 0 };
+    u32 tilt_y { 0 };
+    u32 twist { 0 };
+    u32 altitude_angle { 0 };
+    u32 azimuth_angle { 0 };
+};
+
+struct PointerMoveActionObject : ActionObject {
+    PointerMoveActionObject(String id)
+        : ActionObject(move(id), ActionType::Pointer, ActionSubtype::PointerMove)
+    {
+    }
+
+    u32 x { 0 };
+    u32 y { 0 };
+    Web::DOM::Element* origin { nullptr };
+    u32 width { 0 };
+    u32 height { 0 };
+    u32 pressure { 0 };
+    u32 tangential_pressure { 0 };
+    u32 tilt_x { 0 };
+    u32 tilt_y { 0 };
+    u32 twist { 0 };
+    u32 altitude_angle { 0 };
+    u32 azimuth_angle { 0 };
+};
+
+// https://w3c.github.io/webdriver/#dfn-input-source
+struct InputSource {
+    String input_id;
+
+    virtual ~InputSource() = default;
+};
+
+// https://www.w3.org/TR/webdriver/#dfn-null-input-source
+struct NullInputSource : InputSource {
+    void pause(int tick_duration);
+};
+
+// https://www.w3.org/TR/webdriver/#dfn-key-input-source
+struct KeyInputSource : NullInputSource {
+    Vector<Web::UIEvents::KeyCode> pressed {};
+    bool alt { false };
+    bool ctrl { false };
+    bool meta { false };
+    bool shift { false };
+
+    void key_down(Web::UIEvents::KeyCode);
+    void key_up(Web::UIEvents::KeyCode);
+};
+
+// https://www.w3.org/TR/webdriver/#pointer-input-source
+struct PointerInputSource : NullInputSource {
+    PointerSubtype subtype;
+    u32 pointer_id { 0 };
+    Vector<u32> pressed {};
+    u32 x { 0 };
+    u32 y { 0 };
+
+    void pointer_down();
+    void pointer_up();
+    void pointer_move();
+    void pointer_cancel();
+};
+
+// https://w3c.github.io/webdriver/#dfn-input-state
+struct InputState {
+    HashMap<String, InputSource> input_state_map;
+    Vector<ActionObject> input_cancel_list;
+    Vector<u32> actions_queue;
+};
 
 class WebDriverConnection final
     : public IPC::ConnectionToServer<WebDriverClientEndpoint, WebDriverServerEndpoint> {
@@ -89,6 +261,7 @@ private:
     virtual Messages::WebDriverClient::AddCookieResponse add_cookie(JsonValue const& payload) override;
     virtual Messages::WebDriverClient::DeleteCookieResponse delete_cookie(String const& name) override;
     virtual Messages::WebDriverClient::DeleteAllCookiesResponse delete_all_cookies() override;
+    virtual Messages::WebDriverClient::PerformActionsResponse perform_actions(JsonValue const& payload) override;
     virtual Messages::WebDriverClient::ReleaseActionsResponse release_actions() override;
     virtual Messages::WebDriverClient::DismissAlertResponse dismiss_alert() override;
     virtual Messages::WebDriverClient::AcceptAlertResponse accept_alert() override;
@@ -118,6 +291,8 @@ private:
     ErrorOr<ScriptArguments, Web::WebDriver::Error> extract_the_script_arguments_from_a_request(JsonValue const& payload);
     void delete_cookies(Optional<StringView> const& name = {});
 
+    InputState& get_the_input_state(Web::HTML::BrowsingContext&);
+
     JS::NonnullGCPtr<Web::PageClient> m_page_client;
 
     // https://w3c.github.io/webdriver/#dfn-page-load-strategy
@@ -131,6 +306,9 @@ private:
 
     // https://w3c.github.io/webdriver/#dfn-session-script-timeout
     Web::WebDriver::TimeoutsConfiguration m_timeouts_configuration;
+
+    // https://w3c.github.io/webdriver/#dfn-browsing-context-input-state-map
+    HashMap<JS::RawGCPtr<Web::HTML::BrowsingContext>, InputState> m_browsing_context_input_state_map;
 };
 
 }

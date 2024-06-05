@@ -19,6 +19,7 @@
 #include <LibWeb/CSS/StyleValue.h>
 #include <LibWeb/Cookie/Cookie.h>
 #include <LibWeb/Cookie/ParsedCookie.h>
+#include <LibWeb/Crypto/Crypto.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
 #include <LibWeb/DOM/Event.h>
@@ -36,6 +37,7 @@
 #include <LibWeb/HTML/HTMLOptionElement.h>
 #include <LibWeb/HTML/HTMLSelectElement.h>
 #include <LibWeb/HTML/TraversableNavigable.h>
+#include <LibWeb/Internals/Internals.h>
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/Platform/Timer.h>
@@ -319,6 +321,608 @@ static bool fire_an_event(FlyString name, Optional<Web::DOM::Element&> target)
 
     auto event = T::create(target->realm(), name);
     return target->dispatch_event(event);
+}
+
+// https://www.w3.org/TR/webdriver/#dfn-represents-a-web-element
+static bool represents_a_web_element(JsonValue const&)
+{
+    // https://www.w3.org/TR/webdriver/#dfn-web-element-identifier
+    // constexpr StringView web_element_identifier = "element-6066-11e4-a52e-4f735466cecf"sv;
+
+    // An ECMAScript Object represents a web element if it has a web element identifier own property.
+    // FIXME
+    return false;
+}
+
+// https://www.w3.org/TR/webdriver/#dfn-get-element-origin
+static ErrorOr<Web::DOM::Element*, Web::WebDriver::Error> get_element_origin(JsonValue const&)
+{
+    // 1. Assert: browsing context is the current browsing context.
+
+    // 2. Let element be equal to the result of trying to get a known element with session and origin.
+    auto* element = TRY(get_known_connected_element("element_id"sv));
+
+    // 3. Return success with data element.
+    return element;
+}
+
+// https://www.w3.org/TR/webdriver/#dfn-get-a-pointer-id
+[[maybe_unused]] static u32 get_a_pointer_id(InputState const& input_state, Optional<PointerSubtype> subtype)
+{
+    // 1. Let minimum id be 0 if subtype is "mouse", or 2 otherwise.
+    auto minimum_id = subtype.has_value() && subtype.value() == PointerSubtype::Mouse ? 0 : 2;
+
+    // 2. Let pointer ids be an empty set.
+    Vector<u32> pointer_ids;
+
+    // 3. Let sources be the result of getting the values with input state's input state map.
+    auto sources = input_state.input_state_map.values();
+
+    // 4. For each source in sources.:
+    for (auto const& source : sources) {
+        // 1. If source is a pointer input source, add source’s pointer id to pointer ids.
+        if (is<PointerInputSource>(source))
+            pointer_ids.append(verify_cast<PointerInputSource>(source).pointer_id);
+    }
+
+    // 5. Return the smallest integer that is greater than or equal to minimum id and that is not contained in pointer ids.
+    while (pointer_ids.contains_slow(minimum_id)) {
+        ++minimum_id;
+    }
+    return minimum_id;
+}
+
+// https://www.w3.org/TR/webdriver/#dfn-create-a-pointer-input-source
+static NonnullOwnPtr<PointerInputSource> create_a_pointer_input_source(InputState const& input_state, Optional<PointerSubtype> subtype)
+{
+    // To create a pointer input source object given input state, and subtype,
+    // return a new pointer input source with subtype set to subtype, pointerId set to get a pointer id with input state and subtype,
+    // and the other items set to their default values.
+    auto pointer_input_source = make<PointerInputSource>();
+    pointer_input_source->pointer_id = get_a_pointer_id(input_state, move(subtype));
+    return pointer_input_source;
+}
+
+static PointerSubtype pointer_subtype_from_string(StringView subtype)
+{
+    if (subtype.equals_ignoring_ascii_case("mouse"sv))
+        return PointerSubtype::Mouse;
+    if (subtype.equals_ignoring_ascii_case("pen"sv))
+        return PointerSubtype::Pen;
+    if (subtype.equals_ignoring_ascii_case("touch"sv))
+        return PointerSubtype::Touch;
+    VERIFY_NOT_REACHED();
+}
+
+// https://www.w3.org/TR/webdriver/#dfn-create-an-input-source
+static NonnullOwnPtr<InputSource> create_an_input_source(InputState const& input_state, ActionType input_source_type, Optional<String> subtype = {})
+{
+    switch (input_source_type) {
+    case ActionType::None:
+        return make<NullInputSource>();
+    case ActionType::Key:
+        return make<KeyInputSource>();
+    case ActionType::Pointer: {
+        Optional<PointerSubtype> pointer_subtype;
+        if (subtype.has_value())
+            pointer_subtype = pointer_subtype_from_string(subtype.value());
+        return create_a_pointer_input_source(input_state, pointer_subtype);
+    }
+    case ActionType::Wheel:
+        break;
+    }
+
+    VERIFY_NOT_REACHED();
+}
+
+// https://w3c.github.io/webdriver/#dfn-computing-the-tick-duration
+static u32 compute_tick_duration(Vector<ActionObject> const& tick_actions)
+{
+    // 1. Let max duration be 0.
+    u32 max_duration = 0;
+
+    // 2. For each action in tick actions:
+    for (auto const& action : tick_actions) {
+        // 1. let duration be undefined.
+        Optional<u32> duration;
+
+        // 2. If action object has subtype property set to "pause"
+        //    or action object has type property set to "pointer" and subtype property set to "pointerMove",
+        //    or action object has type property set to "wheel" and subtype property set to "scroll",
+        //    let duration be equal to the duration property of action object.
+        if (action.subtype == ActionSubtype::Pause
+            || (action.type == ActionType::Pointer && action.subtype == ActionSubtype::PointerMove)
+            || (action.type == ActionType::Wheel && action.subtype == ActionSubtype::Scroll)) {
+            if (action.duration.has_value())
+                duration = action.duration.value();
+        }
+
+        // 3. If duration is not undefined, and duration is greater than max duration, let max duration be equal to duration.
+        if (duration.has_value() && *duration > max_duration)
+            max_duration = duration.value();
+    }
+
+    // 3. Return max duration.
+    return max_duration;
+}
+
+// https://w3c.github.io/webdriver/#dfn-get-the-global-key-state
+static NonnullOwnPtr<GlobalKeyState> get_the_global_key_state(InputState const& input_state)
+{
+    // 1. Let input state map be input state's input state map.
+    auto& input_state_map = input_state.input_state_map;
+
+    // 2. Let sources be the result of getting the values with input state map.
+    auto sources = input_state_map.values();
+
+    // 3. Let key state be a new global key state with pressed set to an empty set, altKey, ctrlKey, metaKey, and shiftKey set to false.
+    auto key_state = make<GlobalKeyState>();
+
+    // 4. For each source in sources:
+    for (auto const& source : sources) {
+        // 1. If source is not a key input source, continue to the first step of this loop.
+        if (!is<KeyInputSource>(source))
+            continue;
+
+        // 2. Set key state's pressed item to the union of its current value and source's pressed item.
+        auto& key_input_source = verify_cast<KeyInputSource>(source);
+        for (auto key_code : key_input_source.pressed) {
+            if (!key_state->pressed.contains_slow(key_code))
+                key_state->pressed.append(key_code);
+        }
+
+        // 3. If source's alt item is true, set key state's altKey item to true.
+        if (key_input_source.alt)
+            key_state->alt_key = true;
+
+        // 4. If source's ctrl item is true, set key state's ctrlKey item to true.
+        if (key_input_source.ctrl)
+            key_state->ctrl_key = true;
+
+        // 5. If source's meta item is true, set key state's metaKey item to true.
+        if (key_input_source.meta)
+            key_state->meta_key = true;
+
+        // 6. If source's shift item is true, set key state's shiftKey item to true.
+        if (key_input_source.shift)
+            key_state->shift_key = true;
+    }
+
+    // 5. Return key state.
+    return key_state;
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-a-pointerup-action
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_a_pointerup_action(PointerUpActionObject const& action, PointerInputSource& source, [[maybe_unused]] GlobalKeyState const& global_key_state, [[maybe_unused]] u32 tick_duration, [[maybe_unused]] Web::HTML::BrowsingContext& browsing_context, [[maybe_unused]] ActionsOptions const& actions_options)
+{
+    // 1. Let pointerType be equal to action object's pointerType property.
+
+    // 2. Let button be equal to action object's button property.
+    auto button = action.button;
+
+    // 3. If the source's pressed property does not contain button, return success with data null.
+    if (!source.pressed.contains_slow(button))
+        return JsonValue {};
+
+    // 4. Let x be equal to source's x property.
+    auto x = source.x;
+
+    // 5. Let y be equal to source's y property.
+    auto y = source.y;
+
+    // 6. Remove button from the set corresponding to source's pressed property, and let buttons be the resulting value of that property.
+    source.pressed.remove_first_matching([&](auto& value) { return value == button; });
+
+    // 7. Perform implementation-specific action dispatch steps on browsing context equivalent to releasing the button numbered button on the pointer with pointerId equal to input source's pointerId,
+    //    having type pointerType at viewport x coordinate x, viewport y coordinate y, with buttons buttons depressed, in accordance with the requirements of [UI-EVENTS] and [POINTER-EVENTS].
+    //    The generated events must set ctrlKey, shiftKey, altKey, and metaKey equal to the corresponding items in global key state.
+    //    Type specific properties for the pointer that are not exposed through the webdriver API must be set to the default value specified for hardware that doesn't support that property.
+    auto& heap = browsing_context.heap();
+    auto& vm = heap.vm();
+    auto* realm = vm.current_realm();
+    if (!realm)
+        VERIFY_NOT_REACHED();
+    auto internals = browsing_context.heap().allocate<Web::Internals::Internals>(*realm, *realm);
+    internals->mouse_up(x, y);
+
+    // 8. Return success with data null.
+    return JsonValue {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-a-pointerdown-action
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_a_pointerdown_action(PointerDownActionObject const& action, PointerInputSource& input_source, [[maybe_unused]] GlobalKeyState global_key_state, [[maybe_unused]] u32 tick_duration, [[maybe_unused]] Web::HTML::BrowsingContext& browsing_context, [[maybe_unused]] ActionsOptions const& actions_options)
+{
+    // 1. Let pointerType be equal to action object's pointerType property.
+
+    // 2. Let button be equal to action object's button property.
+    auto button = action.button;
+
+    // 3. If the input state's pressed property contains button return success with data null.
+    if (input_source.pressed.contains_slow(button))
+        return JsonValue {};
+
+    // 4. Let x be equal to input state's x property.
+    auto x = input_source.x;
+
+    // 5. Let y be equal to input state's y property.
+    auto y = input_source.y;
+
+    // 6. Add button to the set corresponding to input state's pressed property, and let buttons be the resulting value of that property.
+    input_source.pressed.append(button);
+
+    // 7. Let width be equal to action object's width property.
+    // 8. Let height be equal to action object's height property.
+    // 9. Let pressure be equal to action object's pressure property.
+    // 10. Let tangentialPressure be equal to action object's tangentialPressure property.
+    // 11. Let tiltX be equal to action object's tiltX property.
+    // 12. Let tiltY be equal to action object's tiltY property.
+    // 13. Let twist be equal to action object's twist property.
+    // 14. Let altitudeAngle be equal to action object's altitudeAngle property.
+    // 15. Let azimuthAngle be equal to action object's azimuthAngle property.
+
+    // 16. Perform implementation-specific action dispatch steps on browsing context equivalent to pressing the button numbered button on the pointer with pointerId equal to input source's pointerId,
+    //     having type pointerType at viewport x coordinate x, viewport y coordinate y, width, height, pressure, tangentialPressure, tiltX, tiltY, twist, altitudeAngle, azimuthAngle, with buttons buttons depressed in accordance with the requirements of [UI-EVENTS] and [POINTER-EVENTS].
+    //     set ctrlKey, shiftKey, altKey, and metaKey equal to the corresponding items in global key state. Type specific properties for the pointer that are not exposed through the webdriver API must be set to the default value specified for hardware that doesn't support that property.
+    auto& heap = browsing_context.heap();
+    auto& vm = heap.vm();
+    auto* realm = vm.current_realm();
+    if (!realm)
+        VERIFY_NOT_REACHED();
+    auto internals = browsing_context.heap().allocate<Web::Internals::Internals>(*realm, *realm);
+    internals->mouse_down(x, y);
+
+    // 17. Return success with data null.
+    return JsonValue {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-get-coordinates-relative-to-an-origin
+static ErrorOr<Gfx::IntPoint, Web::WebDriver::Error> get_coordinates_relative_to_an_origin([[maybe_unused]] InputSource& source, [[maybe_unused]] u32 x_offset, [[maybe_unused]] u32 y_offset, [[maybe_unused]] Web::DOM::Element* origin, [[maybe_unused]] Web::HTML::BrowsingContext& browsing_context, [[maybe_unused]] ActionsOptions const& actions_options)
+{
+    // 1. Run the substeps of the first matching value of origin
+    // switch (origin.value_or("viewport"sv).hash()) {
+    // }
+
+    return Gfx::IntPoint { 0, 0 };
+}
+
+// https://w3c.github.io/webdriver/#dfn-perform-a-pointer-move
+static void perform_a_pointer_move(PointerInputSource& source, GlobalKeyState const& global_key_state, u32 duration, u32 start_x, u32 start_y, u32 x, u32 y, u32 width, u32 height, u32 pressure, u32 tangential_pressure, u32 tilt_x, u32 tilt_y, u32 twist, u32 altitude_angle, u32 azimuth_angle)
+{
+    (void)source;
+    (void)global_key_state;
+    (void)duration;
+    (void)start_x;
+    (void)start_y;
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    (void)pressure;
+    (void)tangential_pressure;
+    (void)tilt_x;
+    (void)tilt_y;
+    (void)twist;
+    (void)altitude_angle;
+    (void)azimuth_angle;
+}
+
+// // https://w3c.github.io/webdriver/#dfn-dispatch-a-pointermove-action
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_a_pointermove_action(PointerMoveActionObject const& action, PointerInputSource& source, [[maybe_unused]] GlobalKeyState const& global_key_state, [[maybe_unused]] u32 tick_duration, [[maybe_unused]] Web::HTML::BrowsingContext& browsing_context, [[maybe_unused]] ActionsOptions const& actions_options)
+{
+    // 1. Let x offset be equal to the x property of action object.
+    auto x_offset = action.x;
+
+    // 2. Let y offset be equal to the y property of action object.
+    auto y_offset = action.y;
+
+    // 3. Let origin be equal to the origin property of action object.
+    auto origin = action.origin;
+
+    // 4. Let (x, y) be the result of trying to get coordinates relative to an origin with source, x offset, y offset, origin, browsing context, and actions options.
+    auto origin_coordinates = TRY(get_coordinates_relative_to_an_origin(source, x_offset, y_offset, origin, browsing_context, actions_options));
+    (void)origin_coordinates;
+
+    // 5. If x is less than 0 or greater than the width of the viewport in CSS pixels, then return error with error code move target out of bounds.
+    // if (origin_coordinates.x() < 0 || origin_coordinates.x() > browsing_context.viewport_rect())
+    // 6. If y is less than 0 or greater than the height of the viewport in CSS pixels, then return error with error code move target out of bounds.
+
+    // 7. Let duration be equal to action object's duration property if it is not undefined, or tick duration otherwise.
+    [[maybe_unused]] u32 duration = tick_duration;
+    if (action.duration.has_value()) {
+        duration = action.duration.value();
+    }
+
+    // 8. If duration is greater than 0 and inside any implementation-defined bounds, asynchronously wait for an implementation defined amount of time to pass.
+
+    // 9. Let width be equal to action object's width property.
+    auto width = action.width;
+
+    // 10. Let height be equal to action object's height property.
+    auto height = action.height;
+
+    // 11. Let pressure be equal to action object's pressure property.
+    auto pressure = action.pressure;
+
+    // 12. Let tangentialPressure be equal to action object's tangentialPressure property.
+    auto tangential_pressure = action.tangential_pressure;
+
+    // 13. Let tiltX be equal to action object's tiltX property.
+    auto tilt_x = action.tilt_x;
+
+    // 14. Let tiltY be equal to action object's tiltY property.
+    auto tilt_y = action.tilt_y;
+
+    // 15. Let twist be equal to action object's twist property.
+    auto twist = action.twist;
+
+    // 16. Let altitudeAngle be equal to action object's altitudeAngle property.
+    auto altitude_angle = action.altitude_angle;
+
+    // 17. Let azimuthAngle be equal to action object's azimuthAngle property.
+    auto azimuth_angle = action.azimuth_angle;
+
+    // 18. Perform a pointer move with arguments source, global key state, duration, start x, start y, x, y, width, height, pressure,
+    //     tangentialPressure, tiltX, tiltY, twist, altitudeAngle, azimuthAngle.
+    auto start_x = 0;
+    auto start_y = 0;
+    auto x = 0;
+    auto y = 0;
+    perform_a_pointer_move(source, global_key_state, duration, start_x, start_y, x, y, width, height, pressure, tangential_pressure, tilt_x, tilt_y, twist, altitude_angle, azimuth_angle);
+
+    // 19. Return success with data null.
+    return JsonValue {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-tick-actions
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_tick_actions(InputState& input_state, Vector<ActionObject>& tick_actions, u32 tick_duration, Web::HTML::BrowsingContext& browsing_context, ActionsOptions const& actions_options)
+{
+    // 1. For each action object in tick actions:
+    for (auto& action : tick_actions) {
+        // 1. Let input id be equal to the value of action object's id property.
+        auto input_id = action.id;
+
+        // 2. Let source type be equal to the value of action object's type property.
+        auto source_type = action.type;
+
+        // 3. Let source be the result of get an input source given input state and input id.
+        auto source = input_state.input_state_map.get(input_id);
+
+        // 4. Assert: source is not undefined.
+        VERIFY(source.has_value());
+
+        // 5. Let global key state be the result of get the global key state with input state.
+        auto global_key_state = get_the_global_key_state(input_state);
+
+        // 6. Let subtype be action object's subtype.
+        auto subtype = action.subtype;
+
+        // 7. Let algorithm be the value of the column dispatch action algorithm from the following table where the source type column is source type and the subtype column is equal to subtype.
+        // FIXME: Add more actions from the table in the specification.
+        Function<ErrorOr<JsonValue, Web::WebDriver::Error>()> algorithm;
+        if (source_type == ActionType::Pointer) {
+            auto pointer_input_source = verify_cast<PointerInputSource>(source.value());
+            if (subtype == ActionSubtype::PointerDown) {
+                auto pointerdown_action = verify_cast<PointerDownActionObject>(action);
+                algorithm = [&]() -> ErrorOr<JsonValue, Web::WebDriver::Error> { return dispatch_a_pointerdown_action(pointerdown_action, pointer_input_source, *global_key_state, tick_duration, browsing_context, actions_options); };
+            } else if (subtype == ActionSubtype::PointerUp) {
+                auto pointerup_action = verify_cast<PointerUpActionObject>(action);
+                algorithm = [&]() -> ErrorOr<JsonValue, Web::WebDriver::Error> { return dispatch_a_pointerup_action(pointerup_action, pointer_input_source, *global_key_state, tick_duration, browsing_context, actions_options); };
+            } else if (subtype == ActionSubtype::PointerMove) {
+                auto pointermove_action = verify_cast<PointerMoveActionObject>(action);
+                algorithm = [&]() -> ErrorOr<JsonValue, Web::WebDriver::Error> { return dispatch_a_pointermove_action(pointermove_action, pointer_input_source, *global_key_state, tick_duration, browsing_context, actions_options); };
+            }
+        }
+
+        // 8. Try to run algorithm with arguments action object, source, global key state, tick duration, browsing context, and actions options.
+        if (algorithm)
+            TRY(algorithm());
+
+        // 9. If subtype is "keyDown", append a copy of action object with the subtype property changed to "keyUp" to input state's input cancel list.
+        if (subtype == ActionSubtype::KeyDown) {
+            ActionObject key_up_action = action;
+            key_up_action.subtype = ActionSubtype::KeyUp;
+            input_state.input_cancel_list.append(move(key_up_action));
+        }
+
+        // 10. If subtype is "pointerDown", append a copy of action object with the subtype property changed to "pointerUp" to input state's input cancel list.
+        if (subtype == ActionSubtype::PointerDown) {
+            PointerUpActionObject pointer_up_action = action;
+            pointer_up_action.subtype = ActionSubtype::PointerUp;
+            input_state.input_cancel_list.append(move(pointer_up_action));
+        }
+    }
+
+    // 2. Return success with data null.
+    return JsonValue {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-actions-inner
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_actions_inner(InputState& input_state, Vector<Vector<ActionObject>>& actions_by_tick, Web::HTML::BrowsingContext& browsing_context, ActionsOptions const& actions_options)
+{
+    // 1. For each item tick actions in actions by tick:
+    for (auto& tick_actions : actions_by_tick) {
+        // 1. Let tick duration be the result of computing the tick duration with argument tick actions.
+        auto tick_duration = compute_tick_duration(tick_actions);
+
+        // 2. Try to dispatch tick actions with input state, tick actions, tick duration, browsing context, and actions options.
+        TRY(dispatch_tick_actions(input_state, tick_actions, tick_duration, browsing_context, actions_options));
+
+        // FIXME: 3. Wait until the following conditions are all met:
+        //    - There are no pending asynchronous waits arising from the last invocation of the dispatch tick actions steps.
+        //    - The user agent event loop has spun enough times to process the DOM events generated by the last invocation of the dispatch tick actions steps.
+        //    - At least tick duration milliseconds have passed.
+    }
+
+    // Return success with data null.
+    return JsonValue {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-actions
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_actions(InputState& input_state, Vector<Vector<ActionObject>>& actions_by_tick, Web::HTML::BrowsingContext& browsing_context, ActionsOptions const& actions_options)
+{
+    // 1. Let token be a new unique identifier.
+    static AK::IDAllocator s_token_allocator;
+    auto token = s_token_allocator.allocate();
+
+    // 2. Enqueue token in input state's actions queue.
+    input_state.actions_queue.append(token);
+
+    // FIXME: 3. Wait for token to be the first item in input state's actions queue.
+
+    // 4. Let actions result be the result of dispatch actions inner with input state, actions by tick, browsing context, and actions options.
+    auto actions_result = dispatch_actions_inner(input_state, actions_by_tick, browsing_context, actions_options);
+
+    // 5. Dequeue input state's actions queue.
+    input_state.actions_queue.take_first();
+
+    // 6. Return actions result.
+    return actions_result;
+}
+
+// https://w3c.github.io/webdriver/#dfn-dispatch-a-list-of-actions
+static ErrorOr<JsonValue, Web::WebDriver::Error> dispatch_a_list_of_actions(InputState& input_state, Vector<ActionObject> actions, Web::HTML::BrowsingContext& browsing_context, ActionsOptions const& actions_options)
+{
+    // 1. Let tick actions be the list «actions».
+    auto tick_actions = actions;
+
+    // 2. Let actions by tick be the list «tick actions».
+    Vector<Vector<ActionObject>> actions_by_tick { tick_actions };
+
+    // 3. Return the result of dispatch actions with input state, actions by tick, browsing context, and actions options.
+    return dispatch_actions(input_state, actions_by_tick, browsing_context, actions_options);
+}
+
+static Optional<ActionType> action_type_from_string(StringView type)
+{
+    if (type.equals_ignoring_ascii_case("key"sv))
+        return ActionType::Key;
+    if (type.equals_ignoring_ascii_case("pointer"sv))
+        return ActionType::Pointer;
+    if (type.equals_ignoring_ascii_case("wheel"sv))
+        return ActionType::Wheel;
+    if (type.equals_ignoring_ascii_case("none"sv))
+        return ActionType::None;
+
+    return {};
+}
+
+// https://w3c.github.io/webdriver/#dfn-process-pointer-parameters
+static ErrorOr<JsonValue, Web::WebDriver::Error> process_pointer_parameters(JsonObject const* parameters_data)
+{
+    (void)parameters_data;
+    // 1. Let parameters be the default pointer parameters.
+    JsonObject parameters;
+    // parameters.set()
+    //  2. If parameters data is undefined, return success with data parameters.
+
+    // 3. If parameters data is not an Object, return error with error code invalid argument.
+    // 4. Let pointer type be the result of getting a property named "pointerType" from parameters data.
+    // 5. If pointer type is not undefined:
+
+    // 6. Return success with data parameters.
+    return parameters;
+}
+
+// https://w3c.github.io/webdriver/#dfn-process-an-input-source-action-sequence
+static ErrorOr<Vector<ActionObject>, Web::WebDriver::Error> process_an_input_source_action_sequence(InputState& input_state, JsonValue const& action_sequence, ActionsOptions& actions_options)
+{
+    (void)input_state;
+    (void)actions_options;
+
+    // 1. Let type be the result of getting a property named "type" from action sequence.
+    auto type_property = TRY(get_property(action_sequence, "type"sv));
+
+    // 2. If type is not "key", "pointer", "wheel", or "none", return an error with error code invalid argument.
+    auto maybe_type = action_type_from_string(type_property);
+    if (!maybe_type.has_value())
+        return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidArgument, "Invalid action type"sv);
+
+    auto type = maybe_type.value();
+
+    // 3. Let id be the result of getting the property "id" from action sequence.
+    // 4. If id is undefined or is not a String, return error with error code invalid argument.
+    auto id = TRY(get_property(action_sequence, "id"sv));
+
+    // 5. If type is equal to "pointer", let parameters data be the result of getting the property "parameters" from action sequence.
+    //    Then let parameters be the result of trying to process pointer parameters with argument parameters data.
+    Optional<JsonValue> parameters;
+    if (type == ActionType::Pointer) {
+        auto const* parameters_data = TRY(get_property<JsonObject const*>(action_sequence, "parameters"sv));
+        parameters = TRY(process_pointer_parameters(parameters_data));
+    }
+
+    // 6. Let source be the result of trying to get or create an input source given input state, type and id.
+    // auto source = get_or_create_an_input_source(input_state, type, id);
+
+    // 7. If parameters is not undefined, then if its pointerType property is not equal to source's subtype property, return an error with error code invalid argument.
+    if (!parameters.has_value()) {
+    }
+
+    // 8. Let action items be the result of getting a property named "actions" from action sequence.
+    // 9. If action items is not an Array, return error with error code invalid argument.
+    auto const* action_items = TRY(get_property<JsonArray const*>(action_sequence, "actions"sv));
+
+    // 10. Let actions be a new list.
+    Vector<ActionObject> actions;
+
+    // 11. For each action item in action items:
+    for (auto& action_item : action_items->values()) {
+        // 1. If action item is not an Object return error with error code invalid argument.
+        if (!action_item.is_object())
+            return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidArgument, "Action item is not an Object"sv);
+
+        // 2. If type is "none" let action be the result of trying to process a null action with parameters id, and action item.
+
+        // 3. Otherwise, if type is "key" let action be the result of trying to process a key action with parameters id, and action item.
+
+        // 4. Otherwise, if type is "pointer" let action be the result of trying to process a pointer action with parameters id, parameters, action item, and actions options.
+        if (type == ActionType::Pointer) {
+            // auto action = TRY(process_a_pointer_action(id, action_item, actions_options));
+            // actions.append(action);
+        }
+
+        // 5. Otherwise, if type is "wheel" let action be the result of trying to process a wheel action with parameters id, and action item, and actions options.
+
+        // 6. Append action to actions.
+        // NOTE: This is done above.
+    }
+
+    // 12. Return success with data actions.
+    return actions;
+}
+
+// https://w3c.github.io/webdriver/#dfn-extract-an-action-sequence
+static ErrorOr<Vector<Vector<ActionObject>>, Web::WebDriver::Error> extract_an_action_sequence(InputState& input_state, JsonValue const& parameters, ActionsOptions& actions_options)
+{
+    // 1. Let actions be the result of getting a property named "actions" from parameters.
+    auto const* actions = TRY(get_property<JsonArray const*>(parameters, "actions"sv));
+
+    // 2. If actions is undefined or is not an Array, return error with error code invalid argument.
+    if (!actions)
+        return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidArgument, "Property 'actions' is not an Array"sv);
+
+    // 3. Let actions by tick be an empty List.
+    Vector<Vector<ActionObject>> actions_by_tick;
+
+    // 4. For each value action sequence corresponding to an indexed property in actions:
+    TRY(actions->try_for_each([&](auto const& action_sequence) -> ErrorOr<void, Web::WebDriver::Error> {
+        // 1. Let source actions be the result of trying to process an input source action sequence given input state, action sequence, and actions options.
+        auto source_actions = TRY(process_an_input_source_action_sequence(input_state, action_sequence, actions_options));
+
+        // 2. For each action in source actions:
+        for (size_t i = 0; i < source_actions.size(); ++i) {
+            // 1. Let i be the zero-based index of action in source actions.
+            // 2. If the length of actions by tick is less than i + 1, append a new List to actions by tick.
+            // 3. Append action to the List at index i in actions by tick.
+            Vector source_action { source_actions[i] };
+            actions_by_tick.append(move(source_action));
+        }
+
+        return {};
+    }));
+
+    // 5. Return success with data actions by tick.
+    return actions_by_tick;
 }
 
 ErrorOr<NonnullRefPtr<WebDriverConnection>> WebDriverConnection::connect(Web::PageClient& page_client, ByteString const& webdriver_ipc_path)
@@ -1384,38 +1988,67 @@ Messages::WebDriverClient::ElementClickResponse WebDriverConnection::element_cli
     // -> Otherwise
     else {
         // FIXME: 1. Let input state be the result of get the input state given current session and current top-level browsing context.
+        auto& browsing_context = m_page_client->page().top_level_browsing_context();
+        auto& input_state = get_the_input_state(browsing_context);
 
         // FIXME: 2. Let actions options be a new actions options with the is element origin steps set to represents a web element, and the get element origin steps set to get a WebElement origin.
+        ActionsOptions actions_options {
+            .is_element_origin = represents_a_web_element,
+            .get_element_origin = get_element_origin,
+        };
 
         // FIXME: 3. Let input id be a the result of generating a UUID.
+        String input_id = MUST(Web::Crypto::generate_random_uuid());
 
         // FIXME: 4. Let source be the result of create an input source with input state, and "pointer".
+        auto source = create_an_input_source(input_state, ActionType::Pointer);
 
         // FIXME: 5. Add an input source with input state, input id and source.
+        input_state.input_state_map.set(input_id, *source);
 
         // FIXME: 6. Let click point be the element’s in-view center point.
+        // FIXME: This isn't used after being defined in the specification.
+        // See: https://github.com/w3c/webdriver/issues/1563
+        auto bounding_rect = calculate_absolute_rect_of_element(m_page_client->page(), *element);
+        auto click_point = bounding_rect.center();
+        (void)click_point;
 
         // FIXME: 7. Let pointer move action be an action object constructed with arguments input id, "pointer", and "pointerMove".
+        PointerMoveActionObject pointer_move_action(input_id);
 
         // FIXME: 8. Set a property x to 0 on pointer move action.
+        pointer_move_action.x = 0;
 
         // FIXME: 9. Set a property y to 0 on pointer move action.
+        pointer_move_action.y = 0;
 
         // FIXME: 10. Set a property origin to element on pointer move action.
+        pointer_move_action.origin = element;
 
         // FIXME: 11. Let pointer down action be an action object constructed with arguments input id, "pointer", and "pointerDown".
+        PointerDownActionObject pointer_down_action(input_id);
 
         // FIXME: 12. Set a property button to 0 on pointer down action.
+        pointer_down_action.button = 0;
 
         // FIXME: 13. Let pointer up action be an action object constructed with arguments input id, "mouse", and "pointerUp" as arguments.
+        PointerUpActionObject pointer_up_action(input_id);
 
         // FIXME: 14. Set a property button to 0 on pointer up action.
+        pointer_up_action.button = 0;
 
-        // FIXME: 15. Let actions be the list «pointer move action, pointer down action, pointer move action».
+        // FIXME: 15. Let actions be the list «pointer move action, pointer down action, pointer up action».
+        Vector<ActionObject> actions {
+            pointer_move_action,
+            pointer_down_action,
+            pointer_up_action,
+        };
 
         // FIXME: 16. Dispatch a list of actions with input state, actions, current browsing context, and actions options.
+        TRY(dispatch_a_list_of_actions(input_state, actions, browsing_context, actions_options));
 
         // FIXME: 17. Remove an input source with input state and input id.
+        input_state.input_state_map.remove(input_id);
     }
 
     // FIXME: 9. Wait until the user agent event loop has spun enough times to process the DOM events generated by the previous step.
@@ -1423,8 +2056,7 @@ Messages::WebDriverClient::ElementClickResponse WebDriverConnection::element_cli
     // FIXME: 11. Try to wait for navigation to complete.
     // FIXME: 12. Try to run the post-navigation checks.
     // FIXME: 13. Return success with data null.
-
-    return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::UnsupportedOperation, "Click not implemented"sv);
+    return JsonValue {};
 }
 
 // 13.1 Get Page Source, https://w3c.github.io/webdriver/#dfn-get-page-source
@@ -1669,6 +2301,36 @@ Messages::WebDriverClient::DeleteAllCookiesResponse WebDriverConnection::delete_
     delete_cookies();
 
     // 4. Return success with data null.
+    return JsonValue {};
+}
+
+// 15.7 Perform Actions, https://w3c.github.io/webdriver/#perform-actions
+Messages::WebDriverClient::PerformActionsResponse WebDriverConnection::perform_actions(JsonValue const& payload)
+{
+    // 1. Let input state be the result of get the input state with session and session's current top-level browsing context.
+    auto& browsing_context = m_page_client->page().top_level_browsing_context();
+    auto& input_state = get_the_input_state(browsing_context);
+    (void)input_state;
+
+    // 2. Let actions options be a new actions options with the is element origin steps set to represents a web element, and the get element origin steps set to get a WebElement origin.
+    ActionsOptions actions_options {
+        .is_element_origin = represents_a_web_element,
+        .get_element_origin = get_element_origin,
+    };
+
+    // 3. Let actions by tick be the result of trying to extract an action sequence with input state, parameters, and actions options.
+    auto actions_by_tick = TRY(extract_an_action_sequence(input_state, payload, actions_options));
+
+    // 4. If session's current browsing context is no longer open, return error with error code no such window.
+    TRY(ensure_open_top_level_browsing_context());
+
+    // 5. Try to handle any user prompts with session.
+    TRY(handle_any_user_prompts());
+
+    // 6. Dispatch actions with input state, actions by tick, current browsing context, and actions options. If this results in an error return that error.
+    TRY(dispatch_actions(input_state, actions_by_tick, browsing_context, actions_options));
+
+    // 7. Return success with data null.
     return JsonValue {};
 }
 
@@ -2087,6 +2749,22 @@ void WebDriverConnection::delete_cookies(Optional<StringView> const& name)
         // -> Otherwise
         //    Do nothing.
     }
+}
+
+// https://w3c.github.io/webdriver/#dfn-get-the-input-state
+InputState& WebDriverConnection::get_the_input_state(Web::HTML::BrowsingContext& browsing_context)
+{
+    // 1. Assert: browsing context is a top-level browsing context.
+    VERIFY(browsing_context.is_top_level());
+
+    // 2. Let input state map be session's browsing context input state map
+    auto& input_state_map = m_browsing_context_input_state_map;
+
+    // 3. If input state map does not contain browsing context, set input state map[browsing context] to create an input state.
+    auto& input_state = input_state_map.ensure(browsing_context);
+
+    // 4. Return input state map[browsing context].
+    return input_state;
 }
 
 }

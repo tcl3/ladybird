@@ -8,6 +8,7 @@
 
 #include <LibWeb/Bindings/PlatformObject.h>
 #include <LibWeb/Internals/InternalAnimationTimeline.h>
+#include <LibWeb/Painting/Paintable.h>
 
 namespace Web::Internals {
 
@@ -21,12 +22,16 @@ public:
     void signal_text_test_is_done();
 
     void gc();
+
     JS::Object* hit_test(double x, double y);
+    JS::Object* hit_test_for_text_cursor(double x, double y);
 
     void send_text(HTML::HTMLElement&, String const&);
     void commit_text();
 
     void click(double x, double y);
+    void mouse_down(double x, double y);
+    void mouse_up(double x, double y);
     void move_pointer_to(double x, double y);
     void wheel(double x, double y, double delta_x, double delta_y);
 
@@ -37,6 +42,8 @@ public:
 private:
     explicit Internals(JS::Realm&);
     virtual void initialize(JS::Realm&) override;
+
+    JS::Object* hit_test(double x, double y, Painting::HitTestType type);
 };
 
 }

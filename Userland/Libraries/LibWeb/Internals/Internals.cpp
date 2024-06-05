@@ -45,14 +45,14 @@ void Internals::gc()
     vm().heap().collect_garbage();
 }
 
-JS::Object* Internals::hit_test(double x, double y)
+JS::Object* Internals::hit_test(double x, double y, Painting::HitTestType type)
 {
     auto* active_document = global_object().browsing_context()->top_level_browsing_context()->active_document();
     // NOTE: Force a layout update just before hit testing. This is because the current layout tree, which is required
     //       for stacking context traversal, might not exist if this call occurs between the tear_down_layout_tree()
     //       and update_layout() calls
     active_document->update_layout();
-    auto result = active_document->paintable_box()->hit_test({ x, y }, Painting::HitTestType::Exact);
+    auto result = active_document->paintable_box()->hit_test({ x, y }, type);
     if (result.has_value()) {
         auto hit_tеsting_result = JS::Object::create(realm(), nullptr);
         hit_tеsting_result->define_direct_property("node", result->dom_node(), JS::default_attributes);
@@ -60,6 +60,16 @@ JS::Object* Internals::hit_test(double x, double y)
         return hit_tеsting_result;
     }
     return nullptr;
+}
+
+JS::Object* Internals::hit_test(double x, double y)
+{
+    return hit_test(x, y, Painting::HitTestType::Exact);
+}
+
+JS::Object* Internals::hit_test_for_text_cursor(double x, double y)
+{
+    return hit_test(x, y, Painting::HitTestType::TextCursor);
 }
 
 void Internals::send_text(HTML::HTMLElement& target, String const& text)
@@ -80,6 +90,18 @@ void Internals::click(double x, double y)
 {
     auto& page = global_object().browsing_context()->page();
     page.handle_mousedown({ x, y }, { x, y }, 1, 0, 0);
+    page.handle_mouseup({ x, y }, { x, y }, 1, 0, 0);
+}
+
+void Internals::mouse_down(double x, double y)
+{
+    auto& page = global_object().browsing_context()->page();
+    page.handle_mousedown({ x, y }, { x, y }, 1, 0, 0);
+}
+
+void Internals::mouse_up(double x, double y)
+{
+    auto& page = global_object().browsing_context()->page();
     page.handle_mouseup({ x, y }, { x, y }, 1, 0, 0);
 }
 
