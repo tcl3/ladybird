@@ -38,13 +38,17 @@ Color button_text()
     return Color(0, 0, 0);
 }
 
-Color canvas()
+Color canvas(bool dark_mode)
 {
+    if (dark_mode)
+        return Color(16, 16, 16);
     return Color(255, 255, 255);
 }
 
-Color canvas_text()
+Color canvas_text(bool dark_mode)
 {
+    if (dark_mode)
+        return Color(255, 255, 255);
     return Color(0, 0, 0);
 }
 

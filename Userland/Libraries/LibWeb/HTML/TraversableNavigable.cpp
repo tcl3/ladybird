@@ -1180,7 +1180,7 @@ void TraversableNavigable::paint(Web::DevicePixelRect const& content_rect, Gfx::
     Painting::DisplayListRecorder display_list_recorder(display_list);
 
     Gfx::IntRect bitmap_rect { {}, content_rect.size().to_type<int>() };
-    display_list_recorder.fill_rect(bitmap_rect, Web::CSS::SystemColor::canvas());
+    display_list_recorder.fill_rect(bitmap_rect, Web::CSS::SystemColor::canvas(page().palette().is_dark()));
 
     Web::HTML::Navigable::PaintConfig paint_config;
     paint_config.paint_overlay = paint_options.paint_overlay == Web::PaintOptions::PaintOverlay::Yes;

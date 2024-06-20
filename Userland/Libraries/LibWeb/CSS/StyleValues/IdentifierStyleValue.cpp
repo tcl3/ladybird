@@ -141,6 +141,14 @@ Color IdentifierStyleValue::to_color(Optional<Layout::NodeWithStyle const&> node
         return node->computed_values().color();
     }
 
+    auto use_dark_mode = [&node]() -> bool {
+        if (!node.has_value())
+            return false;
+
+        auto& page = node->document().page();
+        return page.palette().is_dark();
+    };
+
     // First, handle <system-color>s, since they don't require a node.
     // https://www.w3.org/TR/css-color-4/#css-system-colors
     // https://www.w3.org/TR/css-color-4/#deprecated-system-colors
@@ -175,14 +183,14 @@ Color IdentifierStyleValue::to_color(Optional<Layout::NodeWithStyle const&> node
     case ValueID::Menu:
     case ValueID::Scrollbar:
     case ValueID::Window:
-        return SystemColor::canvas();
+        return SystemColor::canvas(use_dark_mode());
     case ValueID::Canvastext:
     case ValueID::Activecaption:
     case ValueID::Captiontext:
     case ValueID::Infotext:
     case ValueID::Menutext:
     case ValueID::Windowtext:
-        return SystemColor::canvas_text();
+        return SystemColor::canvas_text(use_dark_mode());
     case ValueID::Field:
         return SystemColor::field();
     case ValueID::Fieldtext:
