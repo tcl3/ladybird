@@ -51,6 +51,7 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     : QWidget(window)
     , m_window(window)
 {
+    setMouseTracking(true);
     m_layout = new QBoxLayout(QBoxLayout::Direction::TopToBottom, this);
     m_layout->setSpacing(0);
     m_layout->setContentsMargins(0, 0, 0, 0);
@@ -893,13 +894,26 @@ void Tab::resizeEvent(QResizeEvent* event)
 
 void Tab::update_hover_label()
 {
+    m_hover_label->setText(QFontMetrics(m_hover_label->font()).elidedText(m_hover_label->text(), Qt::ElideRight, width() / 2));
     m_hover_label->resize(QFontMetrics(m_hover_label->font()).boundingRect(m_hover_label->text()).adjusted(-4, -2, 4, 2).size());
-    auto hover_label_height = height() - m_hover_label->height() - 8;
-    if (m_find_in_page->isVisible())
-        hover_label_height -= m_find_in_page->height() - 4;
 
-    m_hover_label->move(6, hover_label_height);
+    auto hover_label_height = height() - m_hover_label->height();
+    if (m_find_in_page->isVisible())
+        hover_label_height -= m_find_in_page->height() - 8;
+
+    QPoint mousePosition = mapFromGlobal(QCursor::pos());
+    if (mousePosition.y() >= hover_label_height && mousePosition.x() <= width() / 2)
+        m_hover_label->move(width() / 2 + (width() / 2 - m_hover_label->width()), hover_label_height);
+    else
+        m_hover_label->move(0, hover_label_height);
+
     m_hover_label->raise();
+}
+
+void Tab::mouseMoveEvent(QMouseEvent* event)
+{
+    update_hover_label();
+    return QWidget::mouseMoveEvent(event);
 }
 
 void Tab::update_navigation_buttons_state()

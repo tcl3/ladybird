@@ -32,6 +32,8 @@ public:
     Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client = nullptr, size_t page_index = 0);
     virtual ~Tab() override;
 
+    virtual void mouseMoveEvent(QMouseEvent*) override;
+
     WebContentView& view() { return *m_view; }
 
     void navigate(URL::URL const&);
