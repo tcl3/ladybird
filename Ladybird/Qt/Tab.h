@@ -25,14 +25,30 @@ namespace Ladybird {
 class BrowserWindow;
 class InspectorWidget;
 
+class HyperlinkLabel final : public QLabel {
+    Q_OBJECT
+public:
+    explicit HyperlinkLabel(QWidget* parent = nullptr)
+        : QLabel(parent)
+    {
+        setMouseTracking(true);
+    }
+
+    virtual void enterEvent(QEnterEvent* event) override
+    {
+        emit mouse_entered(event);
+    }
+
+signals:
+    void mouse_entered(QEnterEvent*);
+};
+
 class Tab final : public QWidget {
     Q_OBJECT
 
 public:
     Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client = nullptr, size_t page_index = 0);
     virtual ~Tab() override;
-
-    virtual void mouseMoveEvent(QMouseEvent*) override;
 
     WebContentView& view() { return *m_view; }
 
@@ -117,7 +133,7 @@ private:
     FindInPageWidget* m_find_in_page { nullptr };
     BrowserWindow* m_window { nullptr };
     QString m_title;
-    QLabel* m_hover_label { nullptr };
+    HyperlinkLabel* m_hover_label { nullptr };
     QIcon m_favicon;
 
     QMenu* m_context_menu { nullptr };

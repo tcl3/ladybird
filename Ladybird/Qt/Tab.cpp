@@ -51,7 +51,6 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     : QWidget(window)
     , m_window(window)
 {
-    setMouseTracking(true);
     m_layout = new QBoxLayout(QBoxLayout::Direction::TopToBottom, this);
     m_layout->setSpacing(0);
     m_layout->setContentsMargins(0, 0, 0, 0);
@@ -62,10 +61,14 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     m_toolbar = new QToolBar(this);
     m_location_edit = new LocationEdit(this);
 
-    m_hover_label = new QLabel(this);
+    m_hover_label = new HyperlinkLabel(this);
     m_hover_label->hide();
     m_hover_label->setFrameShape(QFrame::Shape::Box);
     m_hover_label->setAutoFillBackground(true);
+
+    QObject::connect(m_hover_label, &HyperlinkLabel::mouse_entered, [this] {
+        update_hover_label();
+    });
 
     auto* focus_location_editor_action = new QAction("Edit Location", this);
     focus_location_editor_action->setShortcut(QKeySequence("Ctrl+L"));
@@ -901,19 +904,12 @@ void Tab::update_hover_label()
     if (m_find_in_page->isVisible())
         hover_label_height -= m_find_in_page->height() - 8;
 
-    QPoint mousePosition = mapFromGlobal(QCursor::pos());
-    if (mousePosition.y() >= hover_label_height && mousePosition.x() <= width() / 2)
+    if (m_hover_label->underMouse() && m_hover_label->x() == 0)
         m_hover_label->move(width() / 2 + (width() / 2 - m_hover_label->width()), hover_label_height);
     else
         m_hover_label->move(0, hover_label_height);
 
     m_hover_label->raise();
-}
-
-void Tab::mouseMoveEvent(QMouseEvent* event)
-{
-    update_hover_label();
-    return QWidget::mouseMoveEvent(event);
 }
 
 void Tab::update_navigation_buttons_state()
