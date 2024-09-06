@@ -1,0 +1,16 @@
+#import <SVG/SVGAnimatedLength.idl>
+#import <SVG/SVGElement.idl>
+#import <SVG/SVGURIReference.idl>
+
+// https://drafts.fxtf.org/filter-effects/#InterfaceSVGFilterElement
+[Exposed=Window]
+interface SVGFilterElement : SVGElement {
+    [FIXME] readonly attribute SVGAnimatedEnumeration filterUnits;
+    [FIXME] readonly attribute SVGAnimatedEnumeration primitiveUnits;
+    readonly attribute SVGAnimatedLength x;
+    readonly attribute SVGAnimatedLength y;
+    readonly attribute SVGAnimatedLength width;
+    readonly attribute SVGAnimatedLength height;
+};
+
+SVGFilterElement includes SVGURIReference;

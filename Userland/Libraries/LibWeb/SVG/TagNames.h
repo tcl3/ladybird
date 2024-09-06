@@ -32,6 +32,7 @@ namespace Web::SVG::TagNames {
     __ENUMERATE_SVG_TAG(clipPath)       \
     __ENUMERATE_SVG_TAG(defs)           \
     __ENUMERATE_SVG_TAG(desc)           \
+    __ENUMERATE_SVG_TAG(filter)         \
     __ENUMERATE_SVG_TAG(foreignObject)  \
     __ENUMERATE_SVG_TAG(linearGradient) \
     __ENUMERATE_SVG_TAG(mask)           \

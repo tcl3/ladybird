@@ -285,6 +285,7 @@ SVGDefsElement
 SVGDescElement
 SVGElement
 SVGEllipseElement
+SVGFilterElement
 SVGForeignObjectElement
 SVGGElement
 SVGGeometryElement
