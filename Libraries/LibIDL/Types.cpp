@@ -168,8 +168,8 @@ bool Type::is_distinguishable_from(IDL::Interface const& interface, IDL::Type co
         // DictionaryLike
         // * Dictionary Types
         // * Record Types
-        // FIXME: * Callback Interface Types
-        if (interface.dictionaries.contains(type.name()) || (type.is_parameterized() && type.name() == "record"sv))
+        // * Callback Interface Types
+        if (interface.dictionaries.contains(type.name()) || type.is_legacy_callback_interface_object() || (type.is_parameterized() && type.name() == "record"sv))
             return DistinguishabilityCategory::DictionaryLike;
         // FIXME: Frozen array types are included in "sequence-like"
         if (type.is_sequence())

@@ -540,7 +540,6 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
         generate_to_integral(scoped_generator, parameter, optional, optional_default_value);
     } else if (parameter.type->name().is_one_of("EventListener", "NodeFilter")) {
         // FIXME: Replace this with support for callback interfaces. https://webidl.spec.whatwg.org/#idl-callback-interface
-
         if (parameter.type->name() == "EventListener")
             scoped_generator.set("cpp_type", "IDLEventListener");
         else
@@ -1152,7 +1151,7 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
         }
 
         bool includes_object = false;
-        for (auto& type : types) {
+        for (auto type : types) {
             if (type->name() == "object") {
                 includes_object = true;
                 break;
@@ -1344,7 +1343,19 @@ static void generate_to_cpp(SourceGenerator& generator, ParameterType& parameter
 )~~~");
         }
 
-        // FIXME: 5. If types includes a callback interface type, then return the result of converting V to that callback interface type.
+        // 5. If types includes a callback interface type, then return the result of converting V to that callback interface type.
+        RefPtr<IDL::Type const> callback_interface_type;
+        for (auto& type : types) {
+            if (type->is_legacy_callback_interface_object()) {
+                callback_interface_type = type;
+                break;
+            }
+        }
+
+        if (callback_interface_type)
+            union_generator.append(R"~~~(
+        return callback_interface_type;
+)~~~");
 
         // 6. If types includes object, then return the IDL value that is a reference to the object V.
         if (includes_object) {
@@ -2849,6 +2860,7 @@ static Vector<Interface const&> create_an_inheritance_stack(IDL::Interface const
             return imported_interface.name == current_interface->parent_name;
         });
 
+        warnln("Interface {} does not inherit from {}", current_interface->name, current_interface->parent_name);
         // Inherited interfaces must have their IDL files imported.
         VERIFY(imported_interface_iterator != start_interface.imported_modules.end());
 

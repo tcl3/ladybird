@@ -203,7 +203,7 @@ Optional<Interface&> Parser::resolve_import(auto path)
     return result;
 }
 
-NonnullRefPtr<Type const> Parser::parse_type()
+NonnullRefPtr<Type const> Parser::parse_type(IsLegacyCallbackInterfaceObject is_legacy_callback_interface_object)
 {
     if (lexer.consume_specific('(')) {
         Vector<NonnullRefPtr<Type const>> union_member_types;
@@ -298,7 +298,7 @@ NonnullRefPtr<Type const> Parser::parse_type()
     if (is_parameterized_type)
         return adopt_ref(*new ParameterizedType(builder.to_byte_string(), nullable, move(parameters)));
 
-    return adopt_ref(*new Type(builder.to_byte_string(), nullable));
+    return adopt_ref(*new Type(builder.to_byte_string(), nullable, is_legacy_callback_interface_object == IsLegacyCallbackInterfaceObject::Yes));
 }
 
 void Parser::parse_attribute(HashMap<ByteString, ByteString>& extended_attributes, Interface& interface, IsStatic is_static)
@@ -424,11 +424,11 @@ Vector<Parameter> Parser::parse_parameters()
     return parameters;
 }
 
-Function Parser::parse_function(HashMap<ByteString, ByteString>& extended_attributes, Interface& interface, IsStatic is_static, IsSpecialOperation is_special_operation)
+Function Parser::parse_function(HashMap<ByteString, ByteString>& extended_attributes, Interface& interface, IsStatic is_static, IsSpecialOperation is_special_operation, IsLegacyCallbackInterfaceObject is_legacy_callback_interface_object)
 {
     auto position = lexer.current_position();
 
-    auto return_type = parse_type();
+    auto return_type = parse_type(is_legacy_callback_interface_object);
     consume_whitespace();
     auto name = parse_identifier_ending_with_space_or('(');
     consume_whitespace();
@@ -921,6 +921,43 @@ void Parser::parse_interface_mixin(Interface& interface)
     interface.mixins.set(move(name), &mixin_interface);
 }
 
+void Parser::parse_legacy_callback_interface(HashMap<ByteString, ByteString> extended_attributes, Interface& interface)
+{
+    assert_string("callback"sv);
+    consume_whitespace();
+    assert_string("interface"sv);
+    consume_whitespace();
+
+    interface.name = parse_identifier_ending_with_space();
+    interface.extended_attributes = move(extended_attributes);
+    consume_whitespace();
+    assert_specific('{');
+
+    bool regular_operation_found = false;
+    for (;;) {
+        consume_whitespace();
+        HashMap<ByteString, ByteString> function_extended_attributes;
+        if (lexer.consume_specific('['))
+            function_extended_attributes = parse_extended_attributes();
+        if (lexer.next_is("const")) {
+            parse_constant(interface);
+            continue;
+        }
+
+        if (lexer.consume_specific('}')) {
+            consume_whitespace();
+            assert_specific(';');
+            consume_whitespace();
+            break;
+        }
+
+        auto function = parse_function(function_extended_attributes, interface, IsStatic::No, IsSpecialOperation::No, IsLegacyCallbackInterfaceObject::Yes);
+        if (regular_operation_found)
+            report_parsing_error("Callback interfaces can only have one regular operation"sv, filename, input, lexer.tell());
+        regular_operation_found = true;
+    }
+}
+
 void Parser::parse_callback_function(HashMap<ByteString, ByteString>& extended_attributes, Interface& interface)
 {
     assert_string("callback"sv);
@@ -960,6 +997,8 @@ void Parser::parse_non_interface_entities(bool allow_interface, Interface& inter
             parse_typedef(interface);
         } else if (lexer.next_is("interface mixin")) {
             parse_interface_mixin(interface);
+        } else if (lexer.next_is("callback interface")) {
+            parse_legacy_callback_interface(extended_attributes, interface);
         } else if (lexer.next_is("callback")) {
             parse_callback_function(extended_attributes, interface);
         } else if ((allow_interface && !lexer.next_is("interface") && !lexer.next_is("namespace")) || !allow_interface) {

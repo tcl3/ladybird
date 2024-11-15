@@ -35,6 +35,11 @@ private:
         Yes,
     };
 
+    enum class IsLegacyCallbackInterfaceObject {
+        No,
+        Yes,
+    };
+
     Parser(Parser* parent, ByteString filename, StringView contents, Vector<StringView> import_base_path);
 
     void assert_specific(char ch);
@@ -51,6 +56,7 @@ private:
     void parse_typedef(Interface&);
     void parse_interface_mixin(Interface&);
     void parse_dictionary(Interface&);
+    void parse_legacy_callback_interface(HashMap<ByteString, ByteString> extended_attributes, Interface&);
     void parse_callback_function(HashMap<ByteString, ByteString>& extended_attributes, Interface&);
     void parse_constructor(HashMap<ByteString, ByteString>& extended_attributes, Interface&);
     void parse_getter(HashMap<ByteString, ByteString>& extended_attributes, Interface&);
@@ -59,9 +65,9 @@ private:
     void parse_stringifier(HashMap<ByteString, ByteString>& extended_attributes, Interface&);
     void parse_iterable(Interface&);
     void parse_setlike(Interface&, bool is_readonly);
-    Function parse_function(HashMap<ByteString, ByteString>& extended_attributes, Interface&, IsStatic is_static = IsStatic::No, IsSpecialOperation is_special_operation = IsSpecialOperation::No);
+    Function parse_function(HashMap<ByteString, ByteString>& extended_attributes, Interface&, IsStatic is_static = IsStatic::No, IsSpecialOperation is_special_operation = IsSpecialOperation::No, IsLegacyCallbackInterfaceObject is_legacy_callback_interface_object = IsLegacyCallbackInterfaceObject::No);
     Vector<Parameter> parse_parameters();
-    NonnullRefPtr<Type const> parse_type();
+    NonnullRefPtr<Type const> parse_type(IsLegacyCallbackInterfaceObject is_legacy_callback_interface_object = IsLegacyCallbackInterfaceObject::No);
     void parse_constant(Interface&);
     ByteString parse_identifier_until(AK::Function<bool(char)> predicate);
     ByteString parse_identifier_ending_with(auto... possible_terminating_characters);

@@ -53,17 +53,19 @@ public:
         Union,
     };
 
-    Type(ByteString name, bool nullable)
+    Type(ByteString name, bool nullable, [[maybe_unused]] bool is_legacy_callback_interface_object = false)
         : m_kind(Kind::Plain)
         , m_name(move(name))
         , m_nullable(nullable)
+        , m_legacy_callback_interface_object(is_legacy_callback_interface_object)
     {
     }
 
-    Type(Kind kind, ByteString name, bool nullable)
+    Type(Kind kind, ByteString name, bool nullable, bool is_legacy_callback_interface_object = false)
         : m_kind(kind)
         , m_name(move(name))
         , m_nullable(nullable)
+        , m_legacy_callback_interface_object(is_legacy_callback_interface_object)
     {
     }
 
@@ -142,10 +144,14 @@ public:
     bool is_unrestricted_floating_point() const { return m_name.is_one_of("unrestricted float", "unrestricted double"); }
     bool is_floating_point() const { return is_restricted_floating_point() || is_unrestricted_floating_point(); }
 
+    // https://webidl.spec.whatwg.org/#dfn-legacy-callback-interface-object
+    bool is_legacy_callback_interface_object() const { return m_legacy_callback_interface_object; }
+
 private:
     Kind m_kind;
     ByteString m_name;
     bool m_nullable { false };
+    bool m_legacy_callback_interface_object { false };
 };
 
 struct Parameter {
@@ -232,7 +238,7 @@ struct CallbackFunction {
 class ParameterizedType : public Type {
 public:
     ParameterizedType(ByteString name, bool nullable, Vector<NonnullRefPtr<Type const>> parameters)
-        : Type(Kind::Parameterized, move(name), nullable)
+        : Type(Kind::Parameterized, move(name), nullable, false)
         , m_parameters(move(parameters))
     {
     }
