@@ -233,6 +233,7 @@ ManagedSourceBuffer
 Map
 MathMLElement
 MediaCapabilities
+MediaElementAudioSourceNode
 MediaError
 MediaList
 MediaQueryList
