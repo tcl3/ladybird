@@ -2274,6 +2274,8 @@ void Document::set_focused_element(Element* element)
     if (m_focused_element.ptr() == element)
         return;
 
+    reset_cursor_blink_cycle();
+
     GC::Ptr<Element> old_focused_element = move(m_focused_element);
 
     if (old_focused_element)
