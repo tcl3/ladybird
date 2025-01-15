@@ -481,6 +481,22 @@ Optional<TextNode::Chunk> TextNode::ChunkIterator::peek(size_t count)
 
 Optional<TextNode::Chunk> TextNode::ChunkIterator::next_without_peek()
 {
+    // This is necessary to ensure the text cursor is drawn for empty text nodes.
+    if (m_utf8_view.is_empty() && m_current_index == m_utf8_view.byte_length()) {
+        auto const& font = m_font_cascade_list.first();
+        m_current_index++;
+        return Chunk {
+            .view = {},
+            .font = font,
+            .start = 0,
+            .length = 0,
+            .has_breaking_newline = false,
+            .has_breaking_tab = false,
+            .is_all_whitespace = false,
+            .text_type = Gfx::GlyphRun::TextType::Common,
+        };
+    }
+
     if (m_current_index >= m_utf8_view.byte_length())
         return {};
 
