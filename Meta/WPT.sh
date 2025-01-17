@@ -10,6 +10,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ensure_ladybird_source_dir
 
 WPT_SOURCE_DIR=${WPT_SOURCE_DIR:-"${LADYBIRD_SOURCE_DIR}/Tests/LibWeb/WPT/wpt"}
+WPT_VENV_DIR=${WPT_VENV_DIR:-"${WPT_SOURCE_DIR}/_venv3"}
+WPT_VENV_ACTIVATED=0
 WPT_REPOSITORY_URL=${WPT_REPOSITORY_URL:-"https://github.com/web-platform-tests/wpt.git"}
 
 BUILD_PRESET=${BUILD_PRESET:-default}
@@ -176,6 +178,20 @@ build_ladybird_and_webdriver() {
     "${DIR}"/ladybird.sh build WebDriver
 }
 
+activate_wpt_venv() {
+    # shellcheck source=/dev/null
+    source "${WPT_VENV_DIR}/bin/activate"
+    WPT_VENV_ACTIVATED=1
+    trap deactivate_wpt_venv EXIT
+}
+
+deactivate_wpt_venv() {
+    if [ ${WPT_VENV_ACTIVATED} -eq 1 ]; then
+        deactivate
+        WPT_VENV_ACTIVATED=0
+    fi
+}
+
 update_wpt() {
     ensure_wpt_repository
     pushd "${WPT_SOURCE_DIR}" > /dev/null
@@ -184,6 +200,7 @@ update_wpt() {
 }
 
 execute_wpt() {
+    activate_wpt_venv
     pushd "${WPT_SOURCE_DIR}" > /dev/null
         for certificate_path in "${WPT_CERTIFICATES[@]}"; do
             if [ ! -f "${certificate_path}" ]; then
@@ -196,6 +213,7 @@ execute_wpt() {
         echo LADYBIRD_GIT_VERSION="$(ladybird_git_hash)" ./wpt run "${WPT_ARGS[@]}" ladybird "${TEST_LIST[@]}"
         LADYBIRD_GIT_VERSION="$(ladybird_git_hash)" ./wpt run "${WPT_ARGS[@]}" ladybird "${TEST_LIST[@]}"
     popd > /dev/null
+    deactivate_wpt_venv
 }
 
 run_wpt() {
@@ -207,7 +225,7 @@ run_wpt() {
 serve_wpt()
 {
     ensure_wpt_repository
-
+    activate_wpt_venv
     pushd "${WPT_SOURCE_DIR}" > /dev/null
         ./wpt serve
     popd > /dev/null
@@ -218,10 +236,11 @@ list_tests_wpt()
     ensure_wpt_repository
 
     construct_test_list "${@}"
-
+    activate_wpt_venv
     pushd "${WPT_SOURCE_DIR}" > /dev/null
         ./wpt run --list-tests ladybird "${TEST_LIST[@]}"
     popd > /dev/null
+    deactivate_wpt_venv
 }
 
 import_wpt()
@@ -266,9 +285,11 @@ import_wpt()
 compare_wpt() {
     ensure_wpt_repository
     METADATA_DIR=$(mktemp -d)
+    activate_wpt_venv
     pushd "${WPT_SOURCE_DIR}" > /dev/null
       ./wpt update-expectations --product ladybird --full --metadata="${METADATA_DIR}" "${INPUT_LOG_NAME}"
     popd > /dev/null
+    deactivate_wpt_venv
     WPT_ARGS+=( "--metadata=${METADATA_DIR}" )
     build_ladybird_and_webdriver
     execute_wpt "${@}"
