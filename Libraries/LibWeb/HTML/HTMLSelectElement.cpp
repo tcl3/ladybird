@@ -381,13 +381,6 @@ WebIDL::ExceptionOr<void> HTMLSelectElement::set_value(String const& value)
     return {};
 }
 
-// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-cva-validity
-GC::Ref<ValidityState const> HTMLSelectElement::validity() const
-{
-    auto& realm = this->realm();
-    return realm.create<ValidityState>(realm, dynamic_cast<FormAssociatedElement const*>(this));
-}
-
 void HTMLSelectElement::queue_input_and_change_events()
 {
     // When the user agent is to send select update notifications, queue an element task on the user interaction task source given the select element to run these steps:

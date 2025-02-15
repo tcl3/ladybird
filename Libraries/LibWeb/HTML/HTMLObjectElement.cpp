@@ -605,11 +605,4 @@ void HTMLObjectElement::set_visible_in_viewport(bool)
     // FIXME: Loosen grip on image data when it's not visible, e.g via volatile memory.
 }
 
-// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-cva-validity
-GC::Ref<ValidityState const> HTMLObjectElement::validity() const
-{
-    auto& realm = this->realm();
-    return realm.create<ValidityState>(realm, dynamic_cast<FormAssociatedElement const*>(this));
-}
-
 }

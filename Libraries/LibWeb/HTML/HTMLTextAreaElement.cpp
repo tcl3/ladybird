@@ -258,13 +258,6 @@ void HTMLTextAreaElement::set_custom_validity(String const& error)
     dbgln("(STUBBED) HTMLTextAreaElement::set_custom_validity(\"{}\"). Called on: {}", error, debug_description());
 }
 
-// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-cva-validity
-GC::Ref<ValidityState const> HTMLTextAreaElement::validity() const
-{
-    auto& realm = this->realm();
-    return realm.create<ValidityState>(realm, dynamic_cast<FormAssociatedElement const*>(this));
-}
-
 // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-maxlength
 WebIDL::Long HTMLTextAreaElement::max_length() const
 {

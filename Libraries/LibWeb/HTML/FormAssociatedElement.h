@@ -122,6 +122,8 @@ public:
     String form_action() const;
     WebIDL::ExceptionOr<void> set_form_action(String const&);
 
+    GC::Ref<ValidityState const> validity() const;
+
 protected:
     FormAssociatedElement() = default;
     virtual ~FormAssociatedElement() = default;

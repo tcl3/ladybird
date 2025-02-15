@@ -91,13 +91,6 @@ void HTMLOutputElement::set_value(String const& value)
     string_replace_all(value);
 }
 
-// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-cva-validity
-GC::Ref<ValidityState const> HTMLOutputElement::validity() const
-{
-    auto& realm = this->realm();
-    return realm.create<ValidityState>(realm, dynamic_cast<FormAssociatedElement const*>(this));
-}
-
 // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element:concept-form-reset-control
 void HTMLOutputElement::reset_algorithm()
 {
