@@ -40,6 +40,8 @@ public:
 
     JS::ThrowCompletionOr<GC::Ref<WebIDL::Promise>> load(String const& font, String const& text);
 
+    WebIDL::ExceptionOr<bool> check(String const& font, String const& text);
+
     GC::Ref<WebIDL::Promise> ready() const;
     Bindings::FontFaceSetLoadStatus status() const { return m_status; }
 

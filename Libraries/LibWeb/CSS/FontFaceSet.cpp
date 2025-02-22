@@ -281,6 +281,35 @@ JS::ThrowCompletionOr<GC::Ref<WebIDL::Promise>> FontFaceSet::load(String const& 
     return promise;
 }
 
+// https://drafts.csswg.org/css-font-loading/#dom-fontfaceset-check
+WebIDL::ExceptionOr<bool> FontFaceSet::check(String const& font, String const& text)
+{
+    // 1. Let font face set be the FontFaceSet object this method was called on.
+    GC::Ref font_face_set = *this;
+
+    // 2. Find the matching font faces from font face set using the font and text arguments passed to the function, and including system fonts, and let font face list be the returned list of font faces,
+    //    and found faces be the returned found faces flag. If a syntax error was returned, throw a SyntaxError exception and terminate these steps.
+    auto& realm = this->realm();
+    auto result_or_error = find_matching_font_faces(realm, font_face_set, font, text);
+    if (result_or_error.is_error()) {
+        return result_or_error.release_error();
+    }
+    auto result = result_or_error.release_value();
+
+    // 3. If font face list is empty, or all fonts in the font face list either have a status attribute of "loaded" or are system fonts, return true. Otherwise, return false.
+    if (result->set_size() == 0)
+        return true;
+
+    for (auto font_face_value : *result) {
+        auto& font_face = as<FontFace>(font_face_value.key.as_object());
+        // FIXME: We should check if the font face is a system font here.
+        if (font_face.status() != Bindings::FontFaceLoadStatus::Loaded)
+            return false;
+    }
+
+    return true;
+}
+
 // https://drafts.csswg.org/css-font-loading/#font-face-set-ready
 GC::Ref<WebIDL::Promise> FontFaceSet::ready() const
 {
