@@ -1,0 +1,12 @@
+diff --git a/include/simdjson/generic/numberparsing.h b/include/simdjson/generic/numberparsing.h
+index 5b8fdfcd..6fa1bdb9 100644
+--- a/include/simdjson/generic/numberparsing.h
++++ b/include/simdjson/generic/numberparsing.h
+@@ -609,6 +609,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+     ++p;
+     SIMDJSON_TRY( parse_exponent(src, p, exponent) );
+   }
++  is_float |= ((i == 0) && negative);
+   if (is_float) {
+     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
+     SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );

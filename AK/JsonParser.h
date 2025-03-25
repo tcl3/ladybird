@@ -6,32 +6,25 @@
 
 #pragma once
 
-#include <AK/GenericLexer.h>
 #include <AK/JsonValue.h>
+#include <simdjson.h>
 
 namespace AK {
 
-class JsonParser : private GenericLexer {
+class JsonParser {
 public:
     static ErrorOr<JsonValue> parse(StringView);
 
 private:
     explicit JsonParser(StringView input)
-        : GenericLexer(input)
+        : m_input(input)
     {
     }
 
     ErrorOr<JsonValue> parse_json();
-    ErrorOr<JsonValue> parse_helper();
+    ErrorOr<JsonValue> parse_element(simdjson::dom::element element);
 
-    ErrorOr<ByteString> consume_and_unescape_string();
-    ErrorOr<JsonValue> parse_array();
-    ErrorOr<JsonValue> parse_object();
-    ErrorOr<JsonValue> parse_number();
-    ErrorOr<JsonValue> parse_string();
-    ErrorOr<JsonValue> parse_false();
-    ErrorOr<JsonValue> parse_true();
-    ErrorOr<JsonValue> parse_null();
+    StringView m_input;
 };
 
 }

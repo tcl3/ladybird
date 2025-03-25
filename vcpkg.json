@@ -87,6 +87,7 @@
       "name": "pthread",
       "platform": "windows"
     },
+    "simdjson",
     "simdutf",
     {
       "name": "skia",
@@ -181,6 +182,10 @@
     {
       "name": "openssl",
       "version": "3.4.0#0"
+    },
+    {
+      "name": "simdjson",
+      "version": "3.12.0"
     },
     {
       "name": "simdutf",
