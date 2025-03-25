@@ -105,6 +105,8 @@ public:
 
     bool remove(StringView key);
 
+    void ensure_capacity(size_t capacity) { m_members.ensure_capacity(capacity); }
+
     String serialized() const;
     void serialize(StringBuilder&) const;
 

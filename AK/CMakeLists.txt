@@ -54,6 +54,11 @@ find_package(simdutf REQUIRED)
 swizzle_target_properties_for_swift(simdutf::simdutf)
 target_link_libraries(AK PRIVATE simdutf::simdutf)
 
+find_package(simdjson REQUIRED)
+swizzle_target_properties_for_swift(simdjson::simdjson)
+target_link_libraries(AK PRIVATE simdjson::simdjson)
+
+
 # FIXME: Make this generic for all imported shared library dependencies and apply globally
 if (BUILD_SHARED_LIBS AND NOT CMAKE_SKIP_INSTALL_RULES AND NOT "${VCPKG_INSTALLED_DIR}" STREQUAL "")
     install(IMPORTED_RUNTIME_ARTIFACTS simdutf::simdutf
