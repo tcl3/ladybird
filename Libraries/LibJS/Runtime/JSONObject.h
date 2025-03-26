@@ -7,6 +7,7 @@
 #pragma once
 
 #include <LibJS/Runtime/Object.h>
+#include <simdjson.h>
 
 namespace JS {
 
@@ -22,7 +23,7 @@ public:
     // test-js to communicate between the JS tests and the C++ test runner.
     static ThrowCompletionOr<Optional<String>> stringify_impl(VM&, Value value, Value replacer, Value space);
 
-    static Value parse_json_value(VM&, JsonValue const&);
+    static ThrowCompletionOr<Value> parse_json_string(VM&, StringView);
 
 private:
     explicit JSONObject(Realm&);
@@ -42,10 +43,8 @@ private:
     static String quote_json_string(String);
 
     // Parse helpers
-    static Object* parse_json_object(VM&, JsonObject const&);
-    static Array* parse_json_array(VM&, JsonArray const&);
     static ThrowCompletionOr<Value> internalize_json_property(VM&, Object* holder, PropertyKey const& name, FunctionObject& reviver);
-
+    static ThrowCompletionOr<Value> parse_json_element(VM&, simdjson::dom::element);
     JS_DECLARE_NATIVE_FUNCTION(stringify);
     JS_DECLARE_NATIVE_FUNCTION(parse);
 };

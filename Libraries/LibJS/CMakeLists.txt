@@ -270,6 +270,10 @@ target_link_libraries(LibJS PRIVATE LibCore LibCrypto LibFileSystem LibRegex Lib
 # Link LibUnicode publicly to ensure ICU data (which is in libicudata.a) is available in any process using LibJS.
 target_link_libraries(LibJS PUBLIC LibUnicode)
 
+find_package(simdjson REQUIRED)
+swizzle_target_properties_for_swift(simdjson::simdjson)
+target_link_libraries(LibJS PRIVATE simdjson::simdjson)
+
 # TODO: This is probably also needed on RISC-V.
 if("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "i.86.*")
     target_link_libraries(LibJS PRIVATE atomic)

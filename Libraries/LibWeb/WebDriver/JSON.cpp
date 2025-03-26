@@ -334,7 +334,7 @@ ErrorOr<JS::Value, WebDriver::Error> json_deserialize(HTML::BrowsingContext cons
     auto& vm = browsing_context.vm();
 
     SeenMap seen;
-    return internal_json_deserialize(browsing_context, JS::JSONObject::parse_json_value(vm, value), seen);
+    return internal_json_deserialize(browsing_context, TRY_OR_JS_ERROR(JS::JSONObject::parse_json_string(vm, value.serialized())), seen);
 }
 
 }
