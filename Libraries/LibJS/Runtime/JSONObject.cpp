@@ -413,10 +413,7 @@ JS_DEFINE_NATIVE_FUNCTION(JSONObject::parse)
     auto string = TRY(vm.argument(0).to_string(vm));
     auto reviver = vm.argument(1);
 
-    auto json = JsonValue::from_string(string);
-    if (json.is_error())
-        return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
-    Value unfiltered = parse_json_value(vm, json.value());
+    Value unfiltered = TRY(parse_json_string(vm, string));
     if (reviver.is_function()) {
         auto root = Object::create(realm, realm.intrinsics().object_prototype());
         auto root_name = String {};
@@ -426,42 +423,105 @@ JS_DEFINE_NATIVE_FUNCTION(JSONObject::parse)
     return unfiltered;
 }
 
-Value JSONObject::parse_json_value(VM& vm, JsonValue const& value)
+ThrowCompletionOr<Value> JSONObject::parse_json_string(VM& vm, StringView view)
 {
-    if (value.is_object())
-        return Value(parse_json_object(vm, value.as_object()));
-    if (value.is_array())
-        return Value(parse_json_array(vm, value.as_array()));
-    if (value.is_null())
-        return js_null();
-    if (auto double_value = value.get_double_with_precision_loss(); double_value.has_value())
-        return Value(double_value.value());
-    if (value.is_string())
-        return PrimitiveString::create(vm, value.as_string());
-    if (value.is_bool())
-        return Value(static_cast<bool>(value.as_bool()));
-    VERIFY_NOT_REACHED();
+    auto bytes = view.bytes();
+    if ((bytes.size() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        || (bytes.size() >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))) {
+        return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+        ;
+    }
+
+    simdjson::dom::parser parser;
+    simdjson::padded_string padded_string(view.characters_without_null_termination(), view.length());
+    simdjson::dom::element doc;
+
+    if (parser.parse(padded_string).get(doc))
+        return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+
+    return parse_json_element(vm, doc);
 }
 
-Object* JSONObject::parse_json_object(VM& vm, JsonObject const& json_object)
+ThrowCompletionOr<Value> JSONObject::parse_json_element(VM& vm, simdjson::dom::element element)
 {
-    auto& realm = *vm.current_realm();
-    auto object = Object::create(realm, realm.intrinsics().object_prototype());
-    json_object.for_each_member([&](auto& key, auto& value) {
-        object->define_direct_property(key, parse_json_value(vm, value), default_attributes);
-    });
-    return object;
-}
+    JS::Value value;
+    switch (element.type()) {
+    case simdjson::dom::element_type::NULL_VALUE:
+        value = JS::js_null();
+        break;
+    case simdjson::dom::element_type::BOOL: {
+        bool result;
+        if (element.get_bool().get(result))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+        value = Value { result };
+        break;
+    }
+    case simdjson::dom::element_type::INT64: {
+        i64 result;
+        if (element.get_int64().get(result))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+        value = Value { (double)result };
+        break;
+    }
+    case simdjson::dom::element_type::UINT64: {
+        u64 result;
+        if (element.get_uint64().get(result))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+        value = Value { element.get_uint64().value_unsafe() };
+        break;
+    }
+    case simdjson::dom::element_type::DOUBLE: {
+        double result;
+        if (element.get_double().get(result))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
 
-Array* JSONObject::parse_json_array(VM& vm, JsonArray const& json_array)
-{
-    auto& realm = *vm.current_realm();
-    auto array = MUST(Array::create(realm, 0));
-    size_t index = 0;
-    json_array.for_each([&](auto& value) {
-        array->define_direct_property(index++, parse_json_value(vm, value), default_attributes);
-    });
-    return array;
+        value = Value { result };
+        break;
+    }
+    case simdjson::dom::element_type::STRING: {
+        std::string_view string_view;
+        if (element.get_string().get(string_view))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+        StringView ak_string_view { string_view.data(), string_view.size() };
+        auto string = String::from_utf8_without_validation(ak_string_view.bytes());
+        value = Value { PrimitiveString::create(vm, string) };
+        break;
+    }
+    case simdjson::dom::element_type::ARRAY: {
+        auto& realm = *vm.current_realm();
+        auto result_array = MUST(Array::create(realm, 0));
+        simdjson::dom::array array;
+        if (element.get_array().get(array))
+            return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
+
+        size_t index = 0;
+        for (auto child : array) {
+            auto child_value = TRY(parse_json_element(vm, child));
+            result_array->define_direct_property(index++, child_value, default_attributes);
+        }
+        value = Value { result_array };
+        break;
+    }
+    case simdjson::dom::element_type::OBJECT: {
+        auto& realm = *vm.current_realm();
+        auto result_object = Object::create(realm, realm.intrinsics().object_prototype());
+
+        simdjson::dom::object object;
+        if (element.get_object().get(object))
+            return vm.throw_completion<SyntaxError>("Error parsing JSON object"sv);
+
+        for (auto field : object) {
+            StringView view { field.key.data(), field.key.size() };
+            auto key = String::from_utf8_without_validation(view.bytes());
+            auto object_value = TRY(parse_json_element(vm, field.value));
+            result_object->define_direct_property(key, object_value, default_attributes);
+        }
+        value = Value { result_object };
+        break;
+    }
+    }
+
+    return value;
 }
 
 // 25.5.1.1 InternalizeJSONProperty ( holder, name, reviver ), https://tc39.es/ecma262/#sec-internalizejsonproperty

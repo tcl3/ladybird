@@ -312,11 +312,7 @@ static JS::ThrowCompletionOr<JS::Value> load_json_impl(JS::VM& vm)
     if (file_contents_or_error.is_error())
         return vm.throw_completion<JS::Error>(TRY_OR_THROW_OOM(vm, String::formatted("Failed to read '{}': {}", filename, file_contents_or_error.error())));
 
-    auto json = JsonValue::from_string(file_contents_or_error.value());
-    if (json.is_error())
-        return vm.throw_completion<JS::SyntaxError>(JS::ErrorType::JsonMalformed);
-
-    return JS::JSONObject::parse_json_value(vm, json.value());
+    return JS::JSONObject::parse_json_string(vm, file_contents_or_error.value());
 }
 
 void ReplObject::initialize(JS::Realm& realm)
