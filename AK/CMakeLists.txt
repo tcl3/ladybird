@@ -8,6 +8,7 @@ set(SOURCES
     DeprecatedFlyString.cpp
     ByteString.cpp
     Error.cpp
+    FallbackJsonParser.cpp
     FloatingPointStringConversions.cpp
     FlyString.cpp
     Format.cpp

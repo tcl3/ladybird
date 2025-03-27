@@ -21,8 +21,8 @@ private:
     {
     }
 
-    ErrorOr<JsonValue> parse_json();
-    ErrorOr<JsonValue> parse_element(simdjson::dom::element element);
+    ErrorOr<JsonValue, simdjson::error_code> parse_json();
+    ErrorOr<JsonValue, simdjson::error_code> parse_element(simdjson::dom::element element);
 
     StringView m_input;
 };

@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/FallbackJsonParser.h>
+#include <AK/GenericShorthands.h>
 #include <AK/JsonArray.h>
 #include <AK/JsonObject.h>
 #include <AK/JsonParser.h>
@@ -14,10 +16,20 @@ namespace AK {
 ErrorOr<JsonValue> JsonParser::parse(StringView input)
 {
     JsonParser parser(input);
-    return parser.parse_json();
+    auto result_or_error = parser.parse_json();
+    if (result_or_error.is_error()) {
+        auto error_code = result_or_error.error();
+        if (first_is_one_of(error_code, simdjson::error_code::STRING_ERROR, simdjson::error_code::UTF8_ERROR)) {
+            return FallbackJsonParser::parse(input);
+        }
+
+        return Error::from_string_literal("Unable to parse JSON");
+    }
+
+    return result_or_error.release_value();
 }
 
-ErrorOr<JsonValue> JsonParser::parse_element(simdjson::dom::element const element)
+ErrorOr<JsonValue, simdjson::error_code> JsonParser::parse_element(simdjson::dom::element const element)
 {
     JsonValue value;
     switch (element.type()) {
@@ -26,37 +38,38 @@ ErrorOr<JsonValue> JsonParser::parse_element(simdjson::dom::element const elemen
         break;
     case simdjson::dom::element_type::BOOL: {
         bool result;
-        if (element.get_bool().get(result))
-            return Error::from_string_literal("Error parsing JSON bool value");
+        if (auto error = element.get_bool().get(result))
+            return error;
         value = JsonValue { result };
         break;
     }
     case simdjson::dom::element_type::INT64: {
         i64 result;
-        if (element.get_int64().get(result))
-            return Error::from_string_literal("Error parsing JSON integer value");
+        if (auto error = element.get_int64().get(result))
+            return error;
         value = JsonValue { result };
         break;
     }
     case simdjson::dom::element_type::UINT64: {
         u64 result;
-        if (element.get_uint64().get(result))
-            return Error::from_string_literal("Error parsing JSON unsigned integer value");
+        if (auto error = element.get_uint64().get(result))
+            return error;
         value = JsonValue { element.get_uint64().value_unsafe() };
         break;
     }
     case simdjson::dom::element_type::DOUBLE: {
         double result;
-        if (element.get_double().get(result))
-            return Error::from_string_literal("Error parsing JSON double value");
+        if (auto error = element.get_double().get(result))
+            return error;
 
         value = JsonValue { result };
         break;
     }
     case simdjson::dom::element_type::STRING: {
         std::string_view string_view;
-        if (element.get_string().get(string_view))
-            return Error::from_string_literal("Error parsing JSON string value");
+
+        if (auto error = element.get_string().get(string_view))
+            return error;
         StringView ak_string_view { string_view.data(), string_view.size() };
         auto string = String::from_utf8_without_validation(ak_string_view.bytes());
         value = JsonValue { move(string) };
@@ -65,8 +78,8 @@ ErrorOr<JsonValue> JsonParser::parse_element(simdjson::dom::element const elemen
     case simdjson::dom::element_type::ARRAY: {
         JsonArray result_array;
         simdjson::dom::array array;
-        if (element.get_array().get(array))
-            return Error::from_string_literal("Error parsing JSON array");
+        if (auto error = element.get_array().get(array))
+            return error;
         result_array.ensure_capacity(array.size());
         for (auto child : array) {
             result_array.must_append(TRY(parse_element(child)));
@@ -77,8 +90,8 @@ ErrorOr<JsonValue> JsonParser::parse_element(simdjson::dom::element const elemen
     case simdjson::dom::element_type::OBJECT: {
         JsonObject result_object;
         simdjson::dom::object object;
-        if (element.get_object().get(object))
-            return Error::from_string_literal("Error parsing JSON object");
+        if (auto error = element.get_object().get(object))
+            return error;
 
         result_object.ensure_capacity(object.size());
         for (auto field : object) {
@@ -95,20 +108,21 @@ ErrorOr<JsonValue> JsonParser::parse_element(simdjson::dom::element const elemen
     return value;
 }
 
-ErrorOr<JsonValue> JsonParser::parse_json()
+ErrorOr<JsonValue, simdjson::error_code> JsonParser::parse_json()
 {
     auto bytes = m_input.bytes();
     if ((bytes.size() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
         || (bytes.size() >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF)))) {
-        return Error::from_string_literal("Encountered BOM while parsing JSON");
+        // Correct error code?
+        return simdjson::error_code::STRING_ERROR;
     }
 
     simdjson::dom::parser parser;
     simdjson::padded_string padded_string(m_input.characters_without_null_termination(), m_input.length());
     simdjson::dom::element element;
 
-    if (parser.parse(padded_string).get(element))
-        return Error::from_string_literal("Error parsing JSON root element");
+    if (auto error = parser.parse(padded_string).get(element))
+        return error;
 
     return parse_element(element);
 }
