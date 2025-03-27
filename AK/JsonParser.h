@@ -22,7 +22,8 @@ private:
     }
 
     ErrorOr<JsonValue, simdjson::error_code> parse_json();
-    ErrorOr<JsonValue, simdjson::error_code> parse_element(simdjson::dom::element element);
+    ErrorOr<JsonValue, simdjson::error_code> parse_value(simdjson::ondemand::value value);
+    ErrorOr<JsonValue, simdjson::error_code> parse_scalar(auto value_or_document);
 
     StringView m_input;
 };
