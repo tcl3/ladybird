@@ -8,6 +8,7 @@
 #pragma once
 
 #include <AK/Optional.h>
+#include <AK/OwnPtr.h>
 #include <AK/String.h>
 #include <AK/StringView.h>
 #include <LibGC/CellAllocator.h>
@@ -19,7 +20,7 @@
 
 namespace JS {
 
-class PrimitiveString final : public Cell {
+class PrimitiveString : public Cell {
     GC_CELL(PrimitiveString, Cell);
     GC_DECLARE_ALLOCATOR(PrimitiveString);
 
@@ -60,13 +61,31 @@ private:
     };
     void resolve_rope_if_needed(EncodingPreference) const;
 
-    mutable bool m_is_rope { false };
+    bool is_rope() const { return m_rope_data; }
 
-    mutable GC::Ptr<PrimitiveString> m_lhs;
-    mutable GC::Ptr<PrimitiveString> m_rhs;
+    GC::Ptr<PrimitiveString> rhs() const
+    {
+        if (!m_rope_data)
+            return {};
+        return m_rope_data->rhs;
+    }
 
-    mutable Optional<String> m_utf8_string;
+    GC::Ptr<PrimitiveString> lhs() const
+    {
+        if (!m_rope_data)
+            return {};
+        return m_rope_data->lhs;
+    }
+
+    struct RopeStringData {
+        mutable GC::Ptr<PrimitiveString> lhs;
+        mutable GC::Ptr<PrimitiveString> rhs;
+    };
+
+    mutable OwnPtr<RopeStringData> m_rope_data;
+    ;
     mutable Optional<Utf16String> m_utf16_string;
+    mutable Optional<String> m_utf8_string;
 };
 
 }

@@ -22,9 +22,7 @@ namespace JS {
 GC_DEFINE_ALLOCATOR(PrimitiveString);
 
 PrimitiveString::PrimitiveString(PrimitiveString& lhs, PrimitiveString& rhs)
-    : m_is_rope(true)
-    , m_lhs(&lhs)
-    , m_rhs(&rhs)
+    : m_rope_data(adopt_own(*new RopeStringData { lhs, rhs }))
 {
 }
 
@@ -49,15 +47,15 @@ PrimitiveString::~PrimitiveString()
 void PrimitiveString::visit_edges(Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
-    if (m_is_rope) {
-        visitor.visit(m_lhs);
-        visitor.visit(m_rhs);
+    if (is_rope()) {
+        visitor.visit(m_rope_data->lhs);
+        visitor.visit(m_rope_data->rhs);
     }
 }
 
 bool PrimitiveString::is_empty() const
 {
-    if (m_is_rope) {
+    if (is_rope()) {
         // NOTE: We never make an empty rope string.
         return false;
     }
@@ -197,7 +195,7 @@ GC::Ref<PrimitiveString> PrimitiveString::create(VM& vm, PrimitiveString& lhs, P
 
 void PrimitiveString::resolve_rope_if_needed(EncodingPreference preference) const
 {
-    if (!m_is_rope)
+    if (!is_rope())
         return;
 
     // This vector will hold all the pieces of the rope that need to be assembled
@@ -208,13 +206,13 @@ void PrimitiveString::resolve_rope_if_needed(EncodingPreference preference) cons
     // NOTE: We traverse the rope tree without using recursion, since we'd run out of
     //       stack space quickly when handling a long sequence of unresolved concatenations.
     Vector<PrimitiveString const*> stack;
-    stack.append(m_rhs);
-    stack.append(m_lhs);
+    stack.append(rhs());
+    stack.append(lhs());
     while (!stack.is_empty()) {
         auto const* current = stack.take_last();
-        if (current->m_is_rope) {
-            stack.append(current->m_rhs);
-            stack.append(current->m_lhs);
+        if (current->is_rope()) {
+            stack.append(current->rhs());
+            stack.append(current->lhs());
             continue;
         }
 
@@ -232,9 +230,7 @@ void PrimitiveString::resolve_rope_if_needed(EncodingPreference preference) cons
             code_units.extend(current->utf16_string().string());
 
         m_utf16_string = Utf16String::create(move(code_units));
-        m_is_rope = false;
-        m_lhs = nullptr;
-        m_rhs = nullptr;
+        m_rope_data = nullptr;
         return;
     }
 
@@ -301,9 +297,7 @@ void PrimitiveString::resolve_rope_if_needed(EncodingPreference preference) cons
 
     // NOTE: We've already produced valid UTF-8 above, so there's no need for additional validation.
     m_utf8_string = builder.to_string_without_validation();
-    m_is_rope = false;
-    m_lhs = nullptr;
-    m_rhs = nullptr;
+    m_rope_data = nullptr;
 }
 
 }
