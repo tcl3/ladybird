@@ -51,3 +51,29 @@ private:
 };
 
 }
+
+namespace AK {
+
+template<>
+inline JS::Value AK::JsonParser<JS::Value, JS::Object, JS::Array>::construct_value() { return JS::Value {}; }
+
+template<>
+template<>
+JS::Value AK::JsonParser<JS::Value, JS::Object, JS::Array>::construct_value(auto value) { return JS::Value(value); }
+
+template<>
+template<typename... Args>
+JS::Object AK::JsonParser<JS::Value, JS::Object, JS::Array>::construct_object(Args&&... args) { return JS::Object::create(forward<Args>(args)...); }
+
+template<>
+template<typename... Args>
+JS::Array AK::JsonParser<JS::Value, JS::Object, JS::Array>::construct_array(Args&&... args) { return MUST(JS::Array::create(forward<Args>(args)...)); }
+
+template<>
+inline void AK::JsonParser<JS::Value, JS::Object, JS::Array>::set_array_index(JS::Array& array, size_t index, JS::Value value) { array.define_direct_property(index, move(value), JS::default_attributes); }
+
+template<>
+template<>
+void AK::JsonParser<JS::Value, JS::Object, JS::Array>::set_object_key(JS::Object& object, auto key, JS::Value value) { object.define_direct_property(key, move(value), JS::default_attributes); }
+
+}

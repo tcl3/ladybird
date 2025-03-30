@@ -413,10 +413,7 @@ JS_DEFINE_NATIVE_FUNCTION(JSONObject::parse)
     auto string = TRY(vm.argument(0).to_string(vm));
     auto reviver = vm.argument(1);
 
-    auto json = JsonValue::from_string(string);
-    if (json.is_error())
-        return vm.throw_completion<SyntaxError>(ErrorType::JsonMalformed);
-    Value unfiltered = parse_json_value(vm, json.value());
+    auto unfiltered = MUST(AK::JsonParser<Value, Object, Array>::parse(string.bytes_as_string_view()));
     if (reviver.is_function()) {
         auto root = Object::create(realm, realm.intrinsics().object_prototype());
         auto root_name = String {};
@@ -424,44 +421,6 @@ JS_DEFINE_NATIVE_FUNCTION(JSONObject::parse)
         return internalize_json_property(vm, root, root_name, reviver.as_function());
     }
     return unfiltered;
-}
-
-Value JSONObject::parse_json_value(VM& vm, JsonValue const& value)
-{
-    if (value.is_object())
-        return Value(parse_json_object(vm, value.as_object()));
-    if (value.is_array())
-        return Value(parse_json_array(vm, value.as_array()));
-    if (value.is_null())
-        return js_null();
-    if (auto double_value = value.get_double_with_precision_loss(); double_value.has_value())
-        return Value(double_value.value());
-    if (value.is_string())
-        return PrimitiveString::create(vm, value.as_string());
-    if (value.is_bool())
-        return Value(static_cast<bool>(value.as_bool()));
-    VERIFY_NOT_REACHED();
-}
-
-Object* JSONObject::parse_json_object(VM& vm, JsonObject const& json_object)
-{
-    auto& realm = *vm.current_realm();
-    auto object = Object::create(realm, realm.intrinsics().object_prototype());
-    json_object.for_each_member([&](auto& key, auto& value) {
-        object->define_direct_property(key, parse_json_value(vm, value), default_attributes);
-    });
-    return object;
-}
-
-Array* JSONObject::parse_json_array(VM& vm, JsonArray const& json_array)
-{
-    auto& realm = *vm.current_realm();
-    auto array = MUST(Array::create(realm, 0));
-    size_t index = 0;
-    json_array.for_each([&](auto& value) {
-        array->define_direct_property(index++, parse_json_value(vm, value), default_attributes);
-    });
-    return array;
 }
 
 // 25.5.1.1 InternalizeJSONProperty ( holder, name, reviver ), https://tc39.es/ecma262/#sec-internalizejsonproperty
@@ -495,4 +454,8 @@ ThrowCompletionOr<Value> JSONObject::internalize_json_property(VM& vm, Object* h
     return TRY(call(vm, reviver, holder, PrimitiveString::create(vm, name.to_string()), value));
 }
 
+}
+
+namespace AK {
+template class AK::JsonParser<JS::Value, JS::Object, JS::Array>;
 }

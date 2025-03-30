@@ -18,7 +18,8 @@ constexpr bool is_space(int ch)
     return ch == '\t' || ch == '\n' || ch == '\r' || ch == ' ';
 }
 
-ErrorOr<JsonValue> JsonParser::parse(StringView input)
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse(StringView input)
 {
     JsonParser parser(input);
     return parser.parse_json();
@@ -37,7 +38,8 @@ ErrorOr<JsonValue> JsonParser::parse(StringView input)
 //                             │                       │
 //                             ╰─── u[0-9A-Za-z]{4}  ──╯
 //
-ErrorOr<ByteString> JsonParser::consume_and_unescape_string()
+template<class TValue, class TObject, class TArray>
+ErrorOr<ByteString> JsonParser<TValue, TObject, TArray>::consume_and_unescape_string()
 {
     if (!consume_specific('"'))
         return Error::from_string_literal("JsonParser: Expected '\"'");
@@ -135,9 +137,10 @@ ErrorOr<ByteString> JsonParser::consume_and_unescape_string()
     return final_sb.to_byte_string();
 }
 
-ErrorOr<JsonValue> JsonParser::parse_object()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_object()
 {
-    JsonObject object;
+    auto object = construct_object();
     if (!consume_specific('{'))
         return Error::from_string_literal("JsonParser: Expected '{'");
     for (;;) {
@@ -145,13 +148,14 @@ ErrorOr<JsonValue> JsonParser::parse_object()
         if (peek() == '}')
             break;
         ignore_while(is_space);
-        auto name = TRY(consume_and_unescape_string());
+        auto x = TRY(consume_and_unescape_string());
+        auto name = String::from_utf8_without_validation(x.bytes());
         ignore_while(is_space);
         if (!consume_specific(':'))
             return Error::from_string_literal("JsonParser: Expected ':'");
         ignore_while(is_space);
         auto value = TRY(parse_helper());
-        object.set(name, move(value));
+        set_object_key(object, move(name), move(value));
         ignore_while(is_space);
         if (peek() == '}')
             break;
@@ -163,20 +167,22 @@ ErrorOr<JsonValue> JsonParser::parse_object()
     }
     if (!consume_specific('}'))
         return Error::from_string_literal("JsonParser: Expected '}'");
-    return JsonValue { move(object) };
+
+    return construct_value(move(object));
 }
 
-ErrorOr<JsonValue> JsonParser::parse_array()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_array()
 {
-    JsonArray array;
+    auto array = construct_array();
     if (!consume_specific('['))
         return Error::from_string_literal("JsonParser: Expected '['");
-    for (;;) {
+    for (size_t i = 0;; ++i) {
         ignore_while(is_space);
         if (peek() == ']')
             break;
         auto element = TRY(parse_helper());
-        TRY(array.append(move(element)));
+        set_array_index(array, i, move(element));
         ignore_while(is_space);
         if (peek() == ']')
             break;
@@ -189,16 +195,18 @@ ErrorOr<JsonValue> JsonParser::parse_array()
     ignore_while(is_space);
     if (!consume_specific(']'))
         return Error::from_string_literal("JsonParser: Expected ']'");
-    return JsonValue { move(array) };
+    return JsonValue(move(array));
 }
 
-ErrorOr<JsonValue> JsonParser::parse_string()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_string()
 {
     auto string = TRY(consume_and_unescape_string());
     return JsonValue(move(string));
 }
 
-ErrorOr<JsonValue> JsonParser::parse_number()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_number()
 {
     Vector<char, 32> number_buffer;
 
@@ -286,28 +294,32 @@ ErrorOr<JsonValue> JsonParser::parse_number()
     return fallback_to_double_parse();
 }
 
-ErrorOr<JsonValue> JsonParser::parse_true()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_true()
 {
     if (!consume_specific("true"sv))
         return Error::from_string_literal("JsonParser: Expected 'true'");
     return JsonValue(true);
 }
 
-ErrorOr<JsonValue> JsonParser::parse_false()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_false()
 {
     if (!consume_specific("false"sv))
         return Error::from_string_literal("JsonParser: Expected 'false'");
     return JsonValue(false);
 }
 
-ErrorOr<JsonValue> JsonParser::parse_null()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_null()
 {
     if (!consume_specific("null"sv))
         return Error::from_string_literal("JsonParser: Expected 'null'");
     return JsonValue {};
 }
 
-ErrorOr<JsonValue> JsonParser::parse_helper()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_helper()
 {
     ignore_while(is_space);
     auto type_hint = peek();
@@ -341,7 +353,8 @@ ErrorOr<JsonValue> JsonParser::parse_helper()
     return Error::from_string_literal("JsonParser: Unexpected character");
 }
 
-ErrorOr<JsonValue> JsonParser::parse_json()
+template<class TValue, class TObject, class TArray>
+ErrorOr<TValue> JsonParser<TValue, TObject, TArray>::parse_json()
 {
     auto result = TRY(parse_helper());
     ignore_while(is_space);
@@ -349,5 +362,7 @@ ErrorOr<JsonValue> JsonParser::parse_json()
         return Error::from_string_literal("JsonParser: Didn't consume all input");
     return result;
 }
+
+template class JsonParser<JsonValue, JsonObject, JsonArray>;
 
 }
