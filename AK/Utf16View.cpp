@@ -281,6 +281,72 @@ Utf16View Utf16View::unicode_substring_view(size_t code_point_offset, size_t cod
     VERIFY_NOT_REACHED();
 }
 
+Optional<size_t> Utf16View::find_code_unit_offset(Utf16View const& needle, size_t start_offset) const
+{
+    if (needle.is_empty())
+        return {};
+
+    size_t offset = start_offset;
+    Utf16CodePointIterator it;
+    if (start_offset == 0)
+        it = begin();
+    else
+        it = unicode_substring_view(start_offset).begin();
+
+    if (it == end())
+        return {};
+
+    auto needle_iterator = needle.begin();
+    while (it != end()) {
+        if (*it == *needle_iterator) {
+            ++needle_iterator;
+        } else {
+            needle_iterator = needle.begin();
+            offset = start_offset;
+            continue;
+        }
+        ++offset;
+        if (needle_iterator == needle.end())
+            return offset;
+        ++it;
+    }
+
+    return {};
+}
+
+Optional<size_t> Utf16View::find_code_unit_offset_ignoring_case(Utf16View const& needle, size_t start_offset) const
+{
+    if (needle.is_empty() || start_offset >= length_in_code_units())
+        return {};
+
+    size_t offset = start_offset;
+    auto it = begin();
+    auto current_offset = start_offset;
+    while (current_offset > 0) {
+        if (it == end())
+            return {};
+        ++it;
+        --current_offset;
+    }
+
+    auto needle_iterator = needle.begin();
+    while (it != end() && needle_iterator != needle.end()) {
+        if (to_ascii_lowercase(*it) == to_ascii_lowercase(*needle_iterator)) {
+            ++needle_iterator;
+            ++offset;
+        } else {
+            needle_iterator = needle.begin();
+            offset = start_offset;
+        }
+        ++it;
+    }
+
+    if (needle_iterator == needle.end())
+        return offset - needle.length_in_code_units();
+
+    return {};
+}
+
 bool Utf16View::starts_with(Utf16View const& needle) const
 {
     if (needle.is_empty())

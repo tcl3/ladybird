@@ -60,7 +60,7 @@ void Viewport::update_text_blocks()
 
         if (layout_node.is_box() || layout_node.is_generated()) {
             if (!builder.is_empty()) {
-                text_blocks.append({ builder.to_string_without_validation(), text_positions });
+                text_blocks.append({ MUST(AK::utf8_to_utf16(builder.string_view())), text_positions });
                 current_start_position = 0;
                 text_positions.clear_with_capacity();
                 builder.clear();
@@ -80,7 +80,9 @@ void Viewport::update_text_blocks()
                 }
 
                 auto const& current_node_text = text_node->text_for_rendering();
-                current_start_position += current_node_text.bytes_as_string_view().length();
+                auto const& current_node_text_utf16 = MUST(AK::utf8_to_utf16(current_node_text));
+                Utf16View current_node_text_utf16_view { current_node_text_utf16 };
+                current_start_position += current_node_text_utf16_view.length_in_code_units();
                 builder.append(move(current_node_text));
             }
         }
@@ -89,7 +91,7 @@ void Viewport::update_text_blocks()
     });
 
     if (!builder.is_empty())
-        text_blocks.append({ builder.to_string_without_validation(), text_positions });
+        text_blocks.append({ MUST(AK::utf8_to_utf16(builder.string_view())), text_positions });
 
     m_text_blocks = move(text_blocks);
 }

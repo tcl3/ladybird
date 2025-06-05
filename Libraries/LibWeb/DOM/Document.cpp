@@ -6164,12 +6164,15 @@ Vector<GC::Root<DOM::Range>> Document::find_matching_text(String const& query, C
     for (auto const& text_block : text_blocks) {
         size_t offset = 0;
         size_t i = 0;
-        auto const& text = text_block.text;
-        auto* match_start_position = &text_block.positions[0];
+        auto utf16_text = text_block.text;
+        Utf16View text_view { utf16_text.data };
+        auto utf16_query = MUST(AK::utf8_to_utf16(query));
+        Utf16View query_view { utf16_query.data };
+        auto* match_start_position = text_block.positions.data();
         while (true) {
             auto match_index = case_sensitivity == CaseSensitivity::CaseInsensitive
-                ? text.find_byte_offset_ignoring_case(query, offset)
-                : text.find_byte_offset(query, offset);
+                ? text_view.find_code_unit_offset_ignoring_case(query_view, offset)
+                : text_view.find_code_unit_offset_ignoring_case(query_view, offset);
             if (!match_index.has_value())
                 break;
 
@@ -6180,16 +6183,16 @@ Vector<GC::Root<DOM::Range>> Document::find_matching_text(String const& query, C
             auto& start_dom_node = match_start_position->dom_node;
 
             auto* match_end_position = match_start_position;
-            for (; i < text_block.positions.size() - 1 && (match_index.value() + query.bytes_as_string_view().length() > text_block.positions[i + 1].start_offset); ++i)
+            for (; i < text_block.positions.size() - 1 && (match_index.value() + query_view.length_in_code_units() > text_block.positions[i + 1].start_offset); ++i)
                 match_end_position = &text_block.positions[i + 1];
 
             auto& end_dom_node = match_end_position->dom_node;
-            auto end_position = match_index.value() + query.bytes_as_string_view().length() - match_end_position->start_offset;
+            auto end_position = match_index.value() + query_view.length_in_code_units() - match_end_position->start_offset;
 
             matches.append(Range::create(start_dom_node, start_position, end_dom_node, end_position));
             match_start_position = match_end_position;
-            offset = match_index.value() + query.bytes_as_string_view().length() + 1;
-            if (offset >= text.bytes_as_string_view().length())
+            offset = match_index.value() + query_view.length_in_code_units() + 1;
+            if (offset >= text_view.length_in_code_units())
                 break;
         }
     }
