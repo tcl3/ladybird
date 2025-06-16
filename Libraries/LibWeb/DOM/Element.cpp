@@ -3968,9 +3968,6 @@ void Element::play_or_cancel_animations_after_display_property_change()
     auto play_or_cancel_depending_on_display = [&](Animations::Animation& animation) {
         if (has_display_none_inclusive_ancestor) {
             animation.cancel();
-        } else {
-            HTML::TemporaryExecutionContext context(realm());
-            animation.play().release_value_but_fixme_should_propagate_errors();
         }
     };
 

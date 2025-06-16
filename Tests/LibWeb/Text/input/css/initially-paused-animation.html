@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<style>
+    body {
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f0f0f0;
+    }
+
+    div {
+        width: 100px;
+        height: 100px;
+        background-color: #3498db;
+        position: relative;
+        animation: moveRight 0.1s linear;
+        animation-play-state: paused;
+    }
+
+    @keyframes moveRight {
+        0% {
+            left: 0;
+        }
+
+        100% {
+            left: 100px;
+        }
+    }
+</style>
+<body>
+<script src="../include.js"></script>
+<div id="d"></div>
+<script>
+    test(() => {
+        let animation = document.getElementById("d").getAnimations()[0];
+        println(animation.playState);
+        animation.play();
+        println(animation.playState);
+    });
+</script>
