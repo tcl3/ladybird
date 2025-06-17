@@ -659,7 +659,7 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
         invalidation = CSS::RequiredInvalidationAfterStyleChange::full();
     }
 
-    auto old_display_is_none = m_computed_properties ? m_computed_properties->display().is_none() : true;
+    auto old_display_is_none = m_computed_properties ? m_computed_properties->display().is_none() : false;
     auto new_display_is_none = new_computed_properties->display().is_none();
 
     set_computed_properties(move(new_computed_properties));
@@ -669,7 +669,7 @@ CSS::RequiredInvalidationAfterStyleChange Element::recompute_style()
             if (!node.is_element())
                 return TraversalDecision::Continue;
             auto& element = static_cast<Element&>(node);
-            element.play_or_cancel_animations_after_display_property_change();
+            element.play_or_cancel_animations_after_display_property_change(old_display_is_none);
             return TraversalDecision::Continue;
         });
     }
@@ -3952,7 +3952,7 @@ FlyString const& Element::html_uppercased_qualified_name() const
     return m_html_uppercased_qualified_name.value();
 }
 
-void Element::play_or_cancel_animations_after_display_property_change()
+void Element::play_or_cancel_animations_after_display_property_change(bool old_value_none)
 {
     // OPTIMIZATION: We don't care about animations in disconnected subtrees.
     if (!is_connected())
@@ -3968,6 +3968,9 @@ void Element::play_or_cancel_animations_after_display_property_change()
     auto play_or_cancel_depending_on_display = [&](Animations::Animation& animation) {
         if (has_display_none_inclusive_ancestor) {
             animation.cancel();
+        } else if (old_value_none) {
+            HTML::TemporaryExecutionContext context(realm());
+            animation.play().release_value_but_fixme_should_propagate_errors();
         }
     };
 
