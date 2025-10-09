@@ -129,7 +129,7 @@ public:
     {
     }
 
-    explicit Value(Reference ref)
+    explicit Value(Reference const& ref)
     {
         // Reference variant is encoded in the high storage of the u128:
         // 0: funcref
@@ -604,7 +604,7 @@ private:
 
 class Frame {
 public:
-    explicit Frame(ModuleInstance const& module, Vector<Value> locals, Expression const& expression, size_t arity)
+    explicit Frame(ModuleInstance const& module, Vector<Value> const& locals, Expression const& expression, size_t arity)
         : m_module(module)
         , m_locals(move(locals))
         , m_expression(expression)

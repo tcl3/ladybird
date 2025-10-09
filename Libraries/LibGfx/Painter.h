@@ -19,7 +19,7 @@ namespace Gfx {
 
 class Painter {
 public:
-    static NonnullOwnPtr<Gfx::Painter> create(NonnullRefPtr<Gfx::Bitmap>);
+    static NonnullOwnPtr<Gfx::Painter> create(NonnullRefPtr<Gfx::Bitmap> const&);
 
     virtual ~Painter();
 

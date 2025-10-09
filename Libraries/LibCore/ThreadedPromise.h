@@ -146,7 +146,7 @@ public:
 
 private:
     template<typename F>
-    static void deferred_handler_check(NonnullRefPtr<ThreadedPromise> self, F&& function)
+    static void deferred_handler_check(NonnullRefPtr<ThreadedPromise> const& self, F&& function)
     {
         Threading::MutexLocker locker { self->m_mutex };
         if (self->m_rejection_handler) {

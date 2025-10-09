@@ -1019,7 +1019,7 @@ void Application::get_dom_node_inner_html(DevTools::TabDescription const& descri
         return;
     }
 
-    view->on_received_dom_node_html = [&view = *view, on_complete = move(on_complete)](auto html) {
+    view->on_received_dom_node_html = [&view = *view, on_complete = move(on_complete)](auto const& html) {
         view.on_received_dom_node_html = nullptr;
         on_complete(html);
     };
@@ -1035,7 +1035,7 @@ void Application::get_dom_node_outer_html(DevTools::TabDescription const& descri
         return;
     }
 
-    view->on_received_dom_node_html = [&view = *view, on_complete = move(on_complete)](auto html) {
+    view->on_received_dom_node_html = [&view = *view, on_complete = move(on_complete)](auto const& html) {
         view.on_received_dom_node_html = nullptr;
         on_complete(html);
     };

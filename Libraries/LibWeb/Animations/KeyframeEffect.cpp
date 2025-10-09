@@ -579,7 +579,7 @@ static WebIDL::ExceptionOr<Vector<BaseKeyframe>> process_a_keyframes_argument(JS
 }
 
 // https://www.w3.org/TR/css-animations-2/#keyframe-processing
-void KeyframeEffect::generate_initial_and_final_frames(RefPtr<KeyFrameSet> keyframe_set, HashTable<CSS::PropertyID> const& animated_properties)
+void KeyframeEffect::generate_initial_and_final_frames(RefPtr<KeyFrameSet> const& keyframe_set, HashTable<CSS::PropertyID> const& animated_properties)
 {
     // 1. Find or create the initial keyframe, a keyframe with a keyframe offset of 0%, default timing function
     //    as its keyframe timing function, and default composite as its keyframe composite.
@@ -797,7 +797,7 @@ Optional<String> KeyframeEffect::pseudo_element() const
 }
 
 // https://drafts.csswg.org/web-animations-1/#dom-keyframeeffect-pseudoelement
-WebIDL::ExceptionOr<void> KeyframeEffect::set_pseudo_element(Optional<String> value)
+WebIDL::ExceptionOr<void> KeyframeEffect::set_pseudo_element(Optional<String> const& value)
 {
     // On setting, sets the target pseudo-selector of the animation effect to the result of
     // pseudo-element parsing on the provided value, defined as the following:

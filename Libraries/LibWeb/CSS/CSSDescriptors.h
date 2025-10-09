@@ -46,6 +46,6 @@ private:
 };
 
 bool is_shorthand(AtRuleID, DescriptorID);
-void for_each_expanded_longhand(AtRuleID, DescriptorID, RefPtr<StyleValue const>, Function<void(DescriptorID, RefPtr<StyleValue const>)>);
+void for_each_expanded_longhand(AtRuleID, DescriptorID, RefPtr<StyleValue const> const&, Function<void(DescriptorID, RefPtr<StyleValue const>)>);
 
 }

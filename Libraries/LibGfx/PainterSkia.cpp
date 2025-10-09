@@ -112,7 +112,7 @@ static SkPaint to_skia_paint(Gfx::PaintStyle const& style, Optional<Gfx::Filter 
     return paint;
 }
 
-PainterSkia::PainterSkia(NonnullRefPtr<Gfx::PaintingSurface> painting_surface)
+PainterSkia::PainterSkia(NonnullRefPtr<Gfx::PaintingSurface> const& painting_surface)
     : m_impl(adopt_own(*new Impl { move(painting_surface) }))
 {
 }

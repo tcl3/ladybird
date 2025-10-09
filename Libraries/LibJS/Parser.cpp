@@ -2825,7 +2825,7 @@ void Parser::parse_statement_list(ScopeNode& output_node, AllowLabelledFunction 
 }
 
 // FunctionBody, https://tc39.es/ecma262/#prod-FunctionBody
-NonnullRefPtr<FunctionBody const> Parser::parse_function_body(NonnullRefPtr<FunctionParameters const> parameters, FunctionKind function_kind, FunctionParsingInsights& parsing_insights)
+NonnullRefPtr<FunctionBody const> Parser::parse_function_body(NonnullRefPtr<FunctionParameters const> const& parameters, FunctionKind function_kind, FunctionParsingInsights& parsing_insights)
 {
     auto rule_start = push_start();
     auto function_body = create_ast_node<FunctionBody>({ m_source_code, rule_start.position(), position() });
@@ -4050,7 +4050,7 @@ NonnullRefPtr<Statement const> Parser::parse_for_statement()
     return create_ast_node<ForStatement>({ m_source_code, rule_start.position(), position() }, move(init), move(test), move(update), move(body));
 }
 
-NonnullRefPtr<Statement const> Parser::parse_for_in_of_statement(NonnullRefPtr<ASTNode const> lhs, IsForAwaitLoop is_for_await_loop)
+NonnullRefPtr<Statement const> Parser::parse_for_in_of_statement(NonnullRefPtr<ASTNode const> const& lhs, IsForAwaitLoop is_for_await_loop)
 {
     Variant<NonnullRefPtr<ASTNode const>, NonnullRefPtr<BindingPattern const>> for_declaration = lhs;
     auto rule_start = push_start();
@@ -5207,7 +5207,7 @@ Parser::ForbiddenTokens Parser::ForbiddenTokens::forbid(std::initializer_list<To
 template JS_API NonnullRefPtr<FunctionExpression> Parser::parse_function_node(u16, Optional<Position> const&);
 template NonnullRefPtr<FunctionDeclaration> Parser::parse_function_node(u16, Optional<Position> const&);
 
-NonnullRefPtr<Identifier const> Parser::create_identifier_and_register_in_current_scope(SourceRange range, Utf16FlyString string, Optional<DeclarationKind> declaration_kind)
+NonnullRefPtr<Identifier const> Parser::create_identifier_and_register_in_current_scope(SourceRange const& range, Utf16FlyString string, Optional<DeclarationKind> declaration_kind)
 {
     auto id = create_ast_node<Identifier const>(move(range), move(string));
     if (m_state.current_scope_pusher)
@@ -5215,7 +5215,7 @@ NonnullRefPtr<Identifier const> Parser::create_identifier_and_register_in_curren
     return id;
 }
 
-Parser Parser::parse_function_body_from_string(ByteString const& body_string, u16 parse_options, NonnullRefPtr<FunctionParameters const> parameters, FunctionKind kind, FunctionParsingInsights& parsing_insights)
+Parser Parser::parse_function_body_from_string(ByteString const& body_string, u16 parse_options, NonnullRefPtr<FunctionParameters const> const& parameters, FunctionKind kind, FunctionParsingInsights& parsing_insights)
 {
     RefPtr<FunctionBody const> function_body;
 

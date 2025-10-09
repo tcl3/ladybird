@@ -12,7 +12,7 @@ namespace Gfx {
 
 Painter::~Painter() = default;
 
-NonnullOwnPtr<Painter> Painter::create(NonnullRefPtr<Gfx::Bitmap> target_bitmap)
+NonnullOwnPtr<Painter> Painter::create(NonnullRefPtr<Gfx::Bitmap> const& target_bitmap)
 {
     auto painting_surface = PaintingSurface::wrap_bitmap(target_bitmap);
     return make<PainterSkia>(painting_surface);

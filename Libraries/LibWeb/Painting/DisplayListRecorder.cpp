@@ -173,7 +173,7 @@ void DisplayListRecorder::draw_rect(Gfx::IntRect const& rect, Color color, bool 
         .rough = rough });
 }
 
-void DisplayListRecorder::draw_painting_surface(Gfx::IntRect const& dst_rect, NonnullRefPtr<Gfx::PaintingSurface> surface, Gfx::IntRect const& src_rect, Gfx::ScalingMode scaling_mode)
+void DisplayListRecorder::draw_painting_surface(Gfx::IntRect const& dst_rect, NonnullRefPtr<Gfx::PaintingSurface> const& surface, Gfx::IntRect const& src_rect, Gfx::ScalingMode scaling_mode)
 {
     if (dst_rect.is_empty())
         return;
@@ -294,7 +294,7 @@ void DisplayListRecorder::pop_scroll_frame_id()
     (void)m_scroll_frame_id_stack.take_last();
 }
 
-void DisplayListRecorder::push_clip_frame(RefPtr<ClipFrame const> clip_frame)
+void DisplayListRecorder::push_clip_frame(RefPtr<ClipFrame const> const& clip_frame)
 {
     m_clip_frame_stack.append(clip_frame);
 }
@@ -304,7 +304,7 @@ void DisplayListRecorder::pop_clip_frame()
     (void)m_clip_frame_stack.take_last();
 }
 
-void DisplayListRecorder::push_stacking_context(PushStackingContextParams params)
+void DisplayListRecorder::push_stacking_context(PushStackingContextParams const& params)
 {
     APPEND(PushStackingContext {
         .opacity = params.opacity,
@@ -434,12 +434,12 @@ void DisplayListRecorder::apply_compositing_and_blending_operator(Gfx::Compositi
     APPEND(ApplyCompositeAndBlendingOperator { .compositing_and_blending_operator = compositing_and_blending_operator });
 }
 
-void DisplayListRecorder::apply_filter(Gfx::Filter filter)
+void DisplayListRecorder::apply_filter(Gfx::Filter const& filter)
 {
     APPEND(ApplyFilter { .filter = move(filter) });
 }
 
-void DisplayListRecorder::apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 matrix)
+void DisplayListRecorder::apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 const& matrix)
 {
     APPEND(ApplyTransform {
         .origin = origin,

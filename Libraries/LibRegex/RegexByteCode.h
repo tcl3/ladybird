@@ -150,7 +150,7 @@ struct REGEX_API StringTable {
     StringTable& operator=(StringTable const&) = default;
     StringTable& operator=(StringTable&&) = default;
 
-    ByteCodeValueType set(FlyString string)
+    ByteCodeValueType set(FlyString const& string)
     {
         u32 local_index = m_table.size() + 0x4242;
         ByteCodeValueType global_index;
@@ -323,7 +323,7 @@ public:
         empend(capture_groups_count);
     }
 
-    void insert_bytecode_group_capture_right(size_t capture_groups_count, FlyString name)
+    void insert_bytecode_group_capture_right(size_t capture_groups_count, FlyString const& name)
     {
         empend(static_cast<ByteCodeValueType>(OpCodeId::SaveRightNamedCaptureGroup));
         empend(m_string_table.set(move(name)));

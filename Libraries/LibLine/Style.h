@@ -11,6 +11,8 @@
 #include <AK/Utf8View.h>
 #include <AK/Vector.h>
 
+#include <utility>
+
 namespace Line {
 
 class Style {
@@ -136,7 +138,7 @@ public:
     // Prepare for the horror of templates.
     template<typename T, typename... Rest>
     Style(T const& style_arg, Rest... rest)
-        : Style(rest...)
+        : Style(move(rest)...)
     {
         set(style_arg);
         m_is_empty = false;

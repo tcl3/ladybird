@@ -86,7 +86,7 @@ public:
 
     NonnullRefPtr<Statement const> parse_statement(AllowLabelledFunction allow_labelled_function = AllowLabelledFunction::No);
     NonnullRefPtr<BlockStatement const> parse_block_statement();
-    NonnullRefPtr<FunctionBody const> parse_function_body(NonnullRefPtr<FunctionParameters const>, FunctionKind function_kind, FunctionParsingInsights&);
+    NonnullRefPtr<FunctionBody const> parse_function_body(NonnullRefPtr<FunctionParameters const> const&, FunctionKind function_kind, FunctionParsingInsights&);
     NonnullRefPtr<ReturnStatement const> parse_return_statement();
 
     enum class IsForLoopVariableDeclaration {
@@ -138,7 +138,7 @@ public:
         ForbiddenTokens forbidden;
     };
 
-    NonnullRefPtr<Statement const> parse_for_in_of_statement(NonnullRefPtr<ASTNode const> lhs, IsForAwaitLoop is_await);
+    NonnullRefPtr<Statement const> parse_for_in_of_statement(NonnullRefPtr<ASTNode const> const& lhs, IsForAwaitLoop is_await);
     NonnullRefPtr<IfStatement const> parse_if_statement();
     NonnullRefPtr<ThrowStatement const> parse_throw_statement();
     NonnullRefPtr<TryStatement const> parse_try_statement();
@@ -196,7 +196,7 @@ public:
         bool try_parse_arrow_function_expression_failed;
     };
 
-    static Parser parse_function_body_from_string(ByteString const& body_string, u16 parse_options, NonnullRefPtr<FunctionParameters const>, FunctionKind kind, FunctionParsingInsights&);
+    static Parser parse_function_body_from_string(ByteString const& body_string, u16 parse_options, NonnullRefPtr<FunctionParameters const> const&, FunctionKind kind, FunctionParsingInsights&);
 
 private:
     friend class ScopePusher;
@@ -318,7 +318,7 @@ private:
         ParserState(Lexer, Program::Type);
     };
 
-    [[nodiscard]] NonnullRefPtr<Identifier const> create_identifier_and_register_in_current_scope(SourceRange range, Utf16FlyString string, Optional<DeclarationKind> = {});
+    [[nodiscard]] NonnullRefPtr<Identifier const> create_identifier_and_register_in_current_scope(SourceRange const& range, Utf16FlyString string, Optional<DeclarationKind> = {});
 
     NonnullRefPtr<SourceCode const> m_source_code;
     Vector<Position> m_rule_starts;

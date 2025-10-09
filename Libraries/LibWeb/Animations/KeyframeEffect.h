@@ -71,7 +71,7 @@ public:
         };
         RedBlackTree<u64, ResolvedKeyFrame> keyframes_by_key;
     };
-    static void generate_initial_and_final_frames(RefPtr<KeyFrameSet>, HashTable<CSS::PropertyID> const& animated_properties);
+    static void generate_initial_and_final_frames(RefPtr<KeyFrameSet> const&, HashTable<CSS::PropertyID> const& animated_properties);
 
     static int composite_order(GC::Ref<KeyframeEffect>, GC::Ref<KeyframeEffect>);
 
@@ -90,7 +90,7 @@ public:
 
     // JS bindings
     Optional<String> pseudo_element() const;
-    WebIDL::ExceptionOr<void> set_pseudo_element(Optional<String>);
+    WebIDL::ExceptionOr<void> set_pseudo_element(Optional<String> const&);
 
     Optional<CSS::PseudoElement> pseudo_element_type() const;
     void set_pseudo_element(Optional<CSS::Selector::PseudoElementSelector> pseudo_element) { m_target_pseudo_selector = pseudo_element; }
@@ -102,7 +102,7 @@ public:
     WebIDL::ExceptionOr<void> set_keyframes(Optional<GC::Root<JS::Object>> const&);
 
     KeyFrameSet const* key_frame_set() { return m_key_frame_set; }
-    void set_key_frame_set(RefPtr<KeyFrameSet const> key_frame_set) { m_key_frame_set = key_frame_set; }
+    void set_key_frame_set(RefPtr<KeyFrameSet const> key_frame_set) { m_key_frame_set = move(key_frame_set); }
 
     virtual bool is_keyframe_effect() const override { return true; }
 

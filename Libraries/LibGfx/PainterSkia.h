@@ -16,7 +16,7 @@ namespace Gfx {
 
 class PainterSkia final : public Painter {
 public:
-    explicit PainterSkia(NonnullRefPtr<Gfx::PaintingSurface>);
+    explicit PainterSkia(NonnullRefPtr<Gfx::PaintingSurface> const&);
     virtual ~PainterSkia() override;
 
     virtual void clear_rect(Gfx::FloatRect const&, Color) override;

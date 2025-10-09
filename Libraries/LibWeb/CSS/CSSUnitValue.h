@@ -17,9 +17,9 @@ class CSSUnitValue final : public CSSNumericValue {
     GC_DECLARE_ALLOCATOR(CSSUnitValue);
 
 public:
-    [[nodiscard]] static GC::Ref<CSSUnitValue> create(JS::Realm&, double value, FlyString unit);
+    [[nodiscard]] static GC::Ref<CSSUnitValue> create(JS::Realm&, double value, FlyString const& unit);
     static GC::Ptr<CSSUnitValue> create_from_sum_value_item(JS::Realm&, SumValueItem const&);
-    static WebIDL::ExceptionOr<GC::Ref<CSSUnitValue>> construct_impl(JS::Realm&, double value, FlyString unit);
+    static WebIDL::ExceptionOr<GC::Ref<CSSUnitValue>> construct_impl(JS::Realm&, double value, FlyString const& unit);
 
     virtual ~CSSUnitValue() override = default;
 
@@ -38,7 +38,7 @@ public:
     virtual WebIDL::ExceptionOr<NonnullRefPtr<StyleValue const>> create_an_internal_representation(PropertyNameAndID const&) const override;
 
 private:
-    explicit CSSUnitValue(JS::Realm&, double value, FlyString unit, NumericType type);
+    explicit CSSUnitValue(JS::Realm&, double value, FlyString const& unit, NumericType type);
 
     virtual void initialize(JS::Realm&) override;
 

@@ -49,7 +49,7 @@ GC::Ref<ServiceWorkerContainer> ServiceWorkerContainer::create(JS::Realm& realm)
 }
 
 // https://w3c.github.io/ServiceWorker/#navigator-service-worker-register
-GC::Ref<WebIDL::Promise> ServiceWorkerContainer::register_(String script_url, RegistrationOptions const& options)
+GC::Ref<WebIDL::Promise> ServiceWorkerContainer::register_(String const& script_url, RegistrationOptions const& options)
 {
     auto& realm = this->realm();
     // Note: The register(scriptURL, options) method creates or updates a service worker registration for the given scope url.

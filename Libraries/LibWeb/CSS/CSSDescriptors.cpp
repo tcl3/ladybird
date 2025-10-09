@@ -289,7 +289,7 @@ bool is_shorthand(AtRuleID at_rule, DescriptorID descriptor)
     return false;
 }
 
-void for_each_expanded_longhand(AtRuleID at_rule, DescriptorID descriptor, RefPtr<StyleValue const> value, Function<void(DescriptorID, RefPtr<StyleValue const>)> callback)
+void for_each_expanded_longhand(AtRuleID at_rule, DescriptorID descriptor, RefPtr<StyleValue const> const& value, Function<void(DescriptorID, RefPtr<StyleValue const>)> callback)
 {
     if (at_rule == AtRuleID::Page && descriptor == DescriptorID::Margin) {
         if (!value) {

@@ -63,7 +63,7 @@ static void release_vulkan_image(void* context)
     image->unref();
 }
 
-NonnullRefPtr<PaintingSurface> PaintingSurface::create_from_vkimage(NonnullRefPtr<SkiaBackendContext> context, NonnullRefPtr<VulkanImage> vulkan_image, Origin origin)
+NonnullRefPtr<PaintingSurface> PaintingSurface::create_from_vkimage(NonnullRefPtr<SkiaBackendContext> context, NonnullRefPtr<VulkanImage> const& vulkan_image, Origin origin)
 {
     context->lock();
     ScopeGuard unlock_guard([&context] {
@@ -94,7 +94,7 @@ NonnullRefPtr<PaintingSurface> PaintingSurface::create_from_vkimage(NonnullRefPt
 }
 #endif
 
-NonnullRefPtr<PaintingSurface> PaintingSurface::create_with_size(RefPtr<SkiaBackendContext> context, IntSize size, BitmapFormat color_type, AlphaType alpha_type)
+NonnullRefPtr<PaintingSurface> PaintingSurface::create_with_size(RefPtr<SkiaBackendContext> const& context, IntSize size, BitmapFormat color_type, AlphaType alpha_type)
 {
     auto sk_color_type = to_skia_color_type(color_type);
     auto sk_alpha_type = to_skia_alpha_type(color_type, alpha_type);

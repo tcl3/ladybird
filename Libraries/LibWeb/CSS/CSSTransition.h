@@ -23,8 +23,8 @@ class CSSTransition : public Animations::Animation {
 
 public:
     static GC::Ref<CSSTransition> start_a_transition(DOM::AbstractElement, PropertyID,
-        size_t transition_generation, double delay, double start_time, double end_time, NonnullRefPtr<StyleValue const> start_value,
-        NonnullRefPtr<StyleValue const> end_value, NonnullRefPtr<StyleValue const> reversing_adjusted_start_value, double reversing_shortening_factor);
+        size_t transition_generation, double delay, double start_time, double end_time, NonnullRefPtr<StyleValue const> const& start_value,
+        NonnullRefPtr<StyleValue const> const& end_value, NonnullRefPtr<StyleValue const> const& reversing_adjusted_start_value, double reversing_shortening_factor);
 
     StringView transition_property() const { return string_from_property_id(m_transition_property); }
 

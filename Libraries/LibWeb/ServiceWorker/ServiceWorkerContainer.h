@@ -34,7 +34,7 @@ public:
     [[nodiscard]] static GC::Ref<ServiceWorkerContainer> create(JS::Realm& realm);
     virtual ~ServiceWorkerContainer() override;
 
-    GC::Ref<WebIDL::Promise> register_(String script_url, RegistrationOptions const& options);
+    GC::Ref<WebIDL::Promise> register_(String const& script_url, RegistrationOptions const& options);
 
     GC::Ref<WebIDL::Promise> get_registration(String const& client_url);
 

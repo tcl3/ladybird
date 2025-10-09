@@ -32,7 +32,7 @@ public:
 
     Function<void(PaintingSurface&)> on_flush;
 
-    static NonnullRefPtr<PaintingSurface> create_with_size(RefPtr<SkiaBackendContext> context, IntSize size, BitmapFormat color_type, AlphaType alpha_type);
+    static NonnullRefPtr<PaintingSurface> create_with_size(RefPtr<SkiaBackendContext> const& context, IntSize size, BitmapFormat color_type, AlphaType alpha_type);
     static NonnullRefPtr<PaintingSurface> wrap_bitmap(Bitmap&);
 
 #ifdef AK_OS_MACOS
@@ -40,7 +40,7 @@ public:
 #endif
 
 #ifdef USE_VULKAN_IMAGES
-    static NonnullRefPtr<PaintingSurface> create_from_vkimage(NonnullRefPtr<SkiaBackendContext> context, NonnullRefPtr<VulkanImage> vulkan_image, Origin origin);
+    static NonnullRefPtr<PaintingSurface> create_from_vkimage(NonnullRefPtr<SkiaBackendContext> context, NonnullRefPtr<VulkanImage> const& vulkan_image, Origin origin);
 #endif
 
     void read_into_bitmap(Bitmap&);

@@ -45,12 +45,12 @@ public:
         {
         }
 
-        FillOrStrokeStyle(GC::Root<CanvasGradient> gradient)
+        FillOrStrokeStyle(GC::Root<CanvasGradient> const& gradient)
             : m_fill_or_stroke_style(gradient)
         {
         }
 
-        FillOrStrokeStyle(GC::Root<CanvasPattern> pattern)
+        FillOrStrokeStyle(GC::Root<CanvasPattern> const& pattern)
             : m_fill_or_stroke_style(pattern)
         {
         }

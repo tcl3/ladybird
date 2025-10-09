@@ -308,7 +308,7 @@ public:
         });
     }
 
-    NonnullRefPtr<Core::Promise<NonnullRefPtr<LookupResult const>>> lookup(ByteString name, Messages::Class class_, Vector<Vector<Messages::ResourceType>> desired_types, LookupOptions options = LookupOptions::default_())
+    NonnullRefPtr<Core::Promise<NonnullRefPtr<LookupResult const>>> lookup(ByteString const& name, Messages::Class class_, Vector<Vector<Messages::ResourceType>> const& desired_types, LookupOptions options = LookupOptions::default_())
     {
         using ResultPromise = Core::Promise<NonnullRefPtr<LookupResult const>>;
         Vector<NonnullRefPtr<ResultPromise>> promises;
@@ -960,7 +960,7 @@ private:
         return nullptr;
     }
 
-    NonnullRefPtr<Core::Promise<Empty>> validate_rrset_with_rrsig(CanonicalizedRRSetWithRRSIG rrset_with_rrsig, NonnullRefPtr<LookupResult> result)
+    NonnullRefPtr<Core::Promise<Empty>> validate_rrset_with_rrsig(CanonicalizedRRSetWithRRSIG rrset_with_rrsig, NonnullRefPtr<LookupResult> const& result)
     {
         auto promise = Core::Promise<Empty>::construct();
         auto& rrsig = rrset_with_rrsig.rrsig;
