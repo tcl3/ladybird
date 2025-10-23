@@ -33,6 +33,8 @@
             await handleSDLInputEvents();
 
             println(`Gamepad is now exposed in the new navigable: ${await sendMessageAndWait("getGamepads")}`);
+            gamepad.disconnect();
+            await handleSDLInputEvents();
 
             done();
         };
