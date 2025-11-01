@@ -196,7 +196,7 @@ void SVGImageElement::fetch_the_document(URL::URL const& url)
         },
         [this, image_request = GC::Root { m_image_request }] {
             m_load_event_delayer.clear();
-
+            image_request->set_state(HTML::ImageRequest::State::Broken);
             dispatch_event(DOM::Event::create(realm(), HTML::EventNames::error));
         });
 
