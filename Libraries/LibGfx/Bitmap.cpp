@@ -8,6 +8,7 @@
 
 #include <AK/Bitmap.h>
 #include <AK/Checked.h>
+#include <LibCore/ElapsedTimer.h>
 #include <LibGfx/Bitmap.h>
 #include <LibGfx/ShareableBitmap.h>
 #include <LibGfx/SkiaUtils.h>
@@ -320,6 +321,14 @@ Bitmap::DiffResult Bitmap::diff(Bitmap const& other) const
 
 void Bitmap::set_alpha_type_destructive(AlphaType alpha_type)
 {
+    static u64 cumulative_microseconds = 0;
+    auto timer = Core::ElapsedTimer::start_new(Core::TimerType::Precise);
+    ScopeGuard guard = [&] {
+        auto microseconds = timer.elapsed_time().to_microseconds();
+        cumulative_microseconds += microseconds;
+        dbgln("Time spend in Bitmap::set_alpha_type_destructive: {} microseconds (cumilative: {} microseconds)", microseconds, cumulative_microseconds);
+    };
+
     if (alpha_type == m_alpha_type)
         return;
 
