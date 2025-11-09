@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <AK/HashMap.h>
 #include <AK/String.h>
 #include <AK/Vector.h>
 #include <LibURL/URL.h>
@@ -27,10 +28,14 @@ private:
     ContentFilter();
     ~ContentFilter();
 
-    struct Pattern {
-        String text;
+    bool contains(StringView text) const;
+
+    struct Node {
+        HashMap<u8, u32> children {};
+        u32 output_link { 0 };
+        u32 failure_link { 0 };
     };
-    Vector<Pattern> m_patterns;
+    Vector<Node> m_nodes;
     bool m_filtering_enabled { true };
 };
 

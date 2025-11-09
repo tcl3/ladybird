@@ -1,4 +1,5 @@
 set(TEST_SOURCES
+    TestContentFilter.cpp
     TestCSSIDSpeed.cpp
     TestCSSInheritedProperty.cpp
     TestCSSPixels.cpp
@@ -14,7 +15,7 @@ set(TEST_SOURCES
 )
 
 foreach(source IN LISTS TEST_SOURCES)
-    ladybird_test("${source}" LibWeb LIBS LibWeb)
+    ladybird_test("${source}" LibWeb LIBS LibURL LibWeb)
 endforeach()
 
 target_link_libraries(TestFetchURL PRIVATE LibURL)
