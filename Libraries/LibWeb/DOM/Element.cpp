@@ -545,8 +545,17 @@ GC::Ptr<DOM::Element> Element::get_the_attribute_associated_element(FlyString co
     if (explicitly_set_attribute_element) {
         // 1. If reflectedTarget's explicitly set attr-element is a descendant of any of element's shadow-including
         //    ancestors, then return reflectedTarget's explicitly set attr-element.
-        if (&explicitly_set_attribute_element->root() == &element.shadow_including_root())
+        if (&explicitly_set_attribute_element->root() == &element.shadow_including_root()) {
+            // If the explicitly set element is a shadow host with a reference target, validate it.
+            if (auto shadow = explicitly_set_attribute_element->shadow_root()) {
+                if (!shadow->reference_target().is_empty()) {
+                    // If the reference target is set but doesn't point to a valid element, return null.
+                    if (!shadow->get_reference_target_element())
+                        return {};
+                }
+            }
             return *explicitly_set_attribute_element;
+        }
 
         // 2. Return null.
         return {};
@@ -582,7 +591,13 @@ Optional<GC::RootVector<GC::Ref<DOM::Element>>> Element::get_the_attribute_assoc
             if (!attribute_element || &attribute_element->root() != &element.shadow_including_root())
                 continue;
 
-            // 2. Append attrElement to elements.
+            // 2. If attrElement is a shadow host with a reference target that doesn't point to a valid element, then continue.
+            if (auto shadow = attribute_element->shadow_root()) {
+                if (!shadow->reference_target().is_empty() && !shadow->get_reference_target_element())
+                    continue;
+            }
+
+            // 3. Append attrElement to elements.
             elements.append(*attribute_element);
         }
     }
@@ -921,7 +936,7 @@ static bool is_valid_shadow_host_name(FlyString const& name)
 }
 
 // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
-WebIDL::ExceptionOr<void> Element::attach_a_shadow_root(Bindings::ShadowRootMode mode, bool clonable, bool serializable, bool delegates_focus, Bindings::SlotAssignmentMode slot_assignment)
+WebIDL::ExceptionOr<void> Element::attach_a_shadow_root(Bindings::ShadowRootMode mode, bool clonable, bool serializable, bool delegates_focus, Bindings::SlotAssignmentMode slot_assignment, String reference_target)
 {
     // 1. If element’s namespace is not the HTML namespace, then throw a "NotSupportedError" DOMException.
     if (namespace_uri() != Namespace::HTML)
@@ -984,10 +999,13 @@ WebIDL::ExceptionOr<void> Element::attach_a_shadow_root(Bindings::ShadowRootMode
     // 10. Set shadow’s clonable to clonable.
     shadow->set_clonable(clonable);
 
-    // 11. Set shadow’s serializable to serializable.
+    // 11. Set shadow's serializable to serializable.
     shadow->set_serializable(serializable);
 
-    // 12. Set element’s shadow root to shadow.
+    // 12. Set shadow's reference target to referenceTarget.
+    shadow->set_reference_target(move(reference_target));
+
+    // 13. Set element's shadow root to shadow.
     set_shadow_root(shadow);
     return {};
 }
@@ -995,10 +1013,10 @@ WebIDL::ExceptionOr<void> Element::attach_a_shadow_root(Bindings::ShadowRootMode
 // https://dom.spec.whatwg.org/#dom-element-attachshadow
 WebIDL::ExceptionOr<GC::Ref<ShadowRoot>> Element::attach_shadow(ShadowRootInit init)
 {
-    // 1. Run attach a shadow root with this, init["mode"], init["clonable"], init["serializable"], init["delegatesFocus"], and init["slotAssignment"].
-    TRY(attach_a_shadow_root(init.mode, init.clonable, init.serializable, init.delegates_focus, init.slot_assignment));
+    // 1. Run attach a shadow root with this, init["mode"], init["clonable"], init["serializable"], init["delegatesFocus"], init["slotAssignment"], and init["referenceTarget"].
+    TRY(attach_a_shadow_root(init.mode, init.clonable, init.serializable, init.delegates_focus, init.slot_assignment, move(init.reference_target)));
 
-    // 2. Return this’s shadow root.
+    // 2. Return this's shadow root.
     return GC::Ref { *shadow_root() };
 }
 

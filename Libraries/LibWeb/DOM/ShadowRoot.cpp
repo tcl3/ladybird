@@ -53,6 +53,17 @@ WebIDL::CallbackType* ShadowRoot::onslotchange()
     return event_handler_attribute(HTML::EventNames::slotchange);
 }
 
+// https://github.com/nicuveo/html/pull/10995
+GC::Ptr<Element> ShadowRoot::get_reference_target_element() const
+{
+    // If the reference target is empty, return null
+    if (m_reference_target.is_empty())
+        return nullptr;
+
+    // Look up the element by ID within this shadow root
+    return get_element_by_id(MUST(FlyString::from_utf8(m_reference_target.bytes_as_string_view())));
+}
+
 // https://dom.spec.whatwg.org/#ref-for-get-the-parent%E2%91%A6
 EventTarget* ShadowRoot::get_parent(Event const& event)
 {

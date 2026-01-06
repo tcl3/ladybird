@@ -46,6 +46,7 @@ struct ShadowRootInit {
     Bindings::SlotAssignmentMode slot_assignment { Bindings::SlotAssignmentMode::Named };
     bool clonable = false;
     bool serializable = false;
+    String reference_target;
 };
 
 struct GetHTMLOptions {
@@ -188,7 +189,7 @@ public:
     ReadonlySpan<FlyString> part_names() const { return m_parts; }
 
     WebIDL::ExceptionOr<GC::Ref<ShadowRoot>> attach_shadow(ShadowRootInit init);
-    WebIDL::ExceptionOr<void> attach_a_shadow_root(Bindings::ShadowRootMode mode, bool clonable, bool serializable, bool delegates_focus, Bindings::SlotAssignmentMode slot_assignment);
+    WebIDL::ExceptionOr<void> attach_a_shadow_root(Bindings::ShadowRootMode mode, bool clonable, bool serializable, bool delegates_focus, Bindings::SlotAssignmentMode slot_assignment, String reference_target = {});
     GC::Ptr<ShadowRoot> shadow_root_for_bindings() const;
 
     WebIDL::ExceptionOr<bool> matches(StringView selectors) const;

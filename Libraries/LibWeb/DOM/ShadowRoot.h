@@ -37,6 +37,13 @@ public:
     [[nodiscard]] bool serializable() const { return m_serializable; }
     void set_serializable(bool serializable) { m_serializable = serializable; }
 
+    [[nodiscard]] String reference_target() const { return m_reference_target; }
+    void set_reference_target(String reference_target) { m_reference_target = move(reference_target); }
+
+    // https://github.com/nicuveo/html/pull/10995
+    // Returns the element inside the shadow root that the reference target points to, or null if invalid
+    GC::Ptr<Element> get_reference_target_element() const;
+
     void set_onslotchange(WebIDL::CallbackType*);
     WebIDL::CallbackType* onslotchange();
 
@@ -105,6 +112,9 @@ private:
 
     // https://dom.spec.whatwg.org/#shadowroot-serializable
     bool m_serializable { false };
+
+    // https://github.com/nicuveo/html/pull/10995
+    String m_reference_target;
 
     mutable OwnPtr<ElementByIdMap> m_element_by_id;
 

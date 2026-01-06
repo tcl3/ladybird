@@ -287,6 +287,7 @@ namespace AttributeNames {
     __ENUMERATE_HTML_ATTRIBUTE(shadowrootclonable, "shadowrootclonable")                 \
     __ENUMERATE_HTML_ATTRIBUTE(shadowrootdelegatesfocus, "shadowrootdelegatesfocus")     \
     __ENUMERATE_HTML_ATTRIBUTE(shadowrootmode, "shadowrootmode")                         \
+    __ENUMERATE_HTML_ATTRIBUTE(shadowrootreferencetarget, "shadowrootreferencetarget")   \
     __ENUMERATE_HTML_ATTRIBUTE(shadowrootserializable, "shadowrootserializable")         \
     __ENUMERATE_HTML_ATTRIBUTE(shape, "shape")                                           \
     __ENUMERATE_HTML_ATTRIBUTE(size, "size")                                             \

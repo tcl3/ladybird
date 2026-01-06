@@ -1228,7 +1228,10 @@ void HTMLParser::handle_in_head(HTMLToken& token)
             // 6. Let delegatesFocus be true if templateStartTag has a shadowrootdelegatesfocus attribute; otherwise false.
             auto delegates_focus = template_start_tag.has_attribute(HTML::AttributeNames::shadowrootdelegatesfocus);
 
-            // 7. If declarativeShadowHostElement is a shadow host, then insert an element at the adjusted insertion location with template.
+            // 7. Let referenceTarget be templateStartTag's shadowrootreferencetarget attribute value.
+            auto reference_target = template_start_tag.attribute(HTML::AttributeNames::shadowrootreferencetarget).value_or(String {});
+
+            // 8. If declarativeShadowHostElement is a shadow host, then insert an element at the adjusted insertion location with template.
             if (declarative_shadow_host_element.is_shadow_host()) {
                 // FIXME: We do manual "insert before" instead of "insert an element at the adjusted insertion location" here
                 //        Otherwise, two template elements in a row will cause the second to try to insert into itself.
@@ -1240,9 +1243,9 @@ void HTMLParser::handle_in_head(HTMLToken& token)
             else {
                 // FIXME: 1. Let registry be null if templateStartTag has a shadowrootcustomelementregistry attribute; otherwise declarativeShadowHostElement's node document's custom element registry.
 
-                // 2. Attach a shadow root with declarativeShadowHostElement, mode, clonable, serializable, delegatesFocus, "named", and registry.
+                // 2. Attach a shadow root with declarativeShadowHostElement, mode, clonable, serializable, delegatesFocus, "named", registry, and referenceTarget.
                 // FIXME: and registry.
-                auto result = declarative_shadow_host_element.attach_a_shadow_root(mode, clonable, serializable, delegates_focus, Bindings::SlotAssignmentMode::Named);
+                auto result = declarative_shadow_host_element.attach_a_shadow_root(mode, clonable, serializable, delegates_focus, Bindings::SlotAssignmentMode::Named, reference_target);
                 //    If an exception is thrown, then catch it and:
                 if (result.is_error()) {
                     // 1. Insert an element at the adjusted insertion location with template.
@@ -5152,7 +5155,14 @@ String HTMLParser::serialize_html_fragment(DOM::Node const& node, SerializableSh
                 if (shadow->clonable())
                     builder.append(" shadowrootclonable=\"\""sv);
 
-                // 7. Append ">".
+                // 7. If shadow's reference target is not empty, then append " shadowrootreferencetarget="" + shadow's reference target + """.
+                if (!shadow->reference_target().is_empty()) {
+                    builder.append(" shadowrootreferencetarget=\""sv);
+                    builder.append(shadow->reference_target());
+                    builder.append('"');
+                }
+
+                // 8. Append ">".
                 builder.append('>');
 
                 // 8. Append the value of running the HTML fragment serialization algorithm with shadow,

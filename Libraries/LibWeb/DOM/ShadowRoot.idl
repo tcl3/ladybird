@@ -12,6 +12,9 @@ interface ShadowRoot : DocumentFragment {
     readonly attribute boolean clonable;
     readonly attribute boolean serializable;
     readonly attribute Element host;
+
+    // https://github.com/nicuveo/html/pull/10995
+    attribute DOMString referenceTarget;
     attribute EventHandler onslotchange;
 
     // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-parsing-and-serialization
