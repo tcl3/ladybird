@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <LibWeb/DOM/HyperlinkElementUtils.h>
 #include <LibWeb/SVG/SVGGraphicsElement.h>
 #include <LibWeb/SVG/SVGURIReference.h>
 
@@ -14,7 +15,8 @@ namespace Web::SVG {
 
 class SVGAElement final
     : public SVGGraphicsElement
-    , public SVGURIReferenceMixin<SupportsXLinkHref::Yes> {
+    , public SVGURIReferenceMixin<SupportsXLinkHref::Yes>
+    , public DOM::HyperlinkElementUtils {
     WEB_PLATFORM_OBJECT(SVGAElement, SVGGraphicsElement);
     GC_DECLARE_ALLOCATOR(SVGAElement);
 
@@ -38,6 +40,14 @@ private:
     // ^DOM::Element
     virtual void attribute_changed(FlyString const& name, Optional<String> const& old_value, Optional<String> const& value, Optional<FlyString> const& namespace_) override;
     virtual i32 default_tab_index_value() const override;
+
+    virtual bool has_activation_behavior() const override { return true; }
+    virtual void activation_behavior(DOM::Event const&) override;
+
+    // ^DOM::HyperlinkElementUtils
+    virtual DOM::Element& hyperlink_element_utils_element() override { return *this; }
+    virtual DOM::Element const& hyperlink_element_utils_element() const override { return *this; }
+    virtual String hyperlink_element_utils_href() const override;
 
     GC::Ptr<DOM::DOMTokenList> m_rel_list;
 

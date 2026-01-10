@@ -28,7 +28,7 @@ void HyperlinkElementUtils::follow_the_hyperlink(Optional<String> hyperlink_suff
     String target_attribute_value;
 
     // 3. If subject is an a or area element, then set targetAttributeValue to the result of getting an element's target given subject.
-    if (element.is_html_anchor_element() || element.is_html_area_element())
+    if (element.is_html_anchor_element() || element.is_html_area_element() || element.is_svg_a_element())
         target_attribute_value = element.get_an_elements_target();
 
     // 4. Let urlRecord be the result of encoding-parsing a URL given subject's href attribute value, relative to subject's node document.

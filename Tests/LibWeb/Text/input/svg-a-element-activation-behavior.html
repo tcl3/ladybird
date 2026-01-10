@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<iframe id="target-frame" name="target-frame"></iframe>
+<svg>
+    <a id="js-link" href="javascript:jsLinkClicked()">
+        <text y="20">JS Link</text>
+    </a>
+    <a id="target-link" href="javascript:parent.targetLinkClicked()" target="target-frame">
+        <text y="40">Target Link</text>
+    </a>
+    <a id="dispatch-link" href="javascript:dispatchLinkClicked()">
+        <text y="60">Dispatch Link</text>
+    </a>
+</svg>
+<script>
+
+function jsLinkClicked() {
+    println("js-link clicked via .click()");
+}
+
+function targetLinkClicked() {
+    println("target-link navigated to iframe");
+}
+
+function dispatchLinkClicked() {
+    println("dispatch-link clicked via dispatchEvent");
+}
+
+function simulateClick(element) {
+    const event = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true
+    });
+    element.dispatchEvent(event);
+}
+
+promiseTest(async () => {
+    simulateClick(document.getElementById("js-link"));
+    await animationFrame();
+
+    simulateClick(document.getElementById("target-link"));
+    await animationFrame();
+
+    simulateClick(document.getElementById("dispatch-link"));
+    await animationFrame();
+});
+</script>

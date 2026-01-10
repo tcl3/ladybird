@@ -1,0 +1,3 @@
+js-link clicked via .click()
+target-link navigated to iframe
+dispatch-link clicked via dispatchEvent
