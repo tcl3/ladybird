@@ -7,12 +7,13 @@
 #pragma once
 
 #include <LibURL/URL.h>
+#include <LibWeb/DOM/HyperlinkElementUtils.h>
 #include <LibWeb/Forward.h>
 #include <LibWeb/HTML/UserNavigationInvolvement.h>
 
 namespace Web::HTML {
 
-class HTMLHyperlinkElementUtils {
+class HTMLHyperlinkElementUtils : public DOM::HyperlinkElementUtils {
 public:
     virtual ~HTMLHyperlinkElementUtils();
 
@@ -49,13 +50,11 @@ public:
     void set_hash(StringView);
 
 protected:
-    virtual DOM::Element& hyperlink_element_utils_element() = 0;
-    virtual DOM::Element const& hyperlink_element_utils_element() const = 0;
+    virtual String hyperlink_element_utils_href() const override { return href(); }
 
     Optional<URL::Origin> hyperlink_element_utils_extract_an_origin() const;
 
     void set_the_url();
-    void follow_the_hyperlink(Optional<String> hyperlink_suffix, UserNavigationInvolvement = UserNavigationInvolvement::None);
 
 private:
     void reinitialize_url() const;
