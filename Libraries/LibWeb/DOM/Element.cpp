@@ -54,6 +54,7 @@
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/HTMLAnchorElement.h>
 #include <LibWeb/HTML/HTMLAreaElement.h>
+#include <LibWeb/HTML/HTMLBaseElement.h>
 #include <LibWeb/HTML/HTMLBodyElement.h>
 #include <LibWeb/HTML/HTMLButtonElement.h>
 #include <LibWeb/HTML/HTMLFieldSetElement.h>
@@ -74,6 +75,7 @@
 #include <LibWeb/HTML/HTMLUListElement.h>
 #include <LibWeb/HTML/Numbers.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
+#include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/SimilarOriginWindowAgent.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/TraversableNavigable.h>
@@ -192,6 +194,78 @@ String Element::get_attribute_value(FlyString const& local_name, Optional<FlyStr
 
     // 3. Return attr’s value.
     return attribute->value();
+}
+
+// https://html.spec.whatwg.org/multipage/semantics.html#get-an-element's-target
+String Element::get_an_elements_target(Optional<String> target) const
+{
+    // To get an element's target, given an a, area, or form element element, and an optional string-or-null target (default null), run these steps:
+
+    // 1. If target is null, then:
+    if (!target.has_value()) {
+        // 1. If element has a target attribute, then set target to that attribute's value.
+        if (auto maybe_target = attribute(HTML::AttributeNames::target); maybe_target.has_value()) {
+            target = maybe_target.release_value();
+        }
+        // 2. Otherwise, if element's node document contains a base element with a target attribute,
+        //    set target to the value of the target attribute of the first such base element.
+        if (auto base_element = document().first_base_element_with_target_in_tree_order())
+            target = base_element->attribute(HTML::AttributeNames::target);
+    }
+
+    // 2. If target is not null, and contains an ASCII tab or newline and a U+003C (<), then set target to "_blank".
+    if (target.has_value() && target->bytes_as_string_view().contains("\t\n\r"sv) && target->contains('<'))
+        target = "_blank"_string;
+
+    // 3. Return target.
+    return target.value_or({});
+}
+
+// https://html.spec.whatwg.org/multipage/links.html#get-an-element's-noopener
+HTML::TokenizedFeature::NoOpener Element::get_an_elements_noopener(URL::URL const& url, StringView target) const
+{
+    // To get an element's noopener, given an a, area, or form element element, a URL record url, and a string target,
+    // perform the following steps. They return a boolean.
+    auto rel = MUST(get_attribute_value(HTML::AttributeNames::rel).to_lowercase());
+    auto link_types = rel.bytes_as_string_view().split_view_if(Infra::is_ascii_whitespace);
+
+    // 1. If element's link types include the noopener or noreferrer keyword, then return true.
+    if (link_types.contains_slow("noopener"sv) || link_types.contains_slow("noreferrer"sv))
+        return HTML::TokenizedFeature::NoOpener::Yes;
+
+    // 2. If element's link types do not include the opener keyword and
+    //    target is an ASCII case-insensitive match for "_blank", then return true.
+    if (!link_types.contains_slow("opener"sv) && target.equals_ignoring_ascii_case("_blank"sv))
+        return HTML::TokenizedFeature::NoOpener::Yes;
+
+    // 3. If url's blob URL entry is not null:
+    if (url.blob_url_entry().has_value()) {
+        // 1. Let blobOrigin be url's blob URL entry's environment's origin.
+        auto const& blob_origin = url.blob_url_entry()->environment.origin;
+
+        // 2. Let topLevelOrigin be element's relevant settings object's top-level origin.
+        auto const& top_level_origin = HTML::relevant_settings_object(*this).top_level_origin;
+
+        // 3. If blobOrigin is not same site with topLevelOrigin, then return true.
+        if (!blob_origin.is_same_site(top_level_origin.value()))
+            return HTML::TokenizedFeature::NoOpener::Yes;
+    }
+
+    // 4. Return false.
+    return HTML::TokenizedFeature::NoOpener::No;
+}
+
+// https://html.spec.whatwg.org/multipage/links.html#cannot-navigate
+bool Element::cannot_navigate() const
+{
+    // An element element cannot navigate if one of the following is true:
+
+    // - element's node document is not fully active
+    if (!document().is_fully_active())
+        return true;
+
+    // - element is not an a element and is not connected.
+    return !is_html_anchor_element() && !is_connected();
 }
 
 // https://dom.spec.whatwg.org/#dom-element-getattributenode

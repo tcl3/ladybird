@@ -31,6 +31,7 @@
 #include <LibWeb/HTML/LazyLoadingElement.h>
 #include <LibWeb/HTML/ScrollOptions.h>
 #include <LibWeb/HTML/TagNames.h>
+#include <LibWeb/HTML/TokenizedFeatures.h>
 #include <LibWeb/IntersectionObserver/IntersectionObserver.h>
 #include <LibWeb/TrustedTypes/TrustedHTML.h>
 #include <LibWeb/TrustedTypes/TrustedScript.h>
@@ -151,6 +152,11 @@ public:
     Optional<String> get_attribute(FlyString const& name) const;
     Optional<String> get_attribute_ns(Optional<FlyString> const& namespace_, FlyString const& name) const;
     String get_attribute_value(FlyString const& local_name, Optional<FlyString> const& namespace_ = {}) const;
+
+    String get_an_elements_target(Optional<String> target = {}) const;
+    HTML::TokenizedFeature::NoOpener get_an_elements_noopener(URL::URL const& url, StringView target) const;
+
+    bool cannot_navigate() const;
 
     Optional<String> lang() const;
     void invalidate_lang_value();

@@ -463,30 +463,14 @@ void HTMLHyperlinkElementUtils::update_href()
     hyperlink_element_utils_element().set_attribute_value(HTML::AttributeNames::href, m_url->serialize());
 }
 
-bool HTMLHyperlinkElementUtils::cannot_navigate() const
-{
-    // An element element cannot navigate if one of the following is true:
-
-    // 1. element's node document is not fully active
-    auto const& element = hyperlink_element_utils_element();
-    if (!element.document().is_fully_active())
-        return true;
-
-    // 2. element is not an a element and is not connected.
-    if (!element.is_html_anchor_element() && !element.is_connected())
-        return true;
-
-    return false;
-}
-
 // https://html.spec.whatwg.org/multipage/links.html#following-hyperlinks-2
 void HTMLHyperlinkElementUtils::follow_the_hyperlink(Optional<String> hyperlink_suffix, UserNavigationInvolvement user_involvement)
 {
-    // 1. If subject cannot navigate, then return.
-    if (cannot_navigate())
-        return;
-
     auto& element = hyperlink_element_utils_element();
+
+    // 1. If subject cannot navigate, then return.
+    if (element.cannot_navigate())
+        return;
 
     // 2. Let targetAttributeValue be the empty string.
     String target_attribute_value;
@@ -503,7 +487,7 @@ void HTMLHyperlinkElementUtils::follow_the_hyperlink(Optional<String> hyperlink_
         return;
 
     // 6. Let noopener be the result of getting an element's noopener with subject, urlRecord, and targetAttributeValue.
-    auto noopener = hyperlink_element_utils_get_an_elements_noopener(*url_record, target_attribute_value);
+    auto noopener = element.get_an_elements_noopener(*url_record, target_attribute_value);
 
     // 7. Let targetNavigable be the first return value of applying the rules for choosing a navigable given
     //    targetAttributeValue, subject's node navigable, and noopener.
