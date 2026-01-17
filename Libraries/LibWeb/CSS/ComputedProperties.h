@@ -251,7 +251,7 @@ public:
 
     MathStyle math_style() const;
     int math_depth() const;
-    [[nodiscard]] CSSPixels line_height() const;
+    [[nodiscard]] CSSPixels line_height(Optional<Gfx::FontPixelMetrics const&> font_metrics = {}) const;
     [[nodiscard]] CSSPixels font_size() const;
     double font_weight() const;
     Percentage font_width() const;

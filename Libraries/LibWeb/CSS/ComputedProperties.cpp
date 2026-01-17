@@ -455,15 +455,18 @@ NonnullRefPtr<Gfx::Font const> ComputedProperties::font_fallback(bool monospace,
     return *Platform::FontPlugin::the().default_font(point_size);
 }
 
-CSSPixels ComputedProperties::line_height() const
+CSSPixels ComputedProperties::line_height(Optional<Gfx::FontPixelMetrics const&> font_metrics) const
 {
     // https://drafts.csswg.org/css-inline-3/#line-height-property
     auto const& line_height = property(PropertyID::LineHeight);
 
     // normal
     // Determine the preferred line height automatically based on font metrics.
-    if (line_height.is_keyword() && line_height.to_keyword() == Keyword::Normal)
-        return CSSPixels { round_to<i32>(font_size() * normal_line_height_scale) };
+    if (line_height.is_keyword() && line_height.to_keyword() == Keyword::Normal) {
+        if (font_metrics.has_value())
+            return CSSPixels::nearest_value_for(font_metrics->line_spacing());
+        return CSSPixels::nearest_value_for(font_size() * normal_line_height_scale);
+    }
 
     // <length [0,∞]>
     // The specified length is used as the preferred line height. Negative values are illegal.

@@ -669,10 +669,11 @@ void StyleComputer::collect_animation_into(DOM::AbstractElement abstract_element
             return camel_case_string_from_property_id(a) < camel_case_string_from_property_id(b);
         };
 
+        auto font_pixel_metrics = computed_properties.first_available_computed_font(document().font_computer())->pixel_metrics();
         Length::FontMetrics font_metrics {
             computed_properties.font_size(),
-            computed_properties.first_available_computed_font(document().font_computer())->pixel_metrics(),
-            computed_properties.line_height()
+            font_pixel_metrics,
+            computed_properties.line_height(font_pixel_metrics)
         };
 
         HashMap<PropertyID, RefPtr<StyleValue const>> specified_values;
@@ -1370,7 +1371,7 @@ Length::FontMetrics StyleComputer::calculate_root_element_font_metrics(ComputedP
     auto font_pixel_metrics = style.first_available_computed_font(document().font_computer())->pixel_metrics();
     Length::FontMetrics font_metrics { m_default_font_metrics.font_size, font_pixel_metrics, InitialValues::line_height() };
     font_metrics.font_size = root_value.as_length().length().to_px(viewport_rect(), font_metrics, font_metrics);
-    font_metrics.line_height = style.line_height();
+    font_metrics.line_height = style.line_height(font_pixel_metrics);
 
     return font_metrics;
 }
@@ -1552,10 +1553,11 @@ LogicalAliasMappingContext StyleComputer::compute_logical_alias_mapping_context(
 
 void StyleComputer::compute_property_values(ComputedProperties& style, Optional<DOM::AbstractElement> abstract_element) const
 {
+    auto font_pixel_metrics = style.first_available_computed_font(document().font_computer())->pixel_metrics();
     Length::FontMetrics font_metrics {
         style.font_size(),
-        style.first_available_computed_font(document().font_computer())->pixel_metrics(),
-        style.line_height()
+        font_pixel_metrics,
+        style.line_height(font_pixel_metrics)
     };
 
     ComputationContext computation_context {
