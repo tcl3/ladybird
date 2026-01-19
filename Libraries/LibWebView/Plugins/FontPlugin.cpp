@@ -120,10 +120,6 @@ static Optional<String> query_fontconfig_for_generic_family(Web::Platform::Gener
     success = FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
     VERIFY(success);
 
-    // FIXME: Enable this once we can handle OpenType variable fonts.
-    success = FcPatternAddBool(pattern, FC_VARIABLE, FcFalse);
-    VERIFY(success);
-
     Optional<String> name;
     FcResult result {};
 
