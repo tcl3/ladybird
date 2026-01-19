@@ -70,46 +70,39 @@ Vector<FlyString> FontPlugin::symbol_font_names()
 }
 
 #ifdef USE_FONTCONFIG
-static Optional<String> query_fontconfig_for_generic_family(Web::Platform::GenericFont generic_font)
+static char const* generic_font_to_pattern_string(Web::Platform::GenericFont generic_font)
 {
-    char const* pattern_string = nullptr;
     switch (generic_font) {
     case Web::Platform::GenericFont::Cursive:
-        pattern_string = "cursive";
-        break;
+        return "cursive";
     case Web::Platform::GenericFont::Fantasy:
-        pattern_string = "fantasy";
-        break;
+        return "fantasy";
     case Web::Platform::GenericFont::Monospace:
-        pattern_string = "monospace";
-        break;
-    case Web::Platform::GenericFont::SansSerif:
-        pattern_string = "sans-serif";
-        break;
-    case Web::Platform::GenericFont::Serif:
-        pattern_string = "serif";
-        break;
     case Web::Platform::GenericFont::UiMonospace:
-        pattern_string = "monospace";
-        break;
+        return "monospace";
+    case Web::Platform::GenericFont::SansSerif:
     case Web::Platform::GenericFont::UiRounded:
-        pattern_string = "sans-serif";
-        break;
     case Web::Platform::GenericFont::UiSansSerif:
-        pattern_string = "sans-serif";
-        break;
+        return "sans-serif";
+    case Web::Platform::GenericFont::Serif:
     case Web::Platform::GenericFont::UiSerif:
-        pattern_string = "serif";
-        break;
+        return "serif";
     default:
         VERIFY_NOT_REACHED();
     }
+}
 
+static Vector<FlyString> query_fontconfig_sorted_fonts(Web::Platform::GenericFont generic_font, Optional<String> const& locale)
+{
     auto* config = Gfx::GlobalFontConfig::the().get();
     VERIFY(config);
 
+    char const* pattern_string = generic_font_to_pattern_string(generic_font);
     FcPattern* pattern = FcNameParse(reinterpret_cast<FcChar8 const*>(pattern_string));
     VERIFY(pattern);
+
+    if (locale.has_value() && !locale->is_empty())
+        FcPatternAddString(pattern, FC_LANG, reinterpret_cast<FcChar8 const*>(locale->to_byte_string().characters()));
 
     auto success = FcConfigSubstitute(config, pattern, FcMatchPattern);
     VERIFY(success);
@@ -120,21 +113,26 @@ static Optional<String> query_fontconfig_for_generic_family(Web::Platform::Gener
     success = FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
     VERIFY(success);
 
-    Optional<String> name;
+    Vector<FlyString> families;
     FcResult result {};
 
-    if (auto* matched = FcFontMatch(config, pattern, &result)) {
-        FcChar8* family = nullptr;
-        if (FcPatternGetString(matched, FC_FAMILY, 0, &family) == FcResultMatch) {
-            auto const* family_cstring = reinterpret_cast<char const*>(family);
-            if (auto string = String::from_utf8(StringView { family_cstring, strlen(family_cstring) }); !string.is_error()) {
-                name = string.release_value();
+    if (auto* font_set = FcFontSort(config, pattern, FcTrue, nullptr, &result)) {
+        for (int i = 0; i < font_set->nfont; ++i) {
+            FcChar8* family = nullptr;
+            if (FcPatternGetString(font_set->fonts[i], FC_FAMILY, 0, &family) == FcResultMatch) {
+                auto const* family_cstring = reinterpret_cast<char const*>(family);
+                StringView family_view { family_cstring, strlen(family_cstring) };
+                auto family_string_or_error = FlyString::from_utf8(family_view);
+                if (family_string_or_error.is_error())
+                    continue;
+                if (auto family_string = family_string_or_error.release_value(); !families.contains_slow(family_string))
+                    families.append(family_string);
             }
         }
-        FcPatternDestroy(matched);
+        FcFontSetDestroy(font_set);
     }
     FcPatternDestroy(pattern);
-    return name;
+    return families;
 }
 #endif
 
@@ -158,10 +156,9 @@ void FontPlugin::update_generic_fonts()
         RefPtr<Gfx::Font const> gfx_font;
 
 #ifdef USE_FONTCONFIG
-        auto name = query_fontconfig_for_generic_family(generic_font);
-        if (name.has_value()) {
-            gfx_font = Gfx::FontDatabase::the().get(name.value(), 16, 400, Gfx::FontWidth::Normal, 0);
-        }
+        auto families = query_fontconfig_sorted_fonts(generic_font, {});
+        if (!families.is_empty())
+            gfx_font = Gfx::FontDatabase::the().get(families.first(), 16, 400, Gfx::FontWidth::Normal, 0);
 #endif
 
         if (!gfx_font) {
@@ -198,6 +195,31 @@ void FontPlugin::update_generic_fonts()
 FlyString FontPlugin::generic_font_name(Web::Platform::GenericFont generic_font)
 {
     return m_generic_font_names[static_cast<size_t>(generic_font)];
+}
+
+Vector<FlyString> FontPlugin::generic_font_fallback_list(Web::Platform::GenericFont generic_font, Optional<String> const& locale)
+{
+    if (m_is_layout_test_mode)
+        return { "SerenitySans"_fly_string };
+
+    GenericFontFallbackCacheKey key { generic_font, locale };
+    if (auto it = m_generic_font_fallback_cache.find(key); it != m_generic_font_fallback_cache.end())
+        return it->value;
+
+#ifdef USE_FONTCONFIG
+    auto families = query_fontconfig_sorted_fonts(generic_font, locale);
+    m_generic_font_fallback_cache.set(key, families);
+    return families;
+#else
+    // Fallback for platforms without fontconfig: return the single generic font name
+    auto name = generic_font_name(generic_font);
+    if (!name.is_empty()) {
+        Vector<FlyString> families { name };
+        m_generic_font_fallback_cache.set(key, families);
+        return families;
+    }
+    return {};
+#endif
 }
 
 }
