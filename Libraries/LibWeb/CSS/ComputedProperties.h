@@ -246,8 +246,8 @@ public:
     WillChange will_change() const;
 
     ValueComparingRefPtr<Gfx::FontCascadeList const> cached_computed_font_list() const { return m_cached_computed_font_list; }
-    ValueComparingNonnullRefPtr<Gfx::FontCascadeList const> computed_font_list(FontComputer const&) const;
-    ValueComparingNonnullRefPtr<Gfx::Font const> first_available_computed_font(FontComputer const&) const;
+    ValueComparingNonnullRefPtr<Gfx::FontCascadeList const> computed_font_list(FontComputer const&, Optional<String> const& locale = {}) const;
+    ValueComparingNonnullRefPtr<Gfx::Font const> first_available_computed_font(FontComputer const&, Optional<String> const& locale = {}) const;
 
     MathStyle math_style() const;
     int math_depth() const;
@@ -302,10 +302,12 @@ private:
 
     RefPtr<Gfx::FontCascadeList const> m_cached_computed_font_list;
     RefPtr<Gfx::Font const> m_cached_first_available_computed_font;
+    Optional<String> m_cached_font_list_locale;
     void clear_computed_font_list_cache()
     {
         m_cached_computed_font_list = nullptr;
         m_cached_first_available_computed_font = nullptr;
+        m_cached_font_list_locale = {};
     }
 
     Optional<CSSPixels> m_line_height;
