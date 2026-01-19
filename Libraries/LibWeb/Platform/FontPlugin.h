@@ -6,7 +6,11 @@
 
 #pragma once
 
+#include <AK/FlyString.h>
 #include <AK/Forward.h>
+#include <AK/Optional.h>
+#include <AK/String.h>
+#include <AK/Vector.h>
 #include <LibGfx/Forward.h>
 #include <LibWeb/Export.h>
 
@@ -36,6 +40,7 @@ public:
     virtual Gfx::Font& default_fixed_width_font() = 0;
 
     virtual FlyString generic_font_name(GenericFont) = 0;
+    virtual Vector<FlyString> generic_font_fallback_list(GenericFont, Optional<String> const& locale) = 0;
     virtual Vector<FlyString> symbol_font_names() = 0;
 };
 
