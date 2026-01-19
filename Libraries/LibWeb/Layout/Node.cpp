@@ -21,6 +21,7 @@
 #include <LibWeb/CSS/StyleValues/TimeStyleValue.h>
 #include <LibWeb/CSS/StyleValues/URLStyleValue.h>
 #include <LibWeb/DOM/Document.h>
+#include <LibWeb/DOM/Element.h>
 #include <LibWeb/Dump.h>
 #include <LibWeb/HTML/FormAssociatedElement.h>
 #include <LibWeb/HTML/HTMLHtmlElement.h>
@@ -519,7 +520,12 @@ void NodeWithStyle::apply_style(CSS::ComputedProperties const& computed_style)
     // NOTE: We have to be careful that font-related properties get set in the right order.
     //       m_font is used by Length::to_px() when resolving sizes against this layout node.
     //       That's why it has to be set before everything else.
-    computed_values.set_font_list(computed_style.computed_font_list(document().font_computer()));
+    Optional<String> locale;
+    if (dom_node()) {
+        if (auto const* element = as_if<DOM::Element>(*dom_node()))
+            locale = element->lang();
+    }
+    computed_values.set_font_list(computed_style.computed_font_list(document().font_computer(), locale));
     computed_values.set_font_size(computed_style.font_size());
     computed_values.set_font_weight(computed_style.font_weight());
     computed_values.set_line_height(computed_style.line_height());

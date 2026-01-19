@@ -84,6 +84,8 @@ struct Traits<Web::CSS::ComputedFontCacheKey> : public DefaultTraits<Web::CSS::C
         hash = pair_int_hash(hash, Traits<double>::hash(key.font_width.value()));
         for (auto const& [variation_name, variation_value] : key.font_variation_settings)
             hash = pair_int_hash(hash, pair_int_hash(variation_name.hash(), Traits<double>::hash(variation_value)));
+        if (key.locale.has_value())
+            hash = pair_int_hash(hash, key.locale->hash());
 
         return hash;
     }
@@ -366,7 +368,7 @@ RefPtr<Gfx::FontCascadeList const> FontComputer::font_matching_algorithm(FlyStri
     return {};
 }
 
-NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_values(StyleValue const& font_family, CSSPixels const& font_size, int font_slope, double font_weight, Percentage const& font_width, HashMap<FlyString, double> const& font_variation_settings) const
+NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_values(StyleValue const& font_family, CSSPixels const& font_size, int font_slope, double font_weight, Percentage const& font_width, HashMap<FlyString, double> const& font_variation_settings, Optional<String> const& locale) const
 {
     ComputedFontCacheKey cache_key {
         .font_family = font_family,
@@ -375,14 +377,15 @@ NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_v
         .font_weight = font_weight,
         .font_width = font_width,
         .font_variation_settings = font_variation_settings,
+        .locale = locale,
     };
 
     return m_computed_font_cache.ensure(cache_key, [&]() {
-        return compute_font_for_style_values_impl(font_family, font_size, font_slope, font_weight, font_width, font_variation_settings);
+        return compute_font_for_style_values_impl(font_family, font_size, font_slope, font_weight, font_width, font_variation_settings, locale);
     });
 }
 
-NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_values_impl(StyleValue const& font_family, CSSPixels const& font_size, int slope, double font_weight, Percentage const& font_width, HashMap<FlyString, double> const& font_variation_settings) const
+NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_values_impl(StyleValue const& font_family, CSSPixels const& font_size, int slope, double font_weight, Percentage const& font_width, HashMap<FlyString, double> const& font_variation_settings, Optional<String> const& locale) const
 {
     // FIXME: We round to int here as that is what is expected by our font infrastructure below
     auto width = round_to<int>(font_width.value());
@@ -468,7 +471,16 @@ NonnullRefPtr<Gfx::FontCascadeList const> FontComputer::compute_font_for_style_v
         default:
             return {};
         }
-        return find_font(Platform::FontPlugin::the().generic_font_name(generic_font));
+
+        // Use the fallback list to get all fonts in priority order for the locale
+        auto fallback_families = Platform::FontPlugin::the().generic_font_fallback_list(generic_font, locale);
+
+        auto result = Gfx::FontCascadeList::create();
+        for (auto const& family : fallback_families) {
+            if (auto font_cascade = find_font(family))
+                result->extend(*font_cascade);
+        }
+        return result->is_empty() ? nullptr : result;
     };
 
     auto font_list = Gfx::FontCascadeList::create();

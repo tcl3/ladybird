@@ -2713,22 +2713,24 @@ WillChange ComputedProperties::will_change() const
     return WillChange(move(will_change_entries));
 }
 
-ValueComparingNonnullRefPtr<Gfx::FontCascadeList const> ComputedProperties::computed_font_list(FontComputer const& font_computer) const
+ValueComparingNonnullRefPtr<Gfx::FontCascadeList const> ComputedProperties::computed_font_list(FontComputer const& font_computer, Optional<String> const& locale) const
 {
-    if (!m_cached_computed_font_list) {
-        const_cast<ComputedProperties*>(this)->m_cached_computed_font_list = font_computer.compute_font_for_style_values(property(PropertyID::FontFamily), font_size(), font_slope(), font_weight(), font_width(), font_variation_settings());
+    if (!m_cached_computed_font_list || m_cached_font_list_locale != locale) {
+        const_cast<ComputedProperties*>(this)->m_cached_computed_font_list = font_computer.compute_font_for_style_values(property(PropertyID::FontFamily), font_size(), font_slope(), font_weight(), font_width(), font_variation_settings(), locale);
+        const_cast<ComputedProperties*>(this)->m_cached_font_list_locale = locale;
+        const_cast<ComputedProperties*>(this)->m_cached_first_available_computed_font = nullptr;
         VERIFY(!m_cached_computed_font_list->is_empty());
     }
 
     return *m_cached_computed_font_list;
 }
 
-ValueComparingNonnullRefPtr<Gfx::Font const> ComputedProperties::first_available_computed_font(FontComputer const& font_computer) const
+ValueComparingNonnullRefPtr<Gfx::Font const> ComputedProperties::first_available_computed_font(FontComputer const& font_computer, Optional<String> const& locale) const
 {
     if (!m_cached_first_available_computed_font) {
         // https://drafts.csswg.org/css-fonts/#first-available-font
         // First font for which the character U+0020 (space) is not excluded by a unicode-range
-        const_cast<ComputedProperties*>(this)->m_cached_first_available_computed_font = computed_font_list(font_computer)->font_for_code_point(' ');
+        const_cast<ComputedProperties*>(this)->m_cached_first_available_computed_font = computed_font_list(font_computer, locale)->font_for_code_point(' ');
     }
 
     return *m_cached_first_available_computed_font;
