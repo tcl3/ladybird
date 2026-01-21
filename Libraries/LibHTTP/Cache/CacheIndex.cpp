@@ -118,10 +118,12 @@ void CacheIndex::create_entry(u64 cache_key, String url, NonnullRefPtr<HeaderLis
     for (size_t i = 0; i < response_headers->headers().size();) {
         auto const& header = response_headers->headers()[i];
 
-        if (is_header_exempted_from_storage(header.name))
-            response_headers->delete_(header.name);
-        else
+        if (is_header_exempted_from_storage(header.name)) {
+            auto header_name = header.name;
+            response_headers->delete_(header_name);
+        } else {
             ++i;
+        }
     }
 
     Entry entry {
