@@ -89,35 +89,17 @@ void BlockFormattingContext::run(AvailableSpace const& available_space)
         return;
     }
 
+    // Handle fieldsets with rendered legends specially to avoid post-layout adjustments.
+    if (auto* fieldset_box = as_if<FieldSetBox>(root());
+        fieldset_box && fieldset_box->has_rendered_legend()) {
+        layout_fieldset(available_space);
+        return;
+    }
+
     if (root().children_are_inline())
         layout_inline_children(root(), available_space);
     else
         layout_block_level_children(root(), available_space);
-
-    if (auto* fieldset_box = as_if<FieldSetBox>(root())) {
-        if (!fieldset_box->has_rendered_legend()) {
-            return;
-        }
-
-        auto const* legend = root().first_child_of_type<LegendBox>();
-        auto& legend_state = m_state.get_mutable(*legend);
-        auto& fieldset_state = m_state.get_mutable(root());
-
-        // The element is expected to be positioned in the block-flow direction such that
-        // its border box is centered over the border on the block-start side of the fieldset element.
-        // FIXME: this should take writing modes into consideration.
-        auto legend_height = legend_state.border_box_height();
-        auto new_y = -((legend_height) / 2) - fieldset_state.padding_top;
-        legend_state.set_content_y(new_y);
-
-        // If the computed value of 'inline-size' is 'auto', then the used value is the fit-content inline size.
-        if (legend->computed_values().width().is_auto()) {
-            auto width = calculate_fit_content_width(*legend, available_space);
-            legend_state.set_content_width(width);
-        }
-
-        return;
-    }
 
     // Assign collapsed margin left after children layout of formatting context to the last child box
     if (m_margin_state.current_collapsed_margin() != 0) {
@@ -130,6 +112,39 @@ void BlockFormattingContext::run(AvailableSpace const& available_space)
             break;
         }
     }
+}
+
+void BlockFormattingContext::layout_fieldset(AvailableSpace const& available_space)
+{
+    auto& fieldset_state = m_state.get_mutable(root());
+    auto const* legend = root().first_child_of_type<LegendBox>();
+    VERIFY(legend);
+    auto& legend_state = m_state.get_mutable(*legend);
+
+    TemporaryChange<Optional<CSSPixels>> change { m_y_offset_of_current_block_container, CSSPixels(0) };
+
+    CSSPixels bottom_of_lowest_margin_box = 0;
+    layout_block_level_box(*legend, root(), bottom_of_lowest_margin_box, available_space);
+
+    // If the computed value of 'inline-size' is 'auto', then the used value is the fit-content inline size.
+    if (legend->computed_values().width().is_auto()) {
+        auto width = calculate_fit_content_width(*legend, available_space);
+        legend_state.set_content_width(width);
+    }
+
+    // The rendered legend is expected to be positioned in the block-flow direction such that
+    // its border box is centered over the border on the block-start side of the fieldset element.
+    // FIXME: This should take writing modes into consideration.
+    auto legend_height = legend_state.border_box_height();
+    auto new_y = -((legend_height) / 2) - fieldset_state.padding_top;
+    legend_state.set_content_y(new_y);
+
+    root().for_each_child_of_type<Box>([&](Box const& child) {
+        if (&child == legend)
+            return IterationDecision::Continue;
+        layout_block_level_box(child, root(), bottom_of_lowest_margin_box, available_space);
+        return IterationDecision::Continue;
+    });
 }
 
 void BlockFormattingContext::parent_context_did_dimension_child_root_box()
