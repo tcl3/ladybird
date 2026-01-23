@@ -141,6 +141,12 @@ void BlockFormattingContext::layout_fieldset(AvailableSpace const& available_spa
     auto new_y = legend_offset_from_fieldset_border_box + legend_state.border_top - fieldset_state.border_top - fieldset_state.padding_top;
     legend_state.set_content_y(new_y);
 
+    auto legend_margin_box_top = new_y - legend_state.border_top - legend_state.margin_top;
+    auto fieldset_border_box_top = -(fieldset_state.border_top + fieldset_state.padding_top);
+    auto legend_protrusion = max(CSSPixels(0), fieldset_border_box_top - legend_margin_box_top);
+    if (legend_protrusion > 0)
+        fieldset_state.set_content_y(fieldset_state.offset.y() + legend_protrusion);
+
     // Non-legend content starts at the legend's margin-box bottom (or y=0 if legend extends above).
     auto legend_margin_box_bottom = new_y + legend_state.content_height() + legend_state.padding_bottom + legend_state.border_bottom + legend_state.margin_bottom;
     bottom_of_lowest_margin_box = max(CSSPixels(0), legend_margin_box_bottom);
