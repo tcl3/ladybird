@@ -132,12 +132,18 @@ void BlockFormattingContext::layout_fieldset(AvailableSpace const& available_spa
         legend_state.set_content_width(width);
     }
 
+    // https://html.spec.whatwg.org/multipage/rendering.html#the-fieldset-and-legend-elements
     // The rendered legend is expected to be positioned in the block-flow direction such that
     // its border box is centered over the border on the block-start side of the fieldset element.
     // FIXME: This should take writing modes into consideration.
-    auto legend_height = legend_state.border_box_height();
-    auto new_y = -((legend_height) / 2) - fieldset_state.padding_top;
+    auto legend_border_box_height = legend_state.border_box_height();
+    auto legend_offset_from_fieldset_border_box = (fieldset_state.border_top - legend_border_box_height) / 2;
+    auto new_y = legend_offset_from_fieldset_border_box + legend_state.border_top - fieldset_state.border_top - fieldset_state.padding_top;
     legend_state.set_content_y(new_y);
+
+    // Non-legend content starts at the legend's margin-box bottom (or y=0 if legend extends above).
+    auto legend_margin_box_bottom = new_y + legend_state.content_height() + legend_state.padding_bottom + legend_state.border_bottom + legend_state.margin_bottom;
+    bottom_of_lowest_margin_box = max(CSSPixels(0), legend_margin_box_bottom);
 
     root().for_each_child_of_type<Box>([&](Box const& child) {
         if (&child == legend)
