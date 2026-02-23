@@ -25,11 +25,20 @@ static ErrorOr<NonnullRefPtr<ClientType>> launch_server_process(
     auto candidate_server_paths = TRY(get_paths_for_helper_process(server_name));
 
     if (browser_options.profile_helper_process == process_type) {
-        arguments.prepend({
-            "--tool=callgrind"sv,
-            "--instr-atstart=no"sv,
-            ""sv, // Placeholder for the process path.
-        });
+        switch (browser_options.profiling_tool) {
+        case ProfilingTool::Callgrind:
+            arguments.prepend({
+                "--tool=callgrind"sv,
+                "--instr-atstart=no"sv,
+                ""sv, // Placeholder for the process path.
+            });
+            break;
+        case ProfilingTool::Heaptrack:
+            arguments.prepend({
+                ""sv, // Placeholder for the process path.
+            });
+            break;
+        }
     }
 
     if (browser_options.debug_helper_processes.contains_slow(process_type))
@@ -39,9 +48,17 @@ static ErrorOr<NonnullRefPtr<ClientType>> launch_server_process(
         Core::ProcessSpawnOptions options { .name = server_name, .arguments = arguments };
 
         if (browser_options.profile_helper_process == process_type) {
-            options.executable = "valgrind"sv;
             options.search_for_executable_in_path = true;
-            arguments[2] = path;
+            switch (browser_options.profiling_tool) {
+            case ProfilingTool::Callgrind:
+                options.executable = "valgrind"sv;
+                arguments[2] = path;
+                break;
+            case ProfilingTool::Heaptrack:
+                options.executable = "heaptrack"sv;
+                arguments[0] = path;
+                break;
+            }
         } else {
             options.executable = path;
         }
@@ -64,8 +81,15 @@ static ErrorOr<NonnullRefPtr<ClientType>> launch_server_process(
 
             if (browser_options.profile_helper_process == process_type) {
                 dbgln();
-                dbgln("\033[1;34mLaunched {} process under callgrind!\033[0m", server_name);
-                dbgln("\033[1;36mRun `\033[4mcallgrind_control -i on\033[24m` to start instrumentation and `\033[4mcallgrind_control -i off\033[24m` stop it again.\033[0m");
+                switch (browser_options.profiling_tool) {
+                case ProfilingTool::Callgrind:
+                    dbgln("\033[1;34mLaunched {} process under callgrind!\033[0m", server_name);
+                    dbgln("\033[1;36mRun `\033[4mcallgrind_control -i on\033[24m` to start instrumentation and `\033[4mcallgrind_control -i off\033[24m` stop it again.\033[0m");
+                    break;
+                case ProfilingTool::Heaptrack:
+                    dbgln("\033[1;34mLaunched {} process under heaptrack!\033[0m", server_name);
+                    break;
+                }
                 dbgln();
             }
 

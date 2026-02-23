@@ -74,6 +74,11 @@ enum class EnableContentFilter {
     Yes,
 };
 
+enum class ProfilingTool {
+    Callgrind,
+    Heaptrack,
+};
+
 struct BrowserOptions {
     Vector<URL::URL> urls;
     Vector<ByteString> raw_urls;
@@ -88,6 +93,7 @@ struct BrowserOptions {
     DisableSQLDatabase disable_sql_database { DisableSQLDatabase::No };
     Vector<ProcessType> debug_helper_processes {};
     Optional<ProcessType> profile_helper_process {};
+    ProfilingTool profiling_tool { ProfilingTool::Callgrind };
     Optional<ByteString> webdriver_endpoint {};
     Optional<DNSSettings> dns_settings {};
     Optional<u16> devtools_port;

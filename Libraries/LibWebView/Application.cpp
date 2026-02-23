@@ -143,6 +143,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
     Optional<u16> devtools_port;
     Vector<StringView> debug_processes;
     Optional<StringView> profile_process;
+    Optional<StringView> profiling_tool;
     Optional<StringView> webdriver_endpoint;
     Optional<StringView> user_agent_preset;
     Optional<StringView> dns_server_address;
@@ -216,7 +217,8 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
             debug_processes.append(value);
             return true;
         } });
-    args_parser.add_option(profile_process, "Enable callgrind profiling of the given process name (WebContent, RequestServer, etc.)", "profile-process", 0, "process-name");
+    args_parser.add_option(profile_process, "Enable profiling of the given process name (WebContent, RequestServer, etc.)", "profile-process", 0, "process-name");
+    args_parser.add_option(profiling_tool, "Profiling tool to use with --profile-process (callgrind or heaptrack, default: callgrind)", "profiling-tool", 0, "tool");
 #if defined(AK_OS_MACOS)
     args_parser.add_option(webdriver_endpoint, "Mach server name for WebDriver IPC", "webdriver-mach-server-name", 0, "name", Core::ArgsParser::OptionHideMode::CommandLineAndMarkdown);
 #else
@@ -303,6 +305,18 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
     if (profile_process.has_value())
         profile_process_type = process_type_from_name(*profile_process);
 
+    ProfilingTool profiling_tool_type { ProfilingTool::Callgrind };
+    if (profiling_tool.has_value()) {
+        if (profiling_tool->equals_ignoring_ascii_case("callgrind"sv)) {
+            profiling_tool_type = ProfilingTool::Callgrind;
+        } else if (profiling_tool->equals_ignoring_ascii_case("heaptrack"sv)) {
+            profiling_tool_type = ProfilingTool::Heaptrack;
+        } else {
+            dbgln("Unknown profiling tool '{}'", profiling_tool.value());
+            VERIFY_NOT_REACHED();
+        }
+    }
+
     // Disable site isolation when debugging WebContent. Otherwise, the process swap may interfere with the gdb session.
     if (debug_process_types.contains_slow(ProcessType::WebContent))
         disable_site_isolation = true;
@@ -318,6 +332,7 @@ ErrorOr<void> Application::initialize(Main::Arguments const& arguments)
         .disable_sql_database = disable_sql_database ? DisableSQLDatabase::Yes : DisableSQLDatabase::No,
         .debug_helper_processes = move(debug_process_types),
         .profile_helper_process = move(profile_process_type),
+        .profiling_tool = profiling_tool_type,
         .dns_settings = (dns_server_address.has_value()
                 ? Optional<DNSSettings> { use_dns_over_tls
                           ? DNSSettings(DNSOverTLS(dns_server_address.release_value(), *dns_server_port, validate_dnssec_locally))
