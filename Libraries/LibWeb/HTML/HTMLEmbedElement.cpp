@@ -47,11 +47,30 @@ void HTMLEmbedElement::apply_presentational_hints(GC::Ref<CSS::CascadedPropertie
 {
     Base::apply_presentational_hints(cascaded_properties);
     for_each_attribute([&](auto& name, auto& value) {
+        // https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images
         if (name == HTML::AttributeNames::align) {
-            if (value.equals_ignoring_ascii_case("center"sv))
-                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::TextAlign, CSS::KeywordStyleValue::create(CSS::Keyword::Center));
-            else if (value.equals_ignoring_ascii_case("middle"sv))
-                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::TextAlign, CSS::KeywordStyleValue::create(CSS::Keyword::Middle));
+            auto vertical_align_keyword = [&]() -> Optional<CSS::Keyword> {
+                if (value.equals_ignoring_ascii_case("top"sv))
+                    return CSS::Keyword::Top;
+                if (value.equals_ignoring_ascii_case("texttop"sv))
+                    return CSS::Keyword::TextTop;
+                if (value.equals_ignoring_ascii_case("center"sv) || value.equals_ignoring_ascii_case("middle"sv)
+                    || value.equals_ignoring_ascii_case("absmiddle"sv) || value.equals_ignoring_ascii_case("abscenter"sv))
+                    return CSS::Keyword::Middle;
+                if (value.equals_ignoring_ascii_case("baseline"sv))
+                    return CSS::Keyword::Baseline;
+                if (value.equals_ignoring_ascii_case("bottom"sv) || (value.equals_ignoring_ascii_case("absbottom"sv)))
+                    return CSS::Keyword::Bottom;
+                return {};
+            }();
+
+            if (vertical_align_keyword.has_value()) {
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::VerticalAlign, CSS::KeywordStyleValue::create(vertical_align_keyword.value()));
+            } else if (value.equals_ignoring_ascii_case("left"sv)) {
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Float, CSS::KeywordStyleValue::create(CSS::Keyword::Left));
+            } else if (value.equals_ignoring_ascii_case("right"sv)) {
+                cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Float, CSS::KeywordStyleValue::create(CSS::Keyword::Right));
+            }
         } else if (name == HTML::AttributeNames::height) {
             if (auto parsed_value = parse_dimension_value(value))
                 cascaded_properties->set_property_from_presentational_hint(CSS::PropertyID::Height, *parsed_value);
