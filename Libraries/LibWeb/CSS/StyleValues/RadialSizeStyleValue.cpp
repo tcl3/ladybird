@@ -158,12 +158,22 @@ static CSSPixelSize ellipse_corner_shape(CSSPixelPoint const& center, CSSPixelRe
 
     // Prevent division by zero
     // https://w3c.github.io/csswg-drafts/css-images/#degenerate-radials
+    constexpr auto arbitrary_small_number = CSSPixels::smallest_positive_value();
+    constexpr auto arbitrary_large_number = CSSPixels::max();
+    // If the ending shape has zero width (regardless of the height):
+    if (width == 0) {
+        // Render as if the ending shape was an ellipse whose height was an arbitrary very large number and whose width
+        // was an arbitrary very small number greater than zero. This will make the gradient look similar to a
+        // horizontal linear gradient that is mirrored across the center of the ellipse. It also means that all
+        // color-stop positions specified with a percentage resolve to 0px.
+        return CSSPixelSize { arbitrary_small_number, arbitrary_large_number };
+    }
+    // Otherwise, if the ending shape has zero height:
     if (height == 0) {
         // Render as if the ending shape was an ellipse whose width was an arbitrary very large number and whose height
-        // was an arbitrary very small number greater than zero. This will make the gradient look like a solid-color image equal
-        // to the color of the last color-stop, or equal to the average color of the gradient if it’s repeating.
-        constexpr auto arbitrary_small_number = CSSPixels::smallest_positive_value();
-        constexpr auto arbitrary_large_number = CSSPixels::max();
+        // was an arbitrary very small number greater than zero. This will make the gradient look like a solid-color
+        // image equal to the color of the last color-stop, or equal to the average color of the gradient if it’s
+        // repeating.
         return CSSPixelSize { arbitrary_large_number, arbitrary_small_number };
     }
 
