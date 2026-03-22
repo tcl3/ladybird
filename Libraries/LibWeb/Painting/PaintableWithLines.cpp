@@ -466,7 +466,8 @@ void PaintableWithLines::paint_cursor(DisplayListRecordingContext& context) cons
     auto active_element_is_editable = false;
     if (auto const* text_control = as_if<HTML::FormAssociatedTextControlElement>(document().active_element()))
         active_element_is_editable = text_control->text_control_to_html_element().is_mutable();
-    if (!active_element_is_editable && !dom_node->is_editable_or_editing_host())
+    if (!active_element_is_editable && !dom_node->is_editable_or_editing_host()
+        && !cursor_position->node()->is_editable())
         return;
 
     auto fragment = fragment_at_position(*cursor_position);
