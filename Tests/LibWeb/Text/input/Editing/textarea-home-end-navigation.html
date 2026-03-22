@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<textarea id="textarea">first line
+second line
+third line</textarea>
+<script src="../include.js"></script>
+<script>
+test(() => {
+    const textarea = document.getElementById("textarea");
+    textarea.focus();
+
+    const setCursor = (offset) => {
+        textarea.selectionStart = textarea.selectionEnd = offset;
+    };
+
+    const move = (direction) => {
+        const before = textarea.selectionStart;
+        internals.sendKey(textarea, direction);
+        println(`${direction}: ${before} -> ${textarea.selectionStart}`);
+    };
+
+    println("--- Home from middle of each line ---");
+    setCursor(5);
+    move("Home");
+    setCursor(16);
+    move("Home");
+    setCursor(25);
+    move("Home");
+
+    println("--- End from middle of each line ---");
+    setCursor(5);
+    move("End");
+    setCursor(16);
+    move("End");
+    setCursor(25);
+    move("End");
+});
+</script>

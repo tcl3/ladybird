@@ -1198,10 +1198,11 @@ void FormAssociatedTextControlElement::move_cursor_to_start(CollapseSelection co
     auto text_node = form_associated_element_to_text_node();
     if (!text_node)
         return;
+    auto line_start = find_line_start(*text_node, m_selection_end);
     if (collapse == CollapseSelection::Yes) {
-        collapse_selection_to_offset(0);
+        collapse_selection_to_offset(line_start);
     } else {
-        m_selection_end = 0;
+        m_selection_end = line_start;
     }
     selection_was_changed(SelectionSource::UI);
 }
@@ -1211,10 +1212,11 @@ void FormAssociatedTextControlElement::move_cursor_to_end(CollapseSelection coll
     auto text_node = form_associated_element_to_text_node();
     if (!text_node)
         return;
+    auto line_end = find_line_end(*text_node, m_selection_end);
     if (collapse == CollapseSelection::Yes) {
-        collapse_selection_to_offset(text_node->length());
+        collapse_selection_to_offset(line_end);
     } else {
-        m_selection_end = text_node->length();
+        m_selection_end = line_end;
     }
     selection_was_changed(SelectionSource::UI);
 }
