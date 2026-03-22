@@ -17,6 +17,7 @@
 #include <LibWeb/DOM/ElementFactory.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/DOM/Node.h>
+#include <LibWeb/DOM/Position.h>
 #include <LibWeb/DOM/ProcessingInstruction.h>
 #include <LibWeb/DOM/Range.h>
 #include <LibWeb/DOM/SelectionchangeEventDispatching.h>
@@ -117,6 +118,9 @@ void Range::update_associated_selection()
         viewport->recompute_selection_states(*this);
         viewport->set_needs_repaint();
     }
+
+    if (auto position = document.cursor_position())
+        position->node()->invalidate_cursor_paint_cache();
 
     // https://w3c.github.io/selection-api/#selectionchange-event
     // When the selection is dissociated with its range, associated with a new range, or the associated range's boundary

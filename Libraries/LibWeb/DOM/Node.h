@@ -326,6 +326,7 @@ public:
     void clear_paintable();
 
     void set_needs_repaint(InvalidateDisplayList = InvalidateDisplayList::Yes);
+    void invalidate_cursor_paint_cache();
     void set_needs_layout_update(SetNeedsLayoutReason);
 
     void clear_layout_node_and_paintable(Badge<Document>);

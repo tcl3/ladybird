@@ -523,11 +523,8 @@ Document::Document(JS::Realm& realm, URL::URL const& url, TemporaryDocumentForFr
         if (!navigable || !navigable->is_focused())
             return;
 
-        auto node = cursor_position->node();
-        if (node->unsafe_paintable()) {
-            m_cursor_blink_state = !m_cursor_blink_state;
-            node->set_needs_repaint();
-        }
+        m_cursor_blink_state = !m_cursor_blink_state;
+        cursor_position->node()->invalidate_cursor_paint_cache();
     });
 
     HTML::main_thread_event_loop().register_document({}, *this);

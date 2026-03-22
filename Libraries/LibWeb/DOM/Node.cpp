@@ -70,6 +70,7 @@
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/Painting/Paintable.h>
 #include <LibWeb/Painting/PaintableBox.h>
+#include <LibWeb/Painting/PaintableWithLines.h>
 #include <LibWeb/SVG/SVGElement.h>
 #include <LibWeb/SVG/SVGTitleElement.h>
 #include <LibWeb/XLink/AttributeNames.h>
@@ -2749,6 +2750,22 @@ void Node::set_needs_repaint(InvalidateDisplayList should_invalidate_display_lis
     if (auto* layout_node = unsafe_layout_node()) {
         for (auto& paintable : layout_node->paintables())
             paintable.set_needs_repaint(should_invalidate_display_list);
+    }
+}
+
+void Node::invalidate_cursor_paint_cache()
+{
+    auto* layout_node = unsafe_layout_node();
+    if (!layout_node)
+        return;
+
+    for (auto* ancestor = layout_node; ancestor; ancestor = ancestor->parent()) {
+        for (auto& paintable : ancestor->paintables()) {
+            if (auto* paintable_with_lines = as_if<Painting::PaintableWithLines>(paintable))
+                paintable_with_lines->set_needs_repaint();
+        }
+        if (ancestor->is_block_container())
+            break;
     }
 }
 
