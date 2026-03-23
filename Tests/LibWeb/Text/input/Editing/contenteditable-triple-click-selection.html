@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<div id="styled" contenteditable>Hello <b>World</b> foo</div>
+<script src="../include.js"></script>
+<script>
+test(() => {
+    const styled = document.getElementById("styled");
+    styled.focus();
+
+    // Triple-click on the bold "World" text.
+    const bold = styled.querySelector("b");
+    const rect = bold.getBoundingClientRect();
+    internals.click(rect.left + 5, rect.top + 5, 3);
+
+    // Should select entire paragraph, not just the bold text node.
+    println(window.getSelection());
+});
+</script>
