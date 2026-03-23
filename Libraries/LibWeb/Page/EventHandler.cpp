@@ -1140,7 +1140,8 @@ bool EventHandler::initiate_paragraph_selection(DOM::Document& document, Paintin
     size_t hit_index = hit.index_in_node;
 
     // For input/textarea elements, select the current visual line.
-    if (auto* target = document.active_input_events_target(&hit_node)) {
+    auto* target = document.active_input_events_target(&hit_node);
+    if (target && target != document.editing_host_manager().ptr()) {
         auto line_start = find_line_start(hit_node, hit_index);
         auto line_end = find_line_end(hit_node, hit_index);
 
@@ -1150,7 +1151,7 @@ bool EventHandler::initiate_paragraph_selection(DOM::Document& document, Paintin
         target->set_selection_anchor(hit_node, line_start);
         target->set_selection_focus(hit_node, line_end);
     } else if (auto selection = document.get_selection()) {
-        // For regular content, find paragraph boundaries within the containing block.
+        // For regular content and contenteditable, find paragraph boundaries within the containing block.
         m_selection_origin = find_paragraph_range(hit_node, hit_index);
 
         m_selection_mode = SelectionMode::Paragraph;
