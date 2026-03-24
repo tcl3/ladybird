@@ -16,6 +16,7 @@
 #include <LibWeb/GraphemeEdgeTracker.h>
 #include <LibWeb/HTML/FormAssociatedElement.h>
 #include <LibWeb/Painting/Paintable.h>
+#include <LibWeb/Painting/VisualLineIterator.h>
 #include <LibWeb/Selection/Selection.h>
 
 namespace Web::Selection {
@@ -690,38 +691,76 @@ void Selection::move_offset_to_previous_word(bool collapse_selection)
 
 void Selection::move_offset_to_next_line(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
-    if (!text_node)
+    auto* focus_text = as_if<DOM::Text>(focus_node().ptr());
+    if (!focus_text)
         return;
 
-    auto new_offset = compute_cursor_position_on_next_line(*text_node, focus_offset());
+    // Try node-agnostic visual line navigation using the paint tree's fragment data.
+    if (auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset()); iterator.has_value()) {
+        auto cursor_x = iterator->cursor_x();
+        if (iterator->next_line()) {
+            if (auto target = iterator->position_for_x(cursor_x); target.has_value()) {
+                auto& target_node = const_cast<DOM::Text&>(target->text_node);
+                if (collapse_selection) {
+                    MUST(collapse(&target_node, target->offset));
+                    m_document->reset_cursor_blink_cycle();
+                } else {
+                    MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
+                }
+                scroll_focus_into_view();
+                return;
+            }
+        }
+    }
+
+    // Fallback: single-node navigation for textarea newlines.
+    auto new_offset = compute_cursor_position_on_next_line(*focus_text, focus_offset());
     if (!new_offset.has_value())
         return;
 
     if (collapse_selection) {
-        MUST(collapse(text_node, *new_offset));
+        MUST(collapse(focus_text, *new_offset));
         m_document->reset_cursor_blink_cycle();
     } else {
-        MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *new_offset));
+        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *focus_text, *new_offset));
     }
     scroll_focus_into_view();
 }
 
 void Selection::move_offset_to_previous_line(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
-    if (!text_node)
+    auto* focus_text = as_if<DOM::Text>(focus_node().ptr());
+    if (!focus_text)
         return;
 
-    auto new_offset = compute_cursor_position_on_previous_line(*text_node, focus_offset());
+    // Try node-agnostic visual line navigation using the paint tree's fragment data.
+    if (auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset()); iterator.has_value()) {
+        auto cursor_x = iterator->cursor_x();
+        if (iterator->previous_line()) {
+            if (auto target = iterator->position_for_x(cursor_x); target.has_value()) {
+                auto& target_node = const_cast<DOM::Text&>(target->text_node);
+                if (collapse_selection) {
+                    MUST(collapse(&target_node, target->offset));
+                    m_document->reset_cursor_blink_cycle();
+                } else {
+                    MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
+                }
+                scroll_focus_into_view();
+                return;
+            }
+        }
+    }
+
+    // Fallback: single-node navigation for textarea newlines.
+    auto new_offset = compute_cursor_position_on_previous_line(*focus_text, focus_offset());
     if (!new_offset.has_value())
         return;
 
     if (collapse_selection) {
-        MUST(collapse(text_node, *new_offset));
+        MUST(collapse(focus_text, *new_offset));
         m_document->reset_cursor_blink_cycle();
     } else {
-        MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *new_offset));
+        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *focus_text, *new_offset));
     }
     scroll_focus_into_view();
 }

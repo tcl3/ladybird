@@ -342,7 +342,7 @@ void LayoutState::commit(Box& root)
             if (is<InlineNode>(*parent)) {
                 auto& inline_node = const_cast<InlineNode&>(static_cast<InlineNode const&>(*parent));
                 auto line_paintable = inline_node.create_paintable_for_line_with_index(line_index);
-                line_paintable->add_fragment(fragment);
+                line_paintable->add_fragment(fragment, line_index);
                 if (auto const* used_values = try_get(inline_node))
                     transfer_box_model_metrics(line_paintable->box_model(), *used_values);
                 if (!inline_node_paintables.contains(line_paintable.ptr())) {
@@ -395,7 +395,7 @@ void LayoutState::commit(Box& root)
                             text_nodes.set(const_cast<TextNode*>(text_node));
                         auto did_relocate_fragment = try_to_relocate_fragment_in_inline_node(fragment, line_index);
                         if (!did_relocate_fragment)
-                            paintable_with_lines->add_fragment(fragment);
+                            paintable_with_lines->add_fragment(fragment, line_index);
                     }
                 }
             }

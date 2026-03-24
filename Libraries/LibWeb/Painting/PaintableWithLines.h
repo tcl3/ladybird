@@ -27,9 +27,9 @@ public:
     Vector<PaintableFragment> const& fragments() const { return m_fragments; }
     Vector<PaintableFragment>& fragments() { return m_fragments; }
 
-    void add_fragment(Layout::LineBoxFragment const& fragment)
+    void add_fragment(Layout::LineBoxFragment const& fragment, size_t line_index)
     {
-        m_fragments.append(PaintableFragment { fragment });
+        m_fragments.append(PaintableFragment { fragment, line_index });
     }
 
     virtual void paint(DisplayListRecordingContext&, PaintPhase) const override;

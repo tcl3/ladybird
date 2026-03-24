@@ -19,7 +19,7 @@ class WEB_API PaintableFragment {
     friend class PaintableWithLines;
 
 public:
-    explicit PaintableFragment(Layout::LineBoxFragment const&);
+    PaintableFragment(Layout::LineBoxFragment const&, size_t line_index);
 
     Layout::Node const& layout_node() const { return m_layout_node; }
     Paintable const& paintable() const { return *m_layout_node->first_paintable(); }
@@ -79,6 +79,8 @@ public:
 
     bool has_trailing_whitespace() const { return m_has_trailing_whitespace; }
 
+    size_t line_index() const { return m_line_index; }
+
 private:
     Optional<SelectionOffsets> compute_selection_offsets(Paintable::SelectionState, size_t start_offset_in_code_units, size_t end_offset_in_code_units) const;
 
@@ -92,6 +94,7 @@ private:
     CSSPixels m_baseline;
     CSSPixels m_text_decoration_thickness { 0 };
     CSS::WritingMode m_writing_mode;
+    size_t m_line_index { 0 };
     bool m_has_trailing_whitespace { false };
 };
 
