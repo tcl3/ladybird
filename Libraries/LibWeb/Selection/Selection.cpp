@@ -588,28 +588,27 @@ GC::Ptr<DOM::Position> Selection::cursor_position() const
     return DOM::Position::create(m_document->realm(), *m_range->start_container(), m_range->start_offset());
 }
 
-// FIXME: The offset adjustment algorithms below do not handle moving over multiple DOM nodes. For example, if we have:
-//        `<div contenteditable><p>Well hello</p><p>friends</p></div>`, we should be able to move the cursor between the
-//        two <p> elements. But the algorithms below limit us to a single DOM node.
-
 void Selection::move_offset_to_next_character(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
+    // If there is a selection range, collapse to the end of that range without moving forward
+    if (collapse_selection && !is_collapsed()) {
+        MUST(collapse(m_range->end_container(), m_range->end_offset()));
+        m_document->reset_cursor_blink_cycle();
+        scroll_focus_into_view();
+        return;
+    }
+
+    // Otherwise, move forward if possible
+    auto* text_node = as_if<DOM::Text>(focus_node().ptr());
     if (!text_node)
         return;
 
-    // If there is a selection range, collapse to the end (max) of that range without moving forward
-    if (collapse_selection && !is_collapsed()) {
-        MUST(collapse(text_node, max(anchor_offset(), focus_offset())));
-        m_document->reset_cursor_blink_cycle();
-    }
-    // Otherwise, move forward if possible
-    else if (auto offset = text_node->grapheme_segmenter().next_boundary(focus_offset()); offset.has_value()) {
+    if (auto offset = text_node->grapheme_segmenter().next_boundary(focus_offset()); offset.has_value()) {
         if (collapse_selection) {
             MUST(collapse(text_node, *offset));
             m_document->reset_cursor_blink_cycle();
         } else {
-            MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *offset));
+            MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *text_node, *offset));
         }
     }
     scroll_focus_into_view();
@@ -617,22 +616,25 @@ void Selection::move_offset_to_next_character(bool collapse_selection)
 
 void Selection::move_offset_to_previous_character(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
+    // If there is a selection range, collapse to the start of that range without moving backward
+    if (collapse_selection && !is_collapsed()) {
+        MUST(collapse(m_range->start_container(), m_range->start_offset()));
+        m_document->reset_cursor_blink_cycle();
+        scroll_focus_into_view();
+        return;
+    }
+
+    // Otherwise, move backward if possible
+    auto* text_node = as_if<DOM::Text>(focus_node().ptr());
     if (!text_node)
         return;
 
-    // If there is a selection range, collapse to the start (min) of that range without moving backward
-    if (collapse_selection && !is_collapsed()) {
-        MUST(collapse(text_node, min(anchor_offset(), focus_offset())));
-        m_document->reset_cursor_blink_cycle();
-    }
-    // Otherwise, move backward if possible
-    else if (auto offset = text_node->grapheme_segmenter().previous_boundary(focus_offset()); offset.has_value()) {
+    if (auto offset = text_node->grapheme_segmenter().previous_boundary(focus_offset()); offset.has_value()) {
         if (collapse_selection) {
             MUST(collapse(text_node, *offset));
             m_document->reset_cursor_blink_cycle();
         } else {
-            MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *offset));
+            MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *text_node, *offset));
         }
     }
     scroll_focus_into_view();
@@ -640,23 +642,23 @@ void Selection::move_offset_to_previous_character(bool collapse_selection)
 
 void Selection::move_offset_to_next_word(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
+    auto* text_node = as_if<DOM::Text>(focus_node().ptr());
     if (!text_node)
         return;
 
     while (true) {
-        auto focus_offset = this->focus_offset();
-        if (focus_offset == text_node->data().length_in_code_units())
+        auto current_focus_offset = this->focus_offset();
+        if (current_focus_offset == text_node->data().length_in_code_units())
             break;
 
-        if (auto offset = text_node->word_segmenter().next_boundary(focus_offset); offset.has_value()) {
+        if (auto offset = text_node->word_segmenter().next_boundary(current_focus_offset); offset.has_value()) {
             if (collapse_selection) {
                 MUST(collapse(text_node, *offset));
                 m_document->reset_cursor_blink_cycle();
             } else {
-                MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *offset));
+                MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *text_node, *offset));
             }
-            auto word = text_node->data().substring_view(focus_offset, *offset - focus_offset);
+            auto word = text_node->data().substring_view(current_focus_offset, *offset - current_focus_offset);
             if (Unicode::Segmenter::should_continue_beyond_word(word))
                 continue;
         }
@@ -667,20 +669,20 @@ void Selection::move_offset_to_next_word(bool collapse_selection)
 
 void Selection::move_offset_to_previous_word(bool collapse_selection)
 {
-    auto* text_node = as_if<DOM::Text>(anchor_node().ptr());
+    auto* text_node = as_if<DOM::Text>(focus_node().ptr());
     if (!text_node)
         return;
 
     while (true) {
-        auto focus_offset = this->focus_offset();
-        if (auto offset = text_node->word_segmenter().previous_boundary(focus_offset); offset.has_value()) {
+        auto current_focus_offset = this->focus_offset();
+        if (auto offset = text_node->word_segmenter().previous_boundary(current_focus_offset); offset.has_value()) {
             if (collapse_selection) {
                 MUST(collapse(text_node, *offset));
                 m_document->reset_cursor_blink_cycle();
             } else {
-                MUST(set_base_and_extent(*text_node, anchor_offset(), *text_node, *offset));
+                MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *text_node, *offset));
             }
-            auto word = text_node->data().substring_view(*offset, focus_offset - *offset);
+            auto word = text_node->data().substring_view(*offset, current_focus_offset - *offset);
             if (Unicode::Segmenter::should_continue_beyond_word(word))
                 continue;
         }
@@ -695,34 +697,24 @@ void Selection::move_offset_to_next_line(bool collapse_selection)
     if (!focus_text)
         return;
 
-    // Try node-agnostic visual line navigation using the paint tree's fragment data.
-    if (auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset()); iterator.has_value()) {
-        auto cursor_x = iterator->cursor_x();
-        if (iterator->next_line()) {
-            if (auto target = iterator->position_for_x(cursor_x); target.has_value()) {
-                auto& target_node = const_cast<DOM::Text&>(target->text_node);
-                if (collapse_selection) {
-                    MUST(collapse(&target_node, target->offset));
-                    m_document->reset_cursor_blink_cycle();
-                } else {
-                    MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
-                }
-                scroll_focus_into_view();
-                return;
-            }
-        }
-    }
-
-    // Fallback: single-node navigation for textarea newlines.
-    auto new_offset = compute_cursor_position_on_next_line(*focus_text, focus_offset());
-    if (!new_offset.has_value())
+    auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset());
+    if (!iterator.has_value())
         return;
 
+    auto cursor_x = iterator->cursor_x();
+    if (!iterator->next_line())
+        return;
+
+    auto target = iterator->position_for_x(cursor_x);
+    if (!target.has_value())
+        return;
+
+    auto& target_node = const_cast<DOM::Text&>(target->text_node);
     if (collapse_selection) {
-        MUST(collapse(focus_text, *new_offset));
+        MUST(collapse(&target_node, target->offset));
         m_document->reset_cursor_blink_cycle();
     } else {
-        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *focus_text, *new_offset));
+        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
     }
     scroll_focus_into_view();
 }
@@ -733,34 +725,24 @@ void Selection::move_offset_to_previous_line(bool collapse_selection)
     if (!focus_text)
         return;
 
-    // Try node-agnostic visual line navigation using the paint tree's fragment data.
-    if (auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset()); iterator.has_value()) {
-        auto cursor_x = iterator->cursor_x();
-        if (iterator->previous_line()) {
-            if (auto target = iterator->position_for_x(cursor_x); target.has_value()) {
-                auto& target_node = const_cast<DOM::Text&>(target->text_node);
-                if (collapse_selection) {
-                    MUST(collapse(&target_node, target->offset));
-                    m_document->reset_cursor_blink_cycle();
-                } else {
-                    MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
-                }
-                scroll_focus_into_view();
-                return;
-            }
-        }
-    }
-
-    // Fallback: single-node navigation for textarea newlines.
-    auto new_offset = compute_cursor_position_on_previous_line(*focus_text, focus_offset());
-    if (!new_offset.has_value())
+    auto iterator = Painting::VisualLineIterator::create(*focus_text, focus_offset());
+    if (!iterator.has_value())
         return;
 
+    auto cursor_x = iterator->cursor_x();
+    if (!iterator->previous_line())
+        return;
+
+    auto target = iterator->position_for_x(cursor_x);
+    if (!target.has_value())
+        return;
+
+    auto& target_node = const_cast<DOM::Text&>(target->text_node);
     if (collapse_selection) {
-        MUST(collapse(focus_text, *new_offset));
+        MUST(collapse(&target_node, target->offset));
         m_document->reset_cursor_blink_cycle();
     } else {
-        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), *focus_text, *new_offset));
+        MUST(set_base_and_extent(*anchor_node(), anchor_offset(), target_node, target->offset));
     }
     scroll_focus_into_view();
 }

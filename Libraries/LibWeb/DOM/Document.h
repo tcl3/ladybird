@@ -73,6 +73,7 @@ enum class InvalidateLayoutTreeReason {
     X(DocumentFindMatchingText)              \
     X(DocumentSetDesignMode)                 \
     X(DumpDisplayList)                       \
+    X(EditingCursorNavigation)               \
     X(ElementCheckVisibility)                \
     X(ElementClientHeight)                   \
     X(ElementClientWidth)                    \

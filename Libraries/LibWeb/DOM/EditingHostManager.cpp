@@ -10,10 +10,68 @@
 #include <LibWeb/DOM/Range.h>
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/Editing/CommandNames.h>
+#include <LibWeb/GraphemeEdgeTracker.h>
+#include <LibWeb/Layout/Node.h>
 #include <LibWeb/Selection/Selection.h>
 #include <LibWeb/UIEvents/InputTypes.h>
 
 namespace Web::DOM {
+
+static GC::Ptr<Text> next_text_node_within(Node& current, Node& boundary)
+{
+    for (auto* node = current.next_in_pre_order(&boundary); node; node = node->next_in_pre_order(&boundary)) {
+        if (auto* text = as_if<Text>(node); text && text->length() > 0 && text->is_editable())
+            return *text;
+    }
+    return {};
+}
+
+static GC::Ptr<Text> previous_text_node_within(Node& current, Node& boundary)
+{
+    for (auto* node = current.previous_in_pre_order(); node && node != &boundary; node = node->previous_in_pre_order()) {
+        if (auto* text = as_if<Text>(node); text && text->length() > 0 && text->is_editable())
+            return *text;
+    }
+    return {};
+}
+
+static bool is_line_break_node(Node& node)
+{
+    auto* layout_node = node.layout_node();
+    if (!layout_node)
+        return false;
+    if (layout_node->is_break_node())
+        return true;
+    auto display = layout_node->display();
+    return display.is_outside_and_inside() && display.is_block_outside();
+}
+
+static bool has_line_break_between(Node& first, Node& second, Node& boundary)
+{
+    for (auto* node = first.next_in_pre_order(&boundary); node && node != &second; node = node->next_in_pre_order(&boundary)) {
+        if (is_line_break_node(*node))
+            return true;
+    }
+    return false;
+}
+
+static GC::Ptr<Text> next_text_node_across_line_break(Node& current, Node& boundary)
+{
+    for (auto* node = current.next_in_pre_order(&boundary); node; node = node->next_in_pre_order(&boundary)) {
+        if (is_line_break_node(*node))
+            return next_text_node_within(*node, boundary);
+    }
+    return {};
+}
+
+static GC::Ptr<Text> previous_text_node_across_line_break(Node& current, Node& boundary)
+{
+    for (auto* node = current.previous_in_pre_order(); node && node != &boundary; node = node->previous_in_pre_order()) {
+        if (is_line_break_node(*node))
+            return previous_text_node_within(*node, boundary);
+    }
+    return {};
+}
 
 GC_DEFINE_ALLOCATOR(EditingHostManager);
 
@@ -93,7 +151,20 @@ GC::Ptr<Selection::Selection> EditingHostManager::get_selection_for_navigation(C
     if (collapse == CollapseSelection::Yes && !focus_node->is_editable())
         return {};
 
+    m_document->update_layout(UpdateLayoutReason::EditingCursorNavigation);
     return selection;
+}
+
+void EditingHostManager::move_selection_focus_to_text_node(Selection::Selection& selection, Node& old_focus_node, Text& target, unsigned offset, bool collapse_selection)
+{
+    old_focus_node.invalidate_cursor_paint_cache();
+    if (collapse_selection) {
+        MUST(selection.collapse(&target, offset));
+    } else {
+        MUST(selection.set_base_and_extent(*selection.anchor_node(), selection.anchor_offset(), target, offset));
+    }
+    m_document->reset_cursor_blink_cycle();
+    selection.scroll_focus_into_view();
 }
 
 void EditingHostManager::move_cursor_to_start(CollapseSelection collapse)
@@ -102,6 +173,16 @@ void EditingHostManager::move_cursor_to_start(CollapseSelection collapse)
     if (!selection)
         return;
     auto node = selection->focus_node();
+
+    // In a contenteditable, find the first text node on the current line by walking backward past adjacent inline text
+    // nodes, stopping at line breaks.
+    if (m_active_contenteditable_element) {
+        while (auto previous = previous_text_node_within(*node, *m_active_contenteditable_element)) {
+            if (has_line_break_between(*previous, *node, *m_active_contenteditable_element))
+                break;
+            node = previous;
+        }
+    }
 
     if (collapse == CollapseSelection::Yes) {
         MUST(selection->collapse(node, 0));
@@ -119,6 +200,16 @@ void EditingHostManager::move_cursor_to_end(CollapseSelection collapse)
         return;
     auto node = selection->focus_node();
 
+    // In a contenteditable, find the last text node on the current line by walking forward past adjacent inline text
+    // nodes, stopping at line breaks.
+    if (m_active_contenteditable_element) {
+        while (auto next = next_text_node_within(*node, *m_active_contenteditable_element)) {
+            if (has_line_break_between(*node, *next, *m_active_contenteditable_element))
+                break;
+            node = next;
+        }
+    }
+
     if (collapse == CollapseSelection::Yes) {
         m_document->reset_cursor_blink_cycle();
         MUST(selection->collapse(node, node->length()));
@@ -128,48 +219,165 @@ void EditingHostManager::move_cursor_to_end(CollapseSelection collapse)
     selection->scroll_focus_into_view();
 }
 
-void EditingHostManager::increment_cursor_position_offset(CollapseSelection collapse)
+template<typename MoveFunction>
+void EditingHostManager::increment_cursor_position(CollapseSelection collapse, MoveFunction move)
 {
     auto selection = get_selection_for_navigation(collapse);
     if (!selection)
         return;
-    selection->move_offset_to_next_character(collapse == CollapseSelection::Yes);
+
+    auto collapse_selection = collapse == CollapseSelection::Yes;
+    if (collapse_selection && !selection->is_collapsed()) {
+        move(*selection, collapse_selection);
+        return;
+    }
+
+    auto old_focus_node = selection->focus_node();
+    auto old_focus_offset = selection->focus_offset();
+
+    move(*selection, collapse_selection);
+
+    // The end of one text node and the start of the next are the same visual cursor position when they are adjacent
+    // inline content on the same line. Cross to the next text node, and advance one additional unit only if there is
+    // no line break between them.
+    if (m_active_contenteditable_element
+        && selection->focus_node() == old_focus_node
+        && selection->focus_offset() == old_focus_offset) {
+        auto next_text = next_text_node_within(*old_focus_node, *m_active_contenteditable_element);
+        if (!next_text)
+            return;
+        move_selection_focus_to_text_node(*selection, *old_focus_node, *next_text, 0, collapse_selection);
+        if (!has_line_break_between(*old_focus_node, *next_text, *m_active_contenteditable_element))
+            move(*selection, collapse_selection);
+    }
+}
+
+template<typename MoveFunction>
+void EditingHostManager::decrement_cursor_position(CollapseSelection collapse, MoveFunction move)
+{
+    auto selection = get_selection_for_navigation(collapse);
+    if (!selection)
+        return;
+
+    auto collapse_selection = collapse == CollapseSelection::Yes;
+    if (collapse_selection && !selection->is_collapsed()) {
+        move(*selection, collapse_selection);
+        return;
+    }
+
+    auto old_focus_node = selection->focus_node();
+    auto old_focus_offset = selection->focus_offset();
+
+    move(*selection, collapse_selection);
+
+    // The start of one text node and the end of the previous are the same visual cursor position when they are
+    // adjacent inline content on the same line. Cross to the previous text node, and retreat one additional unit only
+    // if there is no line break between them.
+    if (m_active_contenteditable_element
+        && selection->focus_node() == old_focus_node
+        && selection->focus_offset() == old_focus_offset) {
+        auto previous_text = previous_text_node_within(*old_focus_node, *m_active_contenteditable_element);
+        if (!previous_text)
+            return;
+        move_selection_focus_to_text_node(*selection, *old_focus_node, *previous_text, previous_text->length(), collapse_selection);
+        if (!has_line_break_between(*previous_text, *old_focus_node, *m_active_contenteditable_element))
+            move(*selection, collapse_selection);
+    }
+}
+
+void EditingHostManager::increment_cursor_position_offset(CollapseSelection collapse)
+{
+    increment_cursor_position(collapse, [](auto& selection, auto collapse_selection) {
+        selection.move_offset_to_next_character(collapse_selection);
+    });
 }
 
 void EditingHostManager::decrement_cursor_position_offset(CollapseSelection collapse)
 {
-    auto selection = get_selection_for_navigation(collapse);
-    if (!selection)
-        return;
-    selection->move_offset_to_previous_character(collapse == CollapseSelection::Yes);
+    decrement_cursor_position(collapse, [](auto& selection, auto collapse_selection) {
+        selection.move_offset_to_previous_character(collapse_selection);
+    });
 }
 
 void EditingHostManager::increment_cursor_position_to_next_word(CollapseSelection collapse)
 {
-    auto selection = get_selection_for_navigation(collapse);
-    if (!selection)
-        return;
-    selection->move_offset_to_next_word(collapse == CollapseSelection::Yes);
+    increment_cursor_position(collapse, [](auto& selection, auto collapse_selection) {
+        selection.move_offset_to_next_word(collapse_selection);
+    });
 }
 
 void EditingHostManager::decrement_cursor_position_to_previous_word(CollapseSelection collapse)
 {
-    auto selection = get_selection_for_navigation(collapse);
-    if (!selection)
-        return;
-    selection->move_offset_to_previous_word(collapse == CollapseSelection::Yes);
+    decrement_cursor_position(collapse, [](auto& selection, auto collapse_selection) {
+        selection.move_offset_to_previous_word(collapse_selection);
+    });
 }
 
 void EditingHostManager::increment_cursor_position_to_next_line(CollapseSelection collapse)
 {
-    if (auto selection = m_document->get_selection())
-        selection->move_offset_to_next_line(collapse == CollapseSelection::Yes);
+    auto selection = get_selection_for_navigation(collapse);
+    if (!selection)
+        return;
+
+    auto collapse_selection = collapse == CollapseSelection::Yes;
+    auto old_focus_node = selection->focus_node();
+    auto old_focus_offset = selection->focus_offset();
+
+    // Selection::move_offset_to_next_line uses VisualLineIterator which handles within-block
+    // cross-node navigation (e.g. across <b> boundaries or <br> within the same block).
+    selection->move_offset_to_next_line(collapse_selection);
+
+    // If the cursor moved (different node or different offset), we are done.
+    if (!m_active_contenteditable_element
+        || selection->focus_node() != old_focus_node
+        || selection->focus_offset() != old_focus_offset)
+        return;
+
+    // The cursor did not move, meaning we are at the last line in the current block. Fall back to
+    // DOM walking for crossing block boundaries (e.g. <p> to <p>).
+    auto next_text = next_text_node_across_line_break(*old_focus_node, *m_active_contenteditable_element);
+    if (!next_text)
+        return;
+
+    auto& focus_text_node = as<Text>(*old_focus_node);
+    auto position_in_line = old_focus_offset - find_line_start(focus_text_node, old_focus_offset);
+    auto offset = min(position_in_line, find_line_end(*next_text, 0));
+
+    move_selection_focus_to_text_node(*selection, *old_focus_node, *next_text, offset, collapse_selection);
 }
 
 void EditingHostManager::decrement_cursor_position_to_previous_line(CollapseSelection collapse)
 {
-    if (auto selection = m_document->get_selection())
-        selection->move_offset_to_previous_line(collapse == CollapseSelection::Yes);
+    auto selection = get_selection_for_navigation(collapse);
+    if (!selection)
+        return;
+
+    auto collapse_selection = collapse == CollapseSelection::Yes;
+    auto old_focus_node = selection->focus_node();
+    auto old_focus_offset = selection->focus_offset();
+
+    // Selection::move_offset_to_previous_line uses VisualLineIterator which handles within-block
+    // cross-node navigation (e.g. across <b> boundaries or <br> within the same block).
+    selection->move_offset_to_previous_line(collapse_selection);
+
+    // If the cursor moved (different node or different offset), we are done.
+    if (!m_active_contenteditable_element
+        || selection->focus_node() != old_focus_node
+        || selection->focus_offset() != old_focus_offset)
+        return;
+
+    // The cursor did not move, meaning we are at the first line in the current block. Fall back to
+    // DOM walking for crossing block boundaries (e.g. <p> to <p>).
+    auto previous_text = previous_text_node_across_line_break(*old_focus_node, *m_active_contenteditable_element);
+    if (!previous_text)
+        return;
+
+    auto& focus_text_node = as<Text>(*old_focus_node);
+    auto position_in_line = old_focus_offset - find_line_start(focus_text_node, old_focus_offset);
+    auto last_line_start = find_line_start(*previous_text, previous_text->data().length_in_code_units());
+    auto offset = last_line_start + min(position_in_line, previous_text->data().length_in_code_units() - last_line_start);
+
+    move_selection_focus_to_text_node(*selection, *old_focus_node, *previous_text, offset, collapse_selection);
 }
 
 void EditingHostManager::handle_delete(FlyString const& input_type)

@@ -50,6 +50,12 @@ private:
     virtual GC::Ref<JS::Cell> as_cell() override { return *this; }
 
     GC::Ptr<Selection::Selection> get_selection_for_navigation(CollapseSelection) const;
+    void move_selection_focus_to_text_node(Selection::Selection&, Node& old_focus_node, Text& target, unsigned offset, bool collapse_selection);
+
+    template<typename MoveFunction>
+    void increment_cursor_position(CollapseSelection, MoveFunction);
+    template<typename MoveFunction>
+    void decrement_cursor_position(CollapseSelection, MoveFunction);
 
     GC::Ref<Document> m_document;
     GC::Ptr<DOM::Node> m_active_contenteditable_element;
