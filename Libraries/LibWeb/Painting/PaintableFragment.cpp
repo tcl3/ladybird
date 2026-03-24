@@ -16,7 +16,7 @@
 
 namespace Web::Painting {
 
-PaintableFragment::PaintableFragment(Layout::LineBoxFragment const& fragment)
+PaintableFragment::PaintableFragment(Layout::LineBoxFragment const& fragment, size_t line_index)
     : m_layout_node(fragment.layout_node())
     , m_offset(fragment.offset())
     , m_size(fragment.size())
@@ -25,6 +25,7 @@ PaintableFragment::PaintableFragment(Layout::LineBoxFragment const& fragment)
     , m_glyph_run(fragment.glyph_run())
     , m_baseline(fragment.baseline())
     , m_writing_mode(fragment.writing_mode())
+    , m_line_index(line_index)
     , m_has_trailing_whitespace(fragment.has_trailing_whitespace())
 {
 }

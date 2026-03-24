@@ -9,25 +9,39 @@
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/GraphemeEdgeTracker.h>
 #include <LibWeb/Layout/TextNode.h>
+#include <LibWeb/Painting/VisualLineIterator.h>
 
 namespace Web {
 
-// FIXME: Using newline characters to determine line breaks is insufficient. If a line is wrapped due space constraints,
-//        we want to consider each segment of the wrapped line as its own line in the algorithms below.
-
-size_t find_line_start(Utf16View const& view, size_t offset)
+static size_t find_line_start_by_newline(Utf16View const& view, size_t offset)
 {
     while (offset != 0 && view.code_unit_at(offset - 1) != '\n')
         --offset;
     return offset;
 }
 
-size_t find_line_end(Utf16View const& view, size_t offset)
+static size_t find_line_end_by_newline(Utf16View const& view, size_t offset)
 {
     auto length = view.length_in_code_units();
     while (offset < length && view.code_unit_at(offset) != '\n')
         ++offset;
     return offset;
+}
+
+size_t find_line_start(DOM::Text const& dom_node, size_t offset)
+{
+    if (auto iterator = Painting::VisualLineIterator::create(dom_node, offset); iterator.has_value())
+        return iterator->line_start_for_node(*dom_node.unsafe_layout_node());
+
+    return find_line_start_by_newline(dom_node.data().utf16_view(), offset);
+}
+
+size_t find_line_end(DOM::Text const& dom_node, size_t offset)
+{
+    if (auto iterator = Painting::VisualLineIterator::create(dom_node, offset); iterator.has_value())
+        return iterator->line_end_for_node(*dom_node.unsafe_layout_node());
+
+    return find_line_end_by_newline(dom_node.data().utf16_view(), offset);
 }
 
 static float measure_text_width(Layout::TextNode const& text_node, Utf16View const& text)
@@ -79,12 +93,12 @@ Optional<size_t> compute_cursor_position_on_next_line(DOM::Text const& dom_node,
     auto text = dom_node.data().utf16_view();
     auto new_offset = text.length_in_code_units();
 
-    if (auto current_line_end = find_line_end(text, current_offset); current_line_end < text.length_in_code_units()) {
-        auto current_line_start = find_line_start(text, current_offset);
+    if (auto current_line_end = find_line_end_by_newline(text, current_offset); current_line_end < text.length_in_code_units()) {
+        auto current_line_start = find_line_start_by_newline(text, current_offset);
         auto current_line_text = text.substring_view(current_line_start, current_offset - current_line_start);
 
         auto next_line_start = current_line_end + 1;
-        auto next_line_length = find_line_end(text, next_line_start) - next_line_start;
+        auto next_line_length = find_line_end_by_newline(text, next_line_start) - next_line_start;
         auto next_line_text = text.substring_view(next_line_start, next_line_length);
 
         new_offset = next_line_start + translate_position_across_lines(*layout_node, current_line_text, next_line_text);
@@ -103,10 +117,10 @@ Optional<size_t> compute_cursor_position_on_previous_line(DOM::Text const& dom_n
     auto text = dom_node.data().utf16_view();
     auto new_offset = 0uz;
 
-    if (auto current_line_start = find_line_start(text, current_offset); current_line_start != 0) {
+    if (auto current_line_start = find_line_start_by_newline(text, current_offset); current_line_start != 0) {
         auto current_line_text = text.substring_view(current_line_start, current_offset - current_line_start);
 
-        auto previous_line_start = find_line_start(text, current_line_start - 1);
+        auto previous_line_start = find_line_start_by_newline(text, current_line_start - 1);
         auto previous_line_length = current_line_start - previous_line_start - 1;
         auto previous_line_text = text.substring_view(previous_line_start, previous_line_length);
 

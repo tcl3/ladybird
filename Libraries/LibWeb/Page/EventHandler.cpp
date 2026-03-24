@@ -469,11 +469,11 @@ void EventHandler::apply_mouse_selection(CSSPixelPoint visual_viewport_position)
     if (m_selection_mode == SelectionMode::Paragraph && m_selection_origin && is<DOM::Text>(*focus_node)) {
         auto& focus_text_node = as<DOM::Text>(*focus_node);
 
-        // For input/textarea, find line boundaries using newline characters.
+        // For input/textarea, find line boundaries using visual line fragments.
         // For regular content, find paragraph boundaries using block elements.
         GC::Ref<DOM::Range> paragraph_range = m_mouse_selection_target
-            ? DOM::Range::create(focus_text_node, find_line_start(focus_text_node.data().utf16_view(), focus_index),
-                  focus_text_node, find_line_end(focus_text_node.data().utf16_view(), focus_index))
+            ? DOM::Range::create(focus_text_node, find_line_start(focus_text_node, focus_index),
+                  focus_text_node, find_line_end(focus_text_node, focus_index))
             : find_paragraph_range(focus_text_node, focus_index);
 
         // Determine cursor position relative to origin.
@@ -1161,11 +1161,10 @@ bool EventHandler::initiate_paragraph_selection(DOM::Document& document, Paintin
     auto& hit_node = as<DOM::Text>(*hit.paintable->dom_node());
     size_t hit_index = hit.index_in_node;
 
-    // For input/textarea elements, select the current line (delimited by newlines).
+    // For input/textarea elements, select the current visual line.
     if (auto* target = document.active_input_events_target(&hit_node)) {
-        auto text = hit_node.data().utf16_view();
-        auto line_start = find_line_start(text, hit_index);
-        auto line_end = find_line_end(text, hit_index);
+        auto line_start = find_line_start(hit_node, hit_index);
+        auto line_end = find_line_end(hit_node, hit_index);
 
         m_selection_mode = SelectionMode::Paragraph;
         m_selection_origin = DOM::Range::create(hit_node, line_start, hit_node, line_end);
