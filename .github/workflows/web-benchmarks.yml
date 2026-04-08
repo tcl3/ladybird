@@ -1,6 +1,7 @@
 name: 'Web benchmarks'
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ['CI']
     branches: [master]
@@ -14,7 +15,7 @@ env:
 jobs:
   web-benchmarks:
     runs-on: ${{ fromJSON(matrix.runner_labels) }}
-    if: ${{ github.repository == 'LadybirdBrowser/ladybird' && github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.repository == 'LadybirdBrowser/ladybird' && github.event.workflow_run.conclusion == 'success') }}
     name: ${{ matrix.os_name }}, ${{ matrix.arch }}
 
     strategy:
@@ -22,12 +23,12 @@ jobs:
       matrix:
         os_name: ['Linux']
         arch: ['x86_64']
-        runner_labels: ['["ubuntu-24.04-internal", "web-benchmarks", "self-hosted"]']
+        runner_labels: ['["ubuntu-24.04"]']
 
         include:
           - os_name: 'macOS'
             arch: 'arm64'
-            runner_labels: '["macos-15", "web-benchmarks", "self-hosted"]'
+            runner_labels: '["macos-15"]'
 
     permissions:
       actions: read
@@ -141,6 +142,7 @@ jobs:
           retention-days: 90
 
       - name: 'Call webhook'
+        if: ${{ github.repository == 'LadybirdBrowser/ladybird' }}
         shell: bash
         run: |
           echo '{
