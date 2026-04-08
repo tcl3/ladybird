@@ -38,6 +38,17 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: 'Ensure lsb-release is installed'
+      # actions/setup-python invokes lsb_release to compute its pip cache key on Linux. Self-hosted runners do not
+      # always ship with the lsb-release package, so install it here before setup-python runs.
+      if: ${{ inputs.os == 'Linux' }}
+      shell: bash
+      run: |
+        if ! command -v lsb_release > /dev/null 2>&1; then
+          sudo apt-get update -y
+          sudo apt-get install -y lsb-release
+        fi
+
     - uses: actions/setup-python@v6
       with:
         python-version: 3.12
