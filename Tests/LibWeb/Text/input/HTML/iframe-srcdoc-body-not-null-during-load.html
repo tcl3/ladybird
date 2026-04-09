@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    asyncTest((done) => {
+        let sawNullBody = false;
+
+        function check() {
+            let doc = iframe.contentDocument;
+            if (doc && doc.body === null) {
+                sawNullBody = true;
+            }
+
+            if (doc && doc.body !== null && doc.URL === "about:srcdoc") {
+                if (sawNullBody)
+                    println("FAIL: contentDocument.body was null during srcdoc load");
+                else
+                    println("PASS");
+                done();
+                return;
+            }
+
+            setTimeout(check, 0);
+        }
+        let iframe = document.createElement("iframe");
+        iframe.srcdoc = "<p>hello</p>";
+        document.body.appendChild(iframe);
+        check();
+    });
+</script>

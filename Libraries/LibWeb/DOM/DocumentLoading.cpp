@@ -80,6 +80,24 @@ static WebIDL::ExceptionOr<GC::Ref<DOM::Document>> load_html_document(HTML::Navi
         HTML::HTMLParser::the_end(document);
     }
 
+    // AD-HOC: For about:srcdoc documents, the body bytes are always immediately available. Parse synchronously to avoid
+    //         exposing an intermediate state where the document is active but has no body element, which would cause a
+    //         race between the parent document's DOMContentLoaded and the iframe's parser.
+    else if (auto const* data = navigation_params.response->body()->source().get_pointer<ByteBuffer>();
+        data && document->url_string() == "about:srcdoc"sv) {
+
+        auto url = navigation_params.response->url().value();
+        auto mime_type = Fetch::Infrastructure::extract_mime_type(navigation_params.response->header_list());
+        auto parser = HTML::HTMLParser::create_with_uncertain_encoding(document, *data, mime_type);
+        if (document->ready_to_run_scripts()) {
+            parser->run(url);
+        } else {
+            document->set_deferred_parser_start(GC::create_function(document->heap(), [parser, url] {
+                parser->run(url);
+            }));
+        }
+    }
+
     // 3. Otherwise, create an HTML parser and associate it with the document.
     //    Each task that the networking task source places on the task queue while fetching runs must then fill the
     //    parser's input byte stream with the fetched bytes and cause the HTML parser to perform the appropriate

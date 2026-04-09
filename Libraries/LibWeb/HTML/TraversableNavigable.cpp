@@ -942,6 +942,12 @@ void ApplyHistoryStepState::process_continuations()
             if (target_entry->document_state()->document_id() == displayed_document_id) {
                 update_document();
             }
+            // AD-HOC: For about:srcdoc documents, then run update_document synchronously instead of queueing it. This
+            //         ensures set_ready_to_run_scripts fires at the same task as activation, so the parser runs and
+            //         the body element exists before JavaScript can observe the document.
+            else if (resolved_document->url_string() == "about:srcdoc"sv && resolved_document->has_deferred_parser_start()) {
+                update_document();
+            }
             // 5. Otherwise, queue a global task on the navigation and traversal task source given targetEntry's document's relevant global object to perform updateDocument
             else {
                 queue_global_task(Task::Source::NavigationAndTraversal, relevant_global_object(*resolved_document), GC::create_function(heap(), move(update_document)));
