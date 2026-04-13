@@ -470,6 +470,8 @@ void LayoutState::commit(Box& root)
                 paintable_box->set_override_borders_data(used_values.override_borders_data().value());
             if (used_values.table_cell_coordinates().has_value())
                 paintable_box->set_table_cell_coordinates(used_values.table_cell_coordinates().value());
+            if (!used_values.m_table_column_backgrounds.is_empty())
+                paintable_box->set_table_column_backgrounds(move(used_values.m_table_column_backgrounds));
 
             if (auto* paintable_with_lines = as_if<Painting::PaintableWithLines>(*paintable_box)) {
                 for (size_t line_index = 0; line_index < used_values.line_boxes.size(); ++line_index) {

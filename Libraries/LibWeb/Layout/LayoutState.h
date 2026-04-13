@@ -224,6 +224,9 @@ struct LayoutState {
         void set_table_cell_coordinates(Painting::PaintableBox::TableCellCoordinates const& table_cell_coordinates) { m_table_cell_coordinates = table_cell_coordinates; }
         auto const& table_cell_coordinates() const { return m_table_cell_coordinates; }
 
+        void set_table_column_backgrounds(Vector<Painting::PaintableBox::TableColumnBackgroundInfo> data) { m_table_column_backgrounds = move(data); }
+        auto const& table_column_backgrounds() const { return m_table_column_backgrounds; }
+
         void set_computed_svg_path(Gfx::Path const& svg_path) { m_computed_svg_path = svg_path; }
         auto& computed_svg_path() { return m_computed_svg_path; }
 
@@ -271,6 +274,7 @@ struct LayoutState {
 
         Optional<Painting::PaintableBox::BordersDataWithElementKind> m_override_borders_data;
         Optional<Painting::PaintableBox::TableCellCoordinates> m_table_cell_coordinates;
+        Vector<Painting::PaintableBox::TableColumnBackgroundInfo> m_table_column_backgrounds;
 
         Optional<Gfx::Path> m_computed_svg_path;
         Optional<Painting::SVGGraphicsPaintable::ComputedTransforms> m_computed_svg_transforms;

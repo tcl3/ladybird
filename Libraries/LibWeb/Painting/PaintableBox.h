@@ -213,6 +213,20 @@ public:
     void set_table_cell_coordinates(TableCellCoordinates const& table_cell_coordinates) { m_table_cell_coordinates = table_cell_coordinates; }
     auto const& table_cell_coordinates() const { return m_table_cell_coordinates; }
 
+    struct TablePartBackgroundData {
+        GC::Ptr<Layout::NodeWithStyleAndBoxModelMetrics const> layout_box;
+        BoxModelMetrics box_model;
+        CSSPixelRect rect;
+    };
+
+    struct TableColumnBackgroundInfo {
+        TablePartBackgroundData column;
+        TablePartBackgroundData column_group;
+    };
+
+    void set_table_column_backgrounds(Vector<TableColumnBackgroundInfo> data) { m_table_column_backgrounds = move(data); }
+    Vector<TableColumnBackgroundInfo> const& table_column_backgrounds() const { return m_table_column_backgrounds; }
+
     enum class ShrinkRadiiForBorders {
         Yes,
         No
@@ -307,6 +321,7 @@ protected:
     virtual void paint_backdrop_filter(DisplayListRecordingContext&) const;
     virtual void paint_background(DisplayListRecordingContext&) const;
     virtual void paint_box_shadow(DisplayListRecordingContext&) const;
+    void paint_table_column_backgrounds(DisplayListRecordingContext&) const;
 
     virtual void paint_inspector_overlay_internal(DisplayListRecordingContext&) const override;
 
@@ -341,6 +356,7 @@ private:
 
     Optional<BordersDataWithElementKind> m_override_borders_data;
     Optional<TableCellCoordinates> m_table_cell_coordinates;
+    Vector<TableColumnBackgroundInfo> m_table_column_backgrounds;
 
     ResolvedCSSFilter m_filter;
 
