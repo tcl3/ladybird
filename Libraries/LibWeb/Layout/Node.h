@@ -410,6 +410,84 @@ inline Gfx::Font const& NodeWithStyle::first_available_font() const
     return computed_values().font_list().font_for_code_point(' ');
 }
 
+inline CSS::Display Node::display() const
+{
+    if (!m_has_style) {
+        // NOTE: No style means this is dumb text content.
+        return CSS::Display(CSS::DisplayOutside::Inline, CSS::DisplayInside::Flow);
+    }
+    return computed_values().display();
+}
+
+inline CSS::Display Node::display_before_box_type_transformation() const
+{
+    if (!m_has_style)
+        return CSS::Display(CSS::DisplayOutside::Inline, CSS::DisplayInside::Flow);
+    return computed_values().display_before_box_type_transformation();
+}
+
+inline bool Node::is_inline() const
+{
+    return display().is_inline_outside();
+}
+
+inline bool Node::is_inline_block() const
+{
+    auto display = this->display();
+    return display.is_inline_outside() && display.is_flow_root_inside();
+}
+
+inline bool Node::is_inline_table() const
+{
+    auto display = this->display();
+    return display.is_inline_outside() && display.is_table_inside();
+}
+
+inline bool Node::is_atomic_inline() const
+{
+    if (is_replaced_box())
+        return true;
+    auto display = this->display();
+    return display.is_inline_outside() && !display.is_flow_inside();
+}
+
+inline bool Node::is_floating() const
+{
+    if (!m_has_style)
+        return false;
+    // flex-items don't float.
+    if (m_is_flex_item)
+        return false;
+    return computed_values().float_() != CSS::Float::None;
+}
+
+inline bool Node::is_positioned() const
+{
+    return m_has_style && computed_values().position() != CSS::Positioning::Static;
+}
+
+inline bool Node::is_absolutely_positioned() const
+{
+    if (!m_has_style)
+        return false;
+    auto position = computed_values().position();
+    return position == CSS::Positioning::Absolute || position == CSS::Positioning::Fixed;
+}
+
+inline bool Node::is_fixed_position() const
+{
+    if (!m_has_style)
+        return false;
+    return computed_values().position() == CSS::Positioning::Fixed;
+}
+
+inline bool Node::is_sticky_position() const
+{
+    if (!m_has_style)
+        return false;
+    return computed_values().position() == CSS::Positioning::Sticky;
+}
+
 bool overflow_value_makes_box_a_scroll_container(CSS::Overflow overflow);
 
 }

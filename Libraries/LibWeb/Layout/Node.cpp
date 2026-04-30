@@ -537,45 +537,6 @@ Viewport& Node::root()
     return *document().unsafe_layout_node();
 }
 
-bool Node::is_floating() const
-{
-    if (!has_style())
-        return false;
-    // flex-items don't float.
-    if (is_flex_item())
-        return false;
-    return computed_values().float_() != CSS::Float::None;
-}
-
-bool Node::is_positioned() const
-{
-    return has_style() && computed_values().position() != CSS::Positioning::Static;
-}
-
-bool Node::is_absolutely_positioned() const
-{
-    if (!has_style())
-        return false;
-    auto position = computed_values().position();
-    return position == CSS::Positioning::Absolute || position == CSS::Positioning::Fixed;
-}
-
-bool Node::is_fixed_position() const
-{
-    if (!has_style())
-        return false;
-    auto position = computed_values().position();
-    return position == CSS::Positioning::Fixed;
-}
-
-bool Node::is_sticky_position() const
-{
-    if (!has_style())
-        return false;
-    auto position = computed_values().position();
-    return position == CSS::Positioning::Sticky;
-}
-
 NodeWithStyle::NodeWithStyle(DOM::Document& document, DOM::Node* node, GC::Ref<CSS::ComputedProperties> computed_style)
     : Node(document, node)
     , m_computed_values(make<CSS::ComputedValues>())
@@ -1141,50 +1102,6 @@ String Node::debug_description() const
         builder.append("(anonymous)"sv);
     }
     return MUST(builder.to_string());
-}
-
-CSS::Display Node::display() const
-{
-    if (!has_style()) {
-        // NOTE: No style means this is dumb text content.
-        return CSS::Display(CSS::DisplayOutside::Inline, CSS::DisplayInside::Flow);
-    }
-
-    return computed_values().display();
-}
-
-CSS::Display Node::display_before_box_type_transformation() const
-{
-    if (!has_style()) {
-        return CSS::Display(CSS::DisplayOutside::Inline, CSS::DisplayInside::Flow);
-    }
-
-    return computed_values().display_before_box_type_transformation();
-}
-
-bool Node::is_inline() const
-{
-    return display().is_inline_outside();
-}
-
-bool Node::is_inline_block() const
-{
-    auto display = this->display();
-    return display.is_inline_outside() && display.is_flow_root_inside();
-}
-
-bool Node::is_inline_table() const
-{
-    auto display = this->display();
-    return display.is_inline_outside() && display.is_table_inside();
-}
-
-bool Node::is_atomic_inline() const
-{
-    if (is_replaced_box())
-        return true;
-    auto display = this->display();
-    return display.is_inline_outside() && !display.is_flow_inside();
 }
 
 GC::Ref<NodeWithStyle> NodeWithStyle::create_anonymous_wrapper() const
