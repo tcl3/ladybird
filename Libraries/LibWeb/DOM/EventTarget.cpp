@@ -30,6 +30,7 @@
 #include <LibWeb/DOM/EventTarget.h>
 #include <LibWeb/DOM/IDLEventListener.h>
 #include <LibWeb/DOM/Node.h>
+#include <LibWeb/Gamepad/EventNames.h>
 #include <LibWeb/HTML/BeforeUnloadEvent.h>
 #include <LibWeb/HTML/CloseWatcherManager.h>
 #include <LibWeb/HTML/ErrorEvent.h>
@@ -232,6 +233,21 @@ static void update_needs_beforeunload_check(EventTarget& event_target, DOMEventL
         traversable->page().update_needs_beforeunload_check();
 }
 
+static void notify_page_that_window_listens_for_gamepad_events(EventTarget& event_target, DOMEventListener const& listener)
+{
+    if (!first_is_one_of(listener.type, Gamepad::EventNames::gamepadconnected, Gamepad::EventNames::gamepaddisconnected))
+        return;
+
+    auto* window = as_if<HTML::Window>(event_target);
+    if (!window)
+        return;
+
+    if (!window->associated_document().navigable())
+        return;
+
+    window->page().client().page_did_start_using_gamepads();
+}
+
 // https://dom.spec.whatwg.org/#dom-eventtarget-addeventlistener
 void EventTarget::add_event_listener(FlyString const& type, IDLEventListener* callback, Variant<Bindings::AddEventListenerOptions, bool> const& options)
 {
@@ -289,6 +305,7 @@ void EventTarget::add_an_event_listener(DOMEventListener& listener)
         event_listener_list.append(listener);
         invalidate_compositor_wheel_event_listener_state(*this, listener);
         update_needs_beforeunload_check(*this, listener);
+        notify_page_that_window_listens_for_gamepad_events(*this, listener);
     }
 
     // 6. If listener’s signal is not null, then add the following abort steps to it:
