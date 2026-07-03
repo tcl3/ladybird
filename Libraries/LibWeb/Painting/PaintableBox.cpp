@@ -1842,8 +1842,7 @@ static CSSPixels scale_source_length_to_destination(CSSPixels source_length, CSS
 {
     if (source_reference <= 0)
         return source_length;
-    auto scaled_length = source_length * (destination_reference / source_reference);
-    return max(CSSPixels::smallest_positive_value(), scaled_length);
+    return source_length * (destination_reference / source_reference);
 }
 
 static void paint_border_image_slice(DisplayListRecordingContext& context, Gfx::DecodedImageFrame const& source_frame, Gfx::FloatRect const& source_rect, Gfx::IntRect const& dest_rect, Gfx::FloatSize device_tile_size, CSS::ImageRendering image_rendering, CSS::BorderImageRepeat repeat_x, CSS::BorderImageRepeat repeat_y)
@@ -1857,69 +1856,91 @@ static void paint_border_image_slice(DisplayListRecordingContext& context, Gfx::
 
     auto source_size = source_rect.size().to_rounded<int>();
 
-    if (repeat_x == CSS::BorderImageRepeat::Stretch && repeat_y == CSS::BorderImageRepeat::Stretch) {
-        auto scaling_mode = CSS::to_gfx_scaling_mode(image_rendering, source_size, dest_rect.size());
-        context.display_list_recorder().draw_scaled_decoded_image_frame(dest_rect, source_rect, source_frame, scaling_mode);
-        return;
-    }
+    // 'repeat' centers the first tile in the piece; the pattern extends in both directions from there.
+    auto first_tile_position = [](CSS::BorderImageRepeat repeat, int dest_position, int dest_length, float tile_length) {
+        if (repeat == CSS::BorderImageRepeat::Repeat)
+            return dest_position + (dest_length - tile_length) / 2;
+        return static_cast<float>(dest_position);
+    };
 
     DisplayListRecorderStateSaver state_saver { context.display_list_recorder() };
     context.display_list_recorder().add_clip_rect(dest_rect);
 
-    auto draw_tile = [&](Gfx::FloatRect const& tile) {
-        // Snap each edge (not the size) to the pixel grid so adjacent tiles meet exactly, without seams.
-        auto left = round_to<int>(tile.left());
-        auto top = round_to<int>(tile.top());
-        Gfx::IntRect device_rect { left, top, round_to<int>(tile.right()) - left, round_to<int>(tile.bottom()) - top };
-        if (device_rect.is_empty())
-            return;
-        auto scaling_mode = CSS::to_gfx_scaling_mode(image_rendering, source_size, device_rect.size());
-        context.display_list_recorder().draw_scaled_decoded_image_frame(device_rect, source_rect, source_frame, scaling_mode);
+    // The pattern tiles across the whole clip rect in both axes, exactly like a repeating background fill; the clip
+    // rect confines it to the piece. A 'stretch' axis covers the piece with a single tile, so its repetition is
+    // invisible. Using identical parameters to background painting is deliberate: reference pages reconstruct
+    // border-image renderings out of repeating background fills, and both paths must sample pixels identically.
+    auto draw_tiled = [&](Gfx::FloatRect const& tile_rect, Gfx::IntRect const& clip_rect) {
+        auto scaling_mode = CSS::to_gfx_scaling_mode(image_rendering, source_size, tile_rect.size().to_rounded<int>());
+        context.display_list_recorder().draw_repeated_decoded_image_frame(tile_rect, clip_rect, source_rect, source_frame, scaling_mode, true, true);
     };
 
-    if (repeat_x == CSS::BorderImageRepeat::Space || repeat_y == CSS::BorderImageRepeat::Space) {
-        auto whole_tiles_x = repeat_x == CSS::BorderImageRepeat::Space ? static_cast<int>(floor(static_cast<float>(dest_rect.width()) / device_tile_size.width())) : 1;
-        auto whole_tiles_y = repeat_y == CSS::BorderImageRepeat::Space ? static_cast<int>(floor(static_cast<float>(dest_rect.height()) / device_tile_size.height())) : 1;
-        if (whole_tiles_x <= 0 || whole_tiles_y <= 0)
-            return;
+    bool space_x = repeat_x == CSS::BorderImageRepeat::Space;
+    bool space_y = repeat_y == CSS::BorderImageRepeat::Space;
 
-        auto gap_x = repeat_x == CSS::BorderImageRepeat::Space ? (static_cast<float>(dest_rect.width()) - whole_tiles_x * device_tile_size.width()) / (whole_tiles_x + 1) : 0;
-        auto gap_y = repeat_y == CSS::BorderImageRepeat::Space ? (static_cast<float>(dest_rect.height()) - whole_tiles_y * device_tile_size.height()) / (whole_tiles_y + 1) : 0;
-        auto start_x = repeat_x == CSS::BorderImageRepeat::Space ? dest_rect.x() + gap_x : static_cast<float>(dest_rect.x());
-        auto start_y = repeat_y == CSS::BorderImageRepeat::Space ? dest_rect.y() + gap_y : static_cast<float>(dest_rect.y());
-
-        for (int tile_y = 0; tile_y < whole_tiles_y; ++tile_y) {
-            for (int tile_x = 0; tile_x < whole_tiles_x; ++tile_x) {
-                auto left = start_x + tile_x * (device_tile_size.width() + gap_x);
-                auto top = start_y + tile_y * (device_tile_size.height() + gap_y);
-                draw_tile({ left, top, device_tile_size.width(), device_tile_size.height() });
-            }
-        }
+    if (!space_x && !space_y) {
+        Gfx::FloatRect tile_rect {
+            first_tile_position(repeat_x, dest_rect.x(), dest_rect.width(), device_tile_size.width()),
+            first_tile_position(repeat_y, dest_rect.y(), dest_rect.height(), device_tile_size.height()),
+            device_tile_size.width(),
+            device_tile_size.height(),
+        };
+        draw_tiled(tile_rect, dest_rect);
         return;
     }
 
-    auto start_x = static_cast<float>(dest_rect.x());
-    if (repeat_x == CSS::BorderImageRepeat::Repeat) {
-        start_x += (static_cast<float>(dest_rect.width()) - device_tile_size.width()) / 2;
-        while (start_x > dest_rect.x())
-            start_x -= device_tile_size.width();
-    }
+    // AD-HOC: 'space' tiles never rescale, so a degenerate tile size would require an unbounded number of tiles;
+    //         draw nothing instead of hanging the renderer.
+    if ((space_x && device_tile_size.width() < 1) || (space_y && device_tile_size.height() < 1))
+        return;
 
-    auto start_y = static_cast<float>(dest_rect.y());
-    if (repeat_y == CSS::BorderImageRepeat::Repeat) {
-        start_y += (static_cast<float>(dest_rect.height()) - device_tile_size.height()) / 2;
-        while (start_y > dest_rect.y())
-            start_y -= device_tile_size.height();
-    }
+    auto whole_tiles_x = space_x ? static_cast<int>(floor(static_cast<float>(dest_rect.width()) / device_tile_size.width())) : 1;
+    auto whole_tiles_y = space_y ? static_cast<int>(floor(static_cast<float>(dest_rect.height()) / device_tile_size.height())) : 1;
+    if (whole_tiles_x <= 0 || whole_tiles_y <= 0)
+        return;
 
-    for (auto y = start_y; y < dest_rect.bottom(); y += device_tile_size.height()) {
-        for (auto x = start_x; x < dest_rect.right(); x += device_tile_size.width()) {
-            draw_tile({ x, y, device_tile_size.width(), device_tile_size.height() });
-            if (repeat_x == CSS::BorderImageRepeat::Stretch)
-                break;
+    // The leftover space is distributed as equal gaps before, after, and between the tiles.
+    auto gap_x = space_x ? (static_cast<float>(dest_rect.width()) - whole_tiles_x * device_tile_size.width()) / (whole_tiles_x + 1) : 0.0f;
+    auto gap_y = space_y ? (static_cast<float>(dest_rect.height()) - whole_tiles_y * device_tile_size.height()) / (whole_tiles_y + 1) : 0.0f;
+    auto start_x = space_x ? dest_rect.x() + gap_x : first_tile_position(repeat_x, dest_rect.x(), dest_rect.width(), device_tile_size.width());
+    auto start_y = space_y ? dest_rect.y() + gap_y : first_tile_position(repeat_y, dest_rect.y(), dest_rect.height(), device_tile_size.height());
+
+    for (int tile_y = 0; tile_y < whole_tiles_y; ++tile_y) {
+        for (int tile_x = 0; tile_x < whole_tiles_x; ++tile_x) {
+            Gfx::FloatRect tile_rect {
+                start_x + tile_x * (device_tile_size.width() + gap_x),
+                start_y + tile_y * (device_tile_size.height() + gap_y),
+                device_tile_size.width(),
+                device_tile_size.height(),
+            };
+
+            // Snap each edge (not the size) of a spaced tile to the pixel grid and clip the fill to the tile, so
+            // that adjacent pattern copies stay out of the gaps and the tile edges land exactly on device pixels.
+            auto tile_clip_rect = dest_rect;
+            if (space_x) {
+                auto left = round_to<int>(tile_rect.left());
+                auto right = round_to<int>(tile_rect.right());
+                tile_rect.set_x(left);
+                tile_rect.set_width(right - left);
+                tile_clip_rect.set_x(left);
+                tile_clip_rect.set_width(right - left);
+            }
+            if (space_y) {
+                auto top = round_to<int>(tile_rect.top());
+                auto bottom = round_to<int>(tile_rect.bottom());
+                tile_rect.set_y(top);
+                tile_rect.set_height(bottom - top);
+                tile_clip_rect.set_y(top);
+                tile_clip_rect.set_height(bottom - top);
+            }
+            tile_clip_rect.intersect(dest_rect);
+            if (tile_clip_rect.is_empty())
+                continue;
+
+            DisplayListRecorderStateSaver tile_state_saver { context.display_list_recorder() };
+            context.display_list_recorder().add_clip_rect(tile_clip_rect);
+            draw_tiled(tile_rect, tile_clip_rect);
         }
-        if (repeat_y == CSS::BorderImageRepeat::Stretch)
-            break;
     }
 }
 
@@ -1969,9 +1990,21 @@ static bool paint_border_image(DisplayListRecordingContext& context, PaintableBo
         } else if (row == BorderImageTrack::Center && column != BorderImageTrack::Center) {
             tile_height = scale_source_length_to_destination(source_height, source_width, destination_rect.width());
         } else if (column == BorderImageTrack::Center && row == BorderImageTrack::Center) {
-            // The centre fill is scaled horizontally like the top edge and vertically like the left edge.
-            tile_width = scale_source_length_to_destination(source_width, geometry.source_slices.top, geometry.widths.top);
-            tile_height = scale_source_length_to_destination(source_height, geometry.source_slices.left, geometry.widths.left);
+            // https://drafts.csswg.org/css-backgrounds-3/#border-image-process
+            // "The middle image's width is scaled by the same factor as the top image unless that factor is zero or
+            //  infinity, in which case the scaling factor of the bottom is substituted, and failing that, the width is
+            //  not scaled. The height of the middle image is scaled by the same factor as the left image unless that
+            //  factor is zero or infinity, in which case the scaling factor of the right image is substituted, and
+            //  failing that, the height is not scaled."
+            auto scale_middle_length = [](CSSPixels source_length, CSSPixels slice, CSSPixels width, CSSPixels fallback_slice, CSSPixels fallback_width) {
+                if (slice > 0 && width > 0)
+                    return source_length * (width / slice);
+                if (fallback_slice > 0 && fallback_width > 0)
+                    return source_length * (fallback_width / fallback_slice);
+                return source_length;
+            };
+            tile_width = scale_middle_length(source_width, geometry.source_slices.top, geometry.widths.top, geometry.source_slices.bottom, geometry.widths.bottom);
+            tile_height = scale_middle_length(source_height, geometry.source_slices.left, geometry.widths.left, geometry.source_slices.right, geometry.widths.right);
         }
         return { tile_width, tile_height };
     };

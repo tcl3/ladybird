@@ -323,12 +323,7 @@ void DisplayListPlayerSkia::play_command(DrawScaledDecodedImageFrame const& comm
     paint.setAntiAlias(true);
     canvas.save();
     canvas.clipRect(dst_rect, true);
-    if (command.src_rect.has_value()) {
-        auto src_rect = to_skia_rect(command.src_rect.value());
-        canvas.drawImageRect(image.get(), src_rect, dst_rect, to_skia_sampling_options(command.scaling_mode), &paint, SkCanvas::kStrict_SrcRectConstraint);
-    } else {
-        canvas.drawImageRect(image.get(), dst_rect, to_skia_sampling_options(command.scaling_mode), &paint);
-    }
+    canvas.drawImageRect(image.get(), dst_rect, to_skia_sampling_options(command.scaling_mode), &paint);
     canvas.restore();
 }
 
@@ -339,9 +334,27 @@ void DisplayListPlayerSkia::play_command(DrawRepeatedDecodedImageFrame const& co
     if (!image)
         return;
 
-    SkMatrix matrix;
-    auto dst_rect = command.dst_rect.to_type<float>();
     auto src_size = frame.size().to_type<float>();
+    if (command.src_rect.has_value()) {
+        auto subset_rect = Gfx::enclosing_int_rect(command.src_rect.value()).intersected({ {}, frame.size() });
+        if (subset_rect.is_empty())
+            return;
+        if (subset_rect != Gfx::IntRect { {}, frame.size() }) {
+            auto skia_subset_rect = SkIRect::MakeXYWH(subset_rect.x(), subset_rect.y(), subset_rect.width(), subset_rect.height());
+            sk_sp<SkImage> subset_image;
+            if (image->isTextureBacked() && m_skia_backend_context)
+                subset_image = SkImages::SubsetTextureFrom(m_skia_backend_context->sk_context(), image.get(), skia_subset_rect);
+            else
+                subset_image = image->makeSubset(nullptr, skia_subset_rect, {});
+            if (!subset_image)
+                return;
+            image = move(subset_image);
+        }
+        src_size = subset_rect.size().to_type<float>();
+    }
+
+    SkMatrix matrix;
+    auto dst_rect = command.dst_rect;
     matrix.setScale(dst_rect.width() / src_size.width(), dst_rect.height() / src_size.height());
     matrix.postTranslate(dst_rect.x(), dst_rect.y());
     auto sampling_options = to_skia_sampling_options(command.scaling_mode);

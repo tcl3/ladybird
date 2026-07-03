@@ -163,7 +163,6 @@ struct DrawScaledDecodedImageFrame {
     static constexpr DisplayListCommandType command_type = DisplayListCommandType::DrawScaledDecodedImageFrame;
 
     Gfx::IntRect dst_rect;
-    Optional<Gfx::FloatRect> src_rect;
     ImageFrameResourceId frame_id;
     Gfx::ScalingMode scaling_mode;
 
@@ -180,8 +179,9 @@ struct DrawRepeatedDecodedImageFrame {
         bool y { false };
     };
 
-    Gfx::IntRect dst_rect;
+    Gfx::FloatRect dst_rect;
     Gfx::IntRect clip_rect;
+    Optional<Gfx::FloatRect> src_rect;
     ImageFrameResourceId frame_id;
     Gfx::ScalingMode scaling_mode;
     Repeat repeat;

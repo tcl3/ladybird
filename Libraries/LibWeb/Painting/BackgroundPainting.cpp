@@ -329,7 +329,54 @@ void paint_background(DisplayListRecordingContext& context, PaintableBox const& 
             if (!frame.has_value())
                 return;
             auto scaling_mode = to_gfx_scaling_mode(image_rendering, frame->size(), dest_rect.size().to_type<int>());
-            context.display_list_recorder().draw_repeated_decoded_image_frame(dest_rect.to_type<int>(), clip_rect.to_type<int>(), *frame, scaling_mode, repeat_x, repeat_y);
+
+            // Restrict sampling to the image region that is actually visible, so that pixels hidden by the clip rect
+            // cannot bleed into the visible edges. Border-image painting samples each slice in isolation the same way,
+            // which keeps the two paths consistent. An axis can only be restricted when no repetition is visible in it,
+            // that is, when the clip rect does not extend past the tile at dest_rect in that axis; a tiled fill samples
+            // the whole image so that wrap-around sampling across tile boundaries remains correct. The root element's
+            // background is exempt because it propagates to the canvas and paints beyond the clip rect.
+            auto tile_rect = dest_rect.to_type<int>();
+            auto device_clip_rect = clip_rect.to_type<int>();
+            auto image_size = frame->size();
+            auto dst_rect = tile_rect.to_type<float>();
+            Optional<Gfx::FloatRect> src_rect;
+            if (!is_root_element && !device_clip_rect.is_empty()) {
+                auto scale_x = static_cast<double>(tile_rect.width()) / image_size.width();
+                auto scale_y = static_cast<double>(tile_rect.height()) / image_size.height();
+
+                double source_left = 0;
+                double source_right = image_size.width();
+                if (device_clip_rect.left() >= tile_rect.left() && device_clip_rect.right() <= tile_rect.right()) {
+                    source_left = max(0.0, floor((device_clip_rect.left() - tile_rect.left()) / scale_x));
+                    source_right = min(source_right, ceil((device_clip_rect.right() - tile_rect.left()) / scale_x));
+                }
+
+                double source_top = 0;
+                double source_bottom = image_size.height();
+                if (device_clip_rect.top() >= tile_rect.top() && device_clip_rect.bottom() <= tile_rect.bottom()) {
+                    source_top = max(0.0, floor((device_clip_rect.top() - tile_rect.top()) / scale_y));
+                    source_bottom = min(source_bottom, ceil((device_clip_rect.bottom() - tile_rect.top()) / scale_y));
+                }
+
+                Gfx::FloatRect visible_source_rect = {
+                    static_cast<float>(source_left),
+                    static_cast<float>(source_top),
+                    static_cast<float>(source_right - source_left),
+                    static_cast<float>(source_bottom - source_top),
+                };
+                if (!visible_source_rect.is_empty() && visible_source_rect != Gfx::FloatRect { {}, image_size.to_type<float>() }) {
+                    src_rect = visible_source_rect;
+                    dst_rect = {
+                        static_cast<float>(tile_rect.x() + source_left * scale_x),
+                        static_cast<float>(tile_rect.y() + source_top * scale_y),
+                        static_cast<float>((source_right - source_left) * scale_x),
+                        static_cast<float>((source_bottom - source_top) * scale_y),
+                    };
+                }
+            }
+
+            context.display_list_recorder().draw_repeated_decoded_image_frame(dst_rect, device_clip_rect, src_rect, *frame, scaling_mode, repeat_x, repeat_y);
         } else if ((repeat_x || repeat_y) && !repeat_x_has_gap && !repeat_y_has_gap && tile_count > max_tiles_before_pattern_fallback) {
             // A not-decoded-image repeating background otherwise records a separate painting command for every tile —
             // which for very-large tile counts can lead to enough commands that we crash. So, instead record a single

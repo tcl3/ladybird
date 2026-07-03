@@ -551,31 +551,21 @@ void DisplayListRecorder::draw_scaled_decoded_image_frame(Gfx::IntRect const& ds
         return;
     append_command(DrawScaledDecodedImageFrame {
         .dst_rect = dst_rect,
-        .src_rect = {},
         .frame_id = resource_storage().add_image_frame(frame),
         .scaling_mode = scaling_mode,
     });
 }
 
-void DisplayListRecorder::draw_scaled_decoded_image_frame(Gfx::IntRect const& dst_rect, Gfx::FloatRect const& src_rect, Gfx::DecodedImageFrame frame, Gfx::ScalingMode scaling_mode)
+void DisplayListRecorder::draw_repeated_decoded_image_frame(Gfx::FloatRect const& dst_rect, Gfx::IntRect const& clip_rect, Optional<Gfx::FloatRect> const& src_rect, Gfx::DecodedImageFrame frame, Gfx::ScalingMode scaling_mode, bool repeat_x, bool repeat_y)
 {
     if (dst_rect.is_empty())
         return;
-    if (src_rect.is_empty())
+    if (src_rect.has_value() && src_rect->is_empty())
         return;
-    append_command(DrawScaledDecodedImageFrame {
-        .dst_rect = dst_rect,
-        .src_rect = src_rect,
-        .frame_id = resource_storage().add_image_frame(frame),
-        .scaling_mode = scaling_mode,
-    });
-}
-
-void DisplayListRecorder::draw_repeated_decoded_image_frame(Gfx::IntRect dst_rect, Gfx::IntRect clip_rect, Gfx::DecodedImageFrame frame, Gfx::ScalingMode scaling_mode, bool repeat_x, bool repeat_y)
-{
     append_command(DrawRepeatedDecodedImageFrame {
         .dst_rect = dst_rect,
         .clip_rect = clip_rect,
+        .src_rect = src_rect,
         .frame_id = resource_storage().add_image_frame(frame),
         .scaling_mode = scaling_mode,
         .repeat = { repeat_x, repeat_y },

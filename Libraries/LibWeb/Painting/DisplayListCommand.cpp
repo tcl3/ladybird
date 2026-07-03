@@ -33,13 +33,13 @@ void FillRect::dump(StringBuilder& builder) const
 void DrawScaledDecodedImageFrame::dump(StringBuilder& builder) const
 {
     builder.appendff(" dst_rect={}", dst_rect);
-    if (src_rect.has_value())
-        builder.appendff(" src_rect={}", src_rect.value());
 }
 
 void DrawRepeatedDecodedImageFrame::dump(StringBuilder& builder) const
 {
     builder.appendff(" dst_rect={} clip_rect={}", dst_rect, clip_rect);
+    if (src_rect.has_value())
+        builder.appendff(" src_rect={}", src_rect.value());
 }
 
 void DrawCompositedContext::dump(StringBuilder& builder) const
