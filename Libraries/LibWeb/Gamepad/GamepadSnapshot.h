@@ -48,14 +48,19 @@ struct WEB_API GamepadState {
     bool operator==(GamepadState const&) const = default;
 };
 
+// The duration carried by an effect is the number of milliseconds the effect is intended to play. WebContent owns
+// the effect's lifetime and ends it with an explicit zero-magnitude effect or a stop request; the duration lets the
+// UI process expire the effect if the WebContent process dies or hangs before doing so.
 struct WEB_API GamepadDualRumbleEffect {
     u16 strong_magnitude { 0 };
     u16 weak_magnitude { 0 };
+    u32 duration { 0 };
 };
 
 struct WEB_API GamepadTriggerRumbleEffect {
     u16 left_trigger_magnitude { 0 };
     u16 right_trigger_magnitude { 0 };
+    u32 duration { 0 };
 };
 
 using GamepadEffect = Variant<GamepadDualRumbleEffect, GamepadTriggerRumbleEffect>;

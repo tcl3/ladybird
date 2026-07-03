@@ -1714,7 +1714,7 @@ void WebContentClient::did_start_using_gamepads()
 
 void WebContentClient::gamepad_play_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect effect)
 {
-    GamepadManager::the().play_effect(handle, effect);
+    GamepadManager::the().play_effect(*this, handle, effect);
 }
 
 Messages::WebContentClient::GamepadStopEffectsResponse WebContentClient::gamepad_stop_effects(Web::Gamepad::GamepadHandle handle)

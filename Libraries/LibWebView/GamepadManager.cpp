@@ -26,6 +26,17 @@ namespace WebView {
 // Together with each WebContent process's own sampling cadence, this bounds input latency.
 static constexpr int GAMEPAD_POLL_INTERVAL_MS = 8;
 
+// WebContent validates effects to at most 5000 ms and normally ends them with an explicit stop before the SDL
+// expiration passed by play_effect() fires; the slack keeps that ordering. The maximum is enforced here as well so a
+// compromised WebContent process cannot request an unbounded rumble.
+static constexpr u32 GAMEPAD_EFFECT_MAX_DURATION_MS = 5'000;
+static constexpr u32 GAMEPAD_EFFECT_EXPIRATION_SLACK_MS = 1'000;
+
+static u32 effect_expiration_backstop_ms(u32 duration)
+{
+    return min(duration, GAMEPAD_EFFECT_MAX_DURATION_MS) + GAMEPAD_EFFECT_EXPIRATION_SLACK_MS;
+}
+
 // https://w3c.github.io/gamepad/#dfn-standard-gamepad
 // Type     Index   Location
 // Button   0       Bottom button in right cluster
@@ -192,6 +203,12 @@ void GamepadManager::client_disconnected(WebContentClient& client)
 {
     m_clients_using_gamepads.remove(&client);
 
+    // Silence any devices the client was still rumbling; the explicit stop it owed will never arrive.
+    for (auto& entry : m_devices) {
+        if (entry.value->effect_owner == &client)
+            stop_effects(entry.key);
+    }
+
     Vector<Web::Gamepad::GamepadHandle> owned_virtual_devices;
     for (auto& entry : m_devices) {
         if (entry.value->virtual_device_owner == &client)
@@ -206,20 +223,28 @@ void GamepadManager::client_disconnected(WebContentClient& client)
     update_polling_state();
 }
 
-void GamepadManager::play_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect const& effect)
+void GamepadManager::play_effect(WebContentClient& client, Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect const& effect)
 {
     auto* device = device_for_handle(handle);
     if (!device)
         return;
 
-    // NOTE: A duration of zero means the effect plays until it is replaced or stopped; WebContent owns effect
-    //       durations and explicitly sends a zero-magnitude effect or a stop request when an effect ends.
+    // WebContent owns effect durations and explicitly sends a zero-magnitude effect or a stop request when an effect
+    // ends. The expiration passed to SDL is a backstop that silences the device if the client dies or hangs before
+    // doing so; a zero-magnitude effect is itself a stop, so it carries no expiration.
+    // NB: Each SDL rumble call replaces both the previous effect and its pending expiration, so a chained effect
+    //     cannot be cut short by its predecessor's backstop.
+    auto apply_rumble = [&](auto sdl_rumble_function, u16 first_magnitude, u16 second_magnitude, u32 duration) {
+        bool is_stop = first_magnitude == 0 && second_magnitude == 0;
+        device->effect_owner = is_stop ? nullptr : &client;
+        sdl_rumble_function(device->sdl_gamepad, first_magnitude, second_magnitude, is_stop ? 0 : effect_expiration_backstop_ms(duration));
+    };
     effect.visit(
         [&](Web::Gamepad::GamepadDualRumbleEffect const& dual_rumble_effect) {
-            SDL_RumbleGamepad(device->sdl_gamepad, dual_rumble_effect.strong_magnitude, dual_rumble_effect.weak_magnitude, 0);
+            apply_rumble(SDL_RumbleGamepad, dual_rumble_effect.strong_magnitude, dual_rumble_effect.weak_magnitude, dual_rumble_effect.duration);
         },
         [&](Web::Gamepad::GamepadTriggerRumbleEffect const& trigger_rumble_effect) {
-            SDL_RumbleGamepadTriggers(device->sdl_gamepad, trigger_rumble_effect.left_trigger_magnitude, trigger_rumble_effect.right_trigger_magnitude, 0);
+            apply_rumble(SDL_RumbleGamepadTriggers, trigger_rumble_effect.left_trigger_magnitude, trigger_rumble_effect.right_trigger_magnitude, trigger_rumble_effect.duration);
         });
 }
 
@@ -228,6 +253,8 @@ bool GamepadManager::stop_effects(Web::Gamepad::GamepadHandle handle)
     auto* device = device_for_handle(handle);
     if (!device)
         return false;
+
+    device->effect_owner = nullptr;
 
     bool stopped_all = true;
 

@@ -80,6 +80,7 @@ ErrorOr<void> IPC::encode(Encoder& encoder, Web::Gamepad::GamepadDualRumbleEffec
 {
     TRY(encoder.encode(effect.strong_magnitude));
     TRY(encoder.encode(effect.weak_magnitude));
+    TRY(encoder.encode(effect.duration));
     return {};
 }
 
@@ -88,8 +89,9 @@ ErrorOr<Web::Gamepad::GamepadDualRumbleEffect> IPC::decode(Decoder& decoder)
 {
     auto strong_magnitude = TRY(decoder.decode<u16>());
     auto weak_magnitude = TRY(decoder.decode<u16>());
+    auto duration = TRY(decoder.decode<u32>());
 
-    return Web::Gamepad::GamepadDualRumbleEffect { strong_magnitude, weak_magnitude };
+    return Web::Gamepad::GamepadDualRumbleEffect { strong_magnitude, weak_magnitude, duration };
 }
 
 template<>
@@ -97,6 +99,7 @@ ErrorOr<void> IPC::encode(Encoder& encoder, Web::Gamepad::GamepadTriggerRumbleEf
 {
     TRY(encoder.encode(effect.left_trigger_magnitude));
     TRY(encoder.encode(effect.right_trigger_magnitude));
+    TRY(encoder.encode(effect.duration));
     return {};
 }
 
@@ -105,8 +108,9 @@ ErrorOr<Web::Gamepad::GamepadTriggerRumbleEffect> IPC::decode(Decoder& decoder)
 {
     auto left_trigger_magnitude = TRY(decoder.decode<u16>());
     auto right_trigger_magnitude = TRY(decoder.decode<u16>());
+    auto duration = TRY(decoder.decode<u32>());
 
-    return Web::Gamepad::GamepadTriggerRumbleEffect { left_trigger_magnitude, right_trigger_magnitude };
+    return Web::Gamepad::GamepadTriggerRumbleEffect { left_trigger_magnitude, right_trigger_magnitude, duration };
 }
 
 template<>

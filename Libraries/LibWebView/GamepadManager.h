@@ -42,7 +42,7 @@ public:
     void client_did_start_using_gamepads(WebContentClient&);
     void client_disconnected(WebContentClient&);
 
-    void play_effect(Web::Gamepad::GamepadHandle, Web::Gamepad::GamepadEffect const&);
+    void play_effect(WebContentClient&, Web::Gamepad::GamepadHandle, Web::Gamepad::GamepadEffect const&);
     bool stop_effects(Web::Gamepad::GamepadHandle);
 
     // Test-only interface; requests are rejected unless the internals object is exposed.
@@ -64,6 +64,10 @@ public:
 
         // Real devices only: the device's slot in the shared state buffer, held from announcement until removal.
         Optional<size_t> shared_state_slot_index;
+
+        // The client whose effect most recently drove this device's motors, so the rumble can be stopped if that
+        // client disconnects mid-effect. Cleared when an effect is explicitly ended.
+        WebContentClient* effect_owner { nullptr };
 
         // The input state most recently published for this device, used to publish state only when it has changed.
         // NB: Change detection compares freshly read state instead of watching SDL's input events, because SDL

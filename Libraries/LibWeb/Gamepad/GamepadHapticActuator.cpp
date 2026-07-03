@@ -20,13 +20,13 @@ namespace Web::Gamepad {
 
 GC_DEFINE_ALLOCATOR(GamepadHapticActuator);
 
-static GamepadEffect gamepad_effect_for_type(Bindings::GamepadHapticEffectType type, u16 first_magnitude, u16 second_magnitude)
+static GamepadEffect gamepad_effect_for_type(Bindings::GamepadHapticEffectType type, u16 first_magnitude, u16 second_magnitude, u32 duration)
 {
     switch (type) {
     case Bindings::GamepadHapticEffectType::DualRumble:
-        return GamepadDualRumbleEffect { first_magnitude, second_magnitude };
+        return GamepadDualRumbleEffect { first_magnitude, second_magnitude, duration };
     case Bindings::GamepadHapticEffectType::TriggerRumble:
-        return GamepadTriggerRumbleEffect { first_magnitude, second_magnitude };
+        return GamepadTriggerRumbleEffect { first_magnitude, second_magnitude, duration };
     }
     VERIFY_NOT_REACHED();
 }
@@ -329,10 +329,10 @@ void GamepadHapticActuator::issue_haptic_effect(Bindings::GamepadHapticEffectTyp
     // increase compatibility. For example, an effect intended for a rumble motor may be transformed into a
     // waveform-based effect for a device that supports waveform haptics but lacks rumble motors.
     m_playing_effect_timer = Platform::Timer::create_single_shot(heap, static_cast<int>(params.start_delay), GC::create_function(heap, [this, type, params, on_complete, &heap] {
-        // NOTE: We send an effect without an expiration time to the UI process and handle the duration ourselves.
-        //       This avoids a race condition where the device's expiration check and our Platform::Timer resolve at
-        //       slightly different times, potentially causing the stop signal to be missed before the promise
-        //       resolves.
+        // NOTE: This process owns the effect's lifetime: the duration timer below ends the effect with an explicit
+        //       stop, keeping the stop signal ordered before the promise resolution. The duration sent with the
+        //       effect only serves as an expiration backstop in the UI process, in case this process dies or hangs
+        //       before stopping the effect.
         auto& page = as<HTML::Window>(HTML::relevant_global_object(*this)).page();
 
         auto first_magnitude = type == Bindings::GamepadHapticEffectType::DualRumble ? params.strong_magnitude : params.left_trigger;
@@ -340,14 +340,15 @@ void GamepadHapticActuator::issue_haptic_effect(Bindings::GamepadHapticEffectTyp
         page.client().page_did_play_gamepad_effect(m_gamepad->handle(),
             gamepad_effect_for_type(type,
                 static_cast<u16>(first_magnitude * NumericLimits<u16>::max()),
-                static_cast<u16>(second_magnitude * NumericLimits<u16>::max())));
+                static_cast<u16>(second_magnitude * NumericLimits<u16>::max()),
+                static_cast<u32>(params.duration)));
 
         m_playing_effect_timer = Platform::Timer::create_single_shot(heap, params.duration, GC::create_function(heap, [this, type, on_complete] {
             // Explicitly stop the rumble before completing, ensuring the stop signal is sent before the promise
             // resolves.
             auto& page = as<HTML::Window>(HTML::relevant_global_object(*this)).page();
 
-            page.client().page_did_play_gamepad_effect(m_gamepad->handle(), gamepad_effect_for_type(type, 0, 0));
+            page.client().page_did_play_gamepad_effect(m_gamepad->handle(), gamepad_effect_for_type(type, 0, 0, 0));
             on_complete->function()();
         }));
 
