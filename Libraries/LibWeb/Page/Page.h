@@ -40,6 +40,7 @@
 #include <LibWeb/DOM/RequestFullscreenError.h>
 #include <LibWeb/Export.h>
 #include <LibWeb/Forward.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 #include <LibWeb/HTML/ActivateTab.h>
 #include <LibWeb/HTML/AudioPlayState.h>
 #include <LibWeb/HTML/ColorPickerUpdateState.h>
@@ -136,7 +137,7 @@ public:
     EventResult handle_keydown(UIEvents::KeyCode, unsigned modifiers, u32 code_point, bool repeat, bool should_insert_text);
     EventResult handle_keyup(UIEvents::KeyCode, unsigned modifiers, u32 code_point, bool repeat);
 
-    void handle_sdl_input_events();
+    void handle_gamepad_change_event(Gamepad::GamepadChangeEvent const&);
 
     Gfx::Palette palette() const;
     CSSPixelRect web_exposed_screen_area() const;
@@ -592,6 +593,21 @@ public:
     virtual void page_did_update_primary_selection(String const&) { }
 
     virtual void page_did_change_audio_play_state(HTML::AudioPlayState) { }
+
+    // The UI process owns all gamepad devices; these notifications and requests are forwarded to it. It does not
+    // monitor gamepads or send gamepad state to a WebContent process until a page in that process uses the
+    // Gamepad API.
+    virtual void page_did_start_using_gamepads() { }
+    virtual void page_did_play_gamepad_effect([[maybe_unused]] Gamepad::GamepadHandle handle, Gamepad::GamepadEffect const&) { }
+    virtual bool page_did_request_stop_gamepad_effects([[maybe_unused]] Gamepad::GamepadHandle handle) { return true; }
+
+    // Test-only interface for driving virtual gamepad devices, used by the Internals object.
+    virtual Optional<Gamepad::VirtualGamepad> create_virtual_gamepad() { return {}; }
+    virtual void set_virtual_gamepad_button([[maybe_unused]] Gamepad::GamepadHandle handle, [[maybe_unused]] i32 button, [[maybe_unused]] bool down) { }
+    virtual void set_virtual_gamepad_axis([[maybe_unused]] Gamepad::GamepadHandle handle, [[maybe_unused]] i32 axis, [[maybe_unused]] i16 value) { }
+    virtual void disconnect_virtual_gamepad([[maybe_unused]] Gamepad::GamepadHandle handle) { }
+    virtual Gamepad::ReceivedRumbleEffects virtual_gamepad_received_rumble_effects([[maybe_unused]] Gamepad::GamepadHandle handle) { return {}; }
+    virtual void pump_gamepad_events() { }
 
     virtual void page_did_start_network_request([[maybe_unused]] u64 request_id, [[maybe_unused]] URL::URL const& url, [[maybe_unused]] ByteString const& method, [[maybe_unused]] Vector<HTTP::Header> const& request_headers, [[maybe_unused]] ReadonlyBytes request_body, [[maybe_unused]] Optional<String> initiator_type) { }
     virtual void page_did_receive_network_response_headers([[maybe_unused]] u64 request_id, [[maybe_unused]] u32 status_code, [[maybe_unused]] Optional<String> reason_phrase, [[maybe_unused]] Vector<HTTP::Header> const& response_headers) { }

@@ -376,9 +376,19 @@ EventResult Page::handle_keyup(UIEvents::KeyCode key, unsigned modifiers, u32 co
     return focused_navigable().event_handler().handle_keyup(key, modifiers, code_point, repeat);
 }
 
-void Page::handle_sdl_input_events()
+void Page::handle_gamepad_change_event(Gamepad::GamepadChangeEvent const& event)
 {
-    top_level_traversable()->event_handler().handle_sdl_input_events();
+    auto& event_handler = top_level_traversable()->event_handler();
+    event.visit(
+        [&](Gamepad::GamepadConnectedEvent const& connected_event) {
+            event_handler.handle_gamepad_connected(connected_event.description);
+        },
+        [&](Gamepad::GamepadStateUpdatedEvent const& state_updated_event) {
+            event_handler.handle_gamepad_updated(state_updated_event.state);
+        },
+        [&](Gamepad::GamepadDisconnectedEvent const& disconnected_event) {
+            event_handler.handle_gamepad_disconnected(disconnected_event.handle);
+        });
 }
 
 void Page::invalidate_compositor_wheel_event_listener_state()

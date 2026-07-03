@@ -20,6 +20,7 @@
 #include <LibWeb/WebDriver/Error.h>
 #include <LibWebView/Application.h>
 #include <LibWebView/CookieJar.h>
+#include <LibWebView/GamepadManager.h>
 #include <LibWebView/HSTSStore.h>
 #include <LibWebView/HelperProcess.h>
 #include <LibWebView/HistoryStore.h>
@@ -83,6 +84,7 @@ WebContentClient::WebContentClient(NonnullOwnPtr<IPC::Transport> transport, u64 
 WebContentClient::~WebContentClient()
 {
     WorkerProcessManager::the().remove_web_content_owner(*this);
+    GamepadManager::the().client_disconnected(*this);
     clients().remove(this);
 }
 
@@ -1703,6 +1705,52 @@ void WebContentClient::did_change_audio_play_state(u64 page_id, Web::HTML::Audio
 {
     if (auto view = view_for_page_id(page_id); view.has_value())
         view->did_change_audio_play_state({}, play_state);
+}
+
+void WebContentClient::did_start_using_gamepads()
+{
+    GamepadManager::the().client_did_start_using_gamepads(*this);
+}
+
+void WebContentClient::gamepad_play_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect effect)
+{
+    GamepadManager::the().play_effect(handle, effect);
+}
+
+Messages::WebContentClient::GamepadStopEffectsResponse WebContentClient::gamepad_stop_effects(Web::Gamepad::GamepadHandle handle)
+{
+    return GamepadManager::the().stop_effects(handle);
+}
+
+Messages::WebContentClient::CreateVirtualGamepadResponse WebContentClient::create_virtual_gamepad()
+{
+    return GamepadManager::the().create_virtual_gamepad(*this);
+}
+
+void WebContentClient::set_virtual_gamepad_button(Web::Gamepad::GamepadHandle handle, i32 button, bool down)
+{
+    GamepadManager::the().set_virtual_gamepad_button(*this, handle, button, down);
+}
+
+void WebContentClient::set_virtual_gamepad_axis(Web::Gamepad::GamepadHandle handle, i32 axis, i16 value)
+{
+    GamepadManager::the().set_virtual_gamepad_axis(*this, handle, axis, value);
+}
+
+void WebContentClient::disconnect_virtual_gamepad(Web::Gamepad::GamepadHandle handle)
+{
+    GamepadManager::the().disconnect_virtual_gamepad(*this, handle);
+}
+
+Messages::WebContentClient::PumpGamepadEventsResponse WebContentClient::pump_gamepad_events()
+{
+    return GamepadManager::the().pump_gamepad_events(*this);
+}
+
+Messages::WebContentClient::GetVirtualGamepadReceivedRumbleEffectsResponse WebContentClient::get_virtual_gamepad_received_rumble_effects(Web::Gamepad::GamepadHandle handle)
+{
+    auto& gamepad_manager = GamepadManager::the();
+    return { gamepad_manager.virtual_gamepad_received_rumble_effects(*this, handle), gamepad_manager.virtual_gamepad_received_trigger_rumble_effects(*this, handle) };
 }
 
 void WebContentClient::did_update_session_history(u64 page_id, Vector<Web::HTML::SessionHistoryEntryDescriptor> entries, Vector<i32> used_steps, size_t current_used_step_index)

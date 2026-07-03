@@ -10,12 +10,12 @@
 #include <LibWeb/Gamepad/EventNames.h>
 #include <LibWeb/Gamepad/Gamepad.h>
 #include <LibWeb/Gamepad/GamepadEvent.h>
+#include <LibWeb/Gamepad/GamepadRegistry.h>
 #include <LibWeb/Gamepad/NavigatorGamepad.h>
 #include <LibWeb/HTML/Navigator.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
-
-#include <SDL3/SDL_gamepad.h>
+#include <LibWeb/Page/Page.h>
 
 namespace Web::Gamepad {
 
@@ -33,6 +33,10 @@ WebIDL::ExceptionOr<GC::RootVector<GC::Ptr<Gamepad>>> NavigatorGamepadPartial::g
     GC::RootVector<GC::Ptr<Gamepad>> gamepads;
     if (!document.is_fully_active())
         return gamepads;
+
+    // AD-HOC: Tell the UI process that this process consumes gamepad input. The UI process does not monitor gamepads
+    //         or send gamepad state to a WebContent process until one of its pages uses the Gamepad API.
+    window.page().client().page_did_start_using_gamepads();
 
     // 3. If doc is not allowed to use the "gamepad" permission, then throw a "SecurityError" DOMException and abort these steps.
     if (!document.is_allowed_to_use_feature(DOM::PolicyControlledFeature::Gamepad))
@@ -91,10 +95,10 @@ size_t NavigatorGamepadPartial::select_an_unused_gamepad_index(Badge<Gamepad>)
 }
 
 // https://w3c.github.io/gamepad/#event-gamepadconnected
-void NavigatorGamepadPartial::handle_gamepad_connected(SDL_JoystickID sdl_joystick_id)
+void NavigatorGamepadPartial::handle_gamepad_connected(GamepadDescription const& description)
 {
     // When a gamepad becomes available on the system, run the following steps:
-    if (m_available_gamepads.contains_slow(sdl_joystick_id))
+    if (m_available_gamepads.contains_slow(description.handle))
         return;
 
     // 1. Let document be the current global object's associated Document; otherwise null.
@@ -112,15 +116,15 @@ void NavigatorGamepadPartial::handle_gamepad_connected(SDL_JoystickID sdl_joysti
 
     // AD-HOC: In test mode, ignore any non-virtual gamepads.
     //         All fake gamepads added by Internals are always virtual, and no other ones are.
-    if (HTML::Window::in_test_mode() && !SDL_IsJoystickVirtual(sdl_joystick_id))
+    if (HTML::Window::in_test_mode() && !description.is_virtual)
         return;
 
-    m_available_gamepads.append(sdl_joystick_id);
+    m_available_gamepads.append(description.handle);
 
     // 3. Queue a global task on the gamepad task source with the current global object to perform the following steps:
-    HTML::queue_global_task(HTML::Task::Source::Gamepad, window, GC::create_function(realm.heap(), [&realm, &document, sdl_joystick_id] mutable {
+    HTML::queue_global_task(HTML::Task::Source::Gamepad, window, GC::create_function(realm.heap(), [&realm, &document, description = description] mutable {
         // 1. Let gamepad be a new Gamepad representing the gamepad.
-        auto gamepad = Gamepad::create(realm, sdl_joystick_id);
+        auto gamepad = Gamepad::create(realm, description);
 
         // 2. Let navigator be gamepad's relevant global object's Navigator object.
         auto& gamepad_window = as<HTML::Window>(HTML::relevant_global_object(gamepad));
@@ -153,16 +157,18 @@ void NavigatorGamepadPartial::handle_gamepad_connected(SDL_JoystickID sdl_joysti
 }
 
 // https://w3c.github.io/gamepad/#dfn-receives-new-button-or-axis-input-values
-void NavigatorGamepadPartial::handle_gamepad_updated(Badge<EventHandler>, SDL_JoystickID sdl_joystick_id)
+void NavigatorGamepadPartial::handle_gamepad_updated(Badge<EventHandler>, GamepadState const& state)
 {
     // When the system receives new button or axis input values, run the following steps:
     // 1. Let gamepad be the Gamepad object representing the device that received new button or axis input values.
-    auto gamepad = m_gamepads.find_if([&sdl_joystick_id](GC::Ptr<Gamepad> gamepad) {
-        return gamepad && gamepad->sdl_joystick_id() == sdl_joystick_id;
+    auto gamepad = m_gamepads.find_if([&state](GC::Ptr<Gamepad> gamepad) {
+        return gamepad && gamepad->handle() == state.handle;
     });
 
     if (gamepad.is_end())
         return;
+
+    (*gamepad)->set_latest_state({}, state);
 
     // 2. Queue a global task on the gamepad task source with gamepad's relevant global object to update gamepad state
     //    for gamepad.
@@ -172,16 +178,16 @@ void NavigatorGamepadPartial::handle_gamepad_updated(Badge<EventHandler>, SDL_Jo
     }));
 }
 
-void NavigatorGamepadPartial::handle_gamepad_disconnected(Badge<EventHandler>, SDL_JoystickID sdl_joystick_id)
+void NavigatorGamepadPartial::handle_gamepad_disconnected(Badge<EventHandler>, GamepadHandle handle)
 {
     // When a gamepad becomes unavailable on the system, run the following steps:
-    m_available_gamepads.remove_first_matching([&sdl_joystick_id](SDL_JoystickID available_gamepad) {
-        return sdl_joystick_id == available_gamepad;
+    m_available_gamepads.remove_first_matching([&handle](GamepadHandle available_gamepad) {
+        return handle == available_gamepad;
     });
 
     // 1. Let gamepad be the Gamepad representing the unavailable device.
-    auto gamepad = m_gamepads.find_if([&sdl_joystick_id](GC::Ptr<Gamepad> gamepad) {
-        return gamepad && gamepad->sdl_joystick_id() == sdl_joystick_id;
+    auto gamepad = m_gamepads.find_if([&handle](GC::Ptr<Gamepad> gamepad) {
+        return gamepad && gamepad->handle() == handle;
     });
 
     if (gamepad.is_end())
@@ -229,18 +235,11 @@ void NavigatorGamepadPartial::handle_gamepad_disconnected(Badge<EventHandler>, S
 
 void NavigatorGamepadPartial::check_for_connected_gamepads()
 {
-    // "(SDL_JoystickID *) Returns a 0 terminated array of joystick instance IDs or NULL on failure; call
-    // SDL_GetError() for more information. This should be freed with SDL_free() when it is no longer needed."
-    int gamepad_count = 0;
-    SDL_JoystickID* connected_gamepads = SDL_GetGamepads(&gamepad_count);
-    if (!connected_gamepads)
-        return;
-
-    for (int gamepad_index = 0; gamepad_index < gamepad_count; ++gamepad_index) {
-        handle_gamepad_connected(connected_gamepads[gamepad_index]);
-    }
-
-    SDL_free(connected_gamepads);
+    // The UI process informs each WebContent process about connected gamepads, and the process-wide registry
+    // remembers them. This lets documents created after a gamepad connected (for example, a new iframe) pick it up.
+    GamepadRegistry::the().for_each_connected_gamepad([this](GamepadDescription const& description) {
+        handle_gamepad_connected(description);
+    });
 }
 
 void NavigatorGamepadPartial::set_has_gamepad_gesture(Badge<Gamepad>, bool value)

@@ -43,6 +43,12 @@ void PageHost::remove_page(Badge<PageClient>, u64 page_id)
     m_pages.remove(page_id);
 }
 
+void PageHost::for_each_page(Function<void(PageClient&)> callback)
+{
+    for (auto& page : m_pages)
+        callback(*page.value);
+}
+
 Optional<PageClient&> PageHost::page(u64 page_id)
 {
     return m_pages.get(page_id).map([](auto& value) -> PageClient& {

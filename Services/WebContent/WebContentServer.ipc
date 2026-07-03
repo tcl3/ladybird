@@ -12,6 +12,7 @@
 #include <LibWeb/CSS/PreferredMotion.h>
 #include <LibWeb/CSS/Selector.h>
 #include <LibWeb/CSS/StyleSheetIdentifier.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 #include <LibWeb/HTML/AutoplayPolicy.h>
 #include <LibWeb/HTML/ColorPickerUpdateState.h>
 #include <LibWeb/HTML/BroadcastChannelMessage.h>
@@ -75,6 +76,10 @@ endpoint WebContentServer
     mouse_event(u64 page_id, Web::MouseEvent event) =|
     drag_event(u64 page_id, Web::DragEvent event) =|
     pinch_event(u64 page_id, Web::PinchEvent event) =|
+
+    set_gamepad_state_buffer(Core::AnonymousBuffer gamepad_state_buffer) =|
+    gamepad_connected(Web::Gamepad::GamepadDescription description) =|
+    gamepad_disconnected(Web::Gamepad::GamepadHandle handle) =|
 
     debug_request(u64 page_id, ByteString request, ByteString argument) =|
     get_source(u64 page_id) =|

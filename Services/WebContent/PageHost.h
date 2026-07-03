@@ -39,6 +39,7 @@ public:
     Optional<PageClient&> page(u64 page_id);
     PageClient& create_page(u64 page_id);
     void remove_page(Badge<PageClient>, u64 page_id);
+    void for_each_page(Function<void(PageClient&)>);
 
     ConnectionFromClient& client() const { return m_client; }
     void ensure_compositor_host();

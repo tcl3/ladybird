@@ -46,6 +46,7 @@
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/Dump.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
+#include <LibWeb/Gamepad/GamepadRegistry.h>
 #include <LibWeb/HTML/AutoplaySettings.h>
 #include <LibWeb/HTML/BroadcastChannel.h>
 #include <LibWeb/HTML/BrowsingContext.h>
@@ -2376,6 +2377,59 @@ void ConnectionFromClient::system_time_zone_changed()
 {
     JS::clear_system_time_zone_cache();
     Unicode::clear_system_time_zone_cache();
+}
+
+void ConnectionFromClient::set_gamepad_state_buffer(Core::AnonymousBuffer gamepad_state_buffer)
+{
+    Web::Gamepad::GamepadRegistry::the().set_shared_state_buffer(move(gamepad_state_buffer));
+}
+
+void ConnectionFromClient::gamepad_connected(Web::Gamepad::GamepadDescription description)
+{
+    dispatch_gamepad_change_event(Web::Gamepad::GamepadConnectedEvent { move(description) });
+}
+
+void ConnectionFromClient::gamepad_disconnected(Web::Gamepad::GamepadHandle handle)
+{
+    dispatch_gamepad_change_event(Web::Gamepad::GamepadDisconnectedEvent { handle });
+}
+
+void ConnectionFromClient::dispatch_gamepad_change_event(Web::Gamepad::GamepadChangeEvent const& event)
+{
+    // Record the change in the process-wide registry first, so that documents created later can discover already
+    // connected gamepads, then fan the event out to every page served by this process.
+    auto& registry = Web::Gamepad::GamepadRegistry::the();
+    event.visit(
+        [&](Web::Gamepad::GamepadConnectedEvent const& connected_event) {
+            registry.gamepad_connected(connected_event.description);
+        },
+        [&](Web::Gamepad::GamepadStateUpdatedEvent const& state_updated_event) {
+            registry.gamepad_state_updated(state_updated_event.state);
+        },
+        [&](Web::Gamepad::GamepadDisconnectedEvent const& disconnected_event) {
+            registry.gamepad_disconnected(disconnected_event.handle);
+        });
+
+    m_page_host->for_each_page([&](PageClient& page) {
+        page.page().handle_gamepad_change_event(event);
+    });
+}
+
+void ConnectionFromClient::notify_started_using_gamepads()
+{
+    if (m_did_notify_started_using_gamepads)
+        return;
+    m_did_notify_started_using_gamepads = true;
+    async_did_start_using_gamepads();
+}
+
+void ConnectionFromClient::pump_and_dispatch_gamepad_events()
+{
+    auto response = send_sync_but_allow_failure<Messages::WebContentClient::PumpGamepadEvents>();
+    if (!response)
+        return;
+    for (auto const& event : response->take_events())
+        dispatch_gamepad_change_event(event);
 }
 
 void ConnectionFromClient::set_document_cookie_version_buffer(u64 page_id, Core::AnonymousBuffer document_cookie_version_buffer)

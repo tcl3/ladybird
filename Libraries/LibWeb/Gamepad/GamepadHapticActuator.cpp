@@ -12,13 +12,24 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/Window.h>
+#include <LibWeb/Page/Page.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/Platform/Timer.h>
-#include <SDL3/SDL_gamepad.h>
 
 namespace Web::Gamepad {
 
 GC_DEFINE_ALLOCATOR(GamepadHapticActuator);
+
+static GamepadEffect gamepad_effect_for_type(Bindings::GamepadHapticEffectType type, u16 first_magnitude, u16 second_magnitude)
+{
+    switch (type) {
+    case Bindings::GamepadHapticEffectType::DualRumble:
+        return GamepadDualRumbleEffect { first_magnitude, second_magnitude };
+    case Bindings::GamepadHapticEffectType::TriggerRumble:
+        return GamepadTriggerRumbleEffect { first_magnitude, second_magnitude };
+    }
+    VERIFY_NOT_REACHED();
+}
 
 // FIXME: What is a valid duration and startDelay? The spec doesn't define that.
 //        Safari: clamps any duration above 5000ms to 5000ms and doesn't seem to clamp or reject any startDelay.
@@ -40,12 +51,10 @@ GC::Ref<GamepadHapticActuator> GamepadHapticActuator::create(JS::Realm& realm, G
 
     // 3. For each enum value type of GamepadHapticEffectType, if the user agent can send a command to initiate effects
     //    of that type on that actuator, append type to supportedEffectsList.
-    SDL_PropertiesID sdl_gamepad_properties = SDL_GetGamepadProperties(gamepad->sdl_gamepad());
-
-    if (SDL_GetBooleanProperty(sdl_gamepad_properties, SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, /* default_value= */ false))
+    if (gamepad->description().supports_dual_rumble)
         supported_effects_list.append(Bindings::GamepadHapticEffectType::DualRumble);
 
-    if (SDL_GetBooleanProperty(sdl_gamepad_properties, SDL_PROP_GAMEPAD_CAP_TRIGGER_RUMBLE_BOOLEAN, /* default_value= */ false))
+    if (gamepad->description().supports_trigger_rumble)
         supported_effects_list.append(Bindings::GamepadHapticEffectType::TriggerRumble);
 
     // 4. Set gamepadHapticActuator.[[effects]] to supportedEffectsList.
@@ -320,28 +329,25 @@ void GamepadHapticActuator::issue_haptic_effect(Bindings::GamepadHapticEffectTyp
     // increase compatibility. For example, an effect intended for a rumble motor may be transformed into a
     // waveform-based effect for a device that supports waveform haptics but lacks rumble motors.
     m_playing_effect_timer = Platform::Timer::create_single_shot(heap, static_cast<int>(params.start_delay), GC::create_function(heap, [this, type, params, on_complete, &heap] {
-        // NOTE: We pass duration=0 (infinite) to SDL and handle the duration ourselves. This avoids a race condition
-        //       where SDL's expiration check (in SDL_UpdateJoysticks) and our Platform::Timer resolve at slightly
-        //       different times, potentially causing the stop signal to be missed before the promise resolves.
-        switch (type) {
-        case Bindings::GamepadHapticEffectType::DualRumble:
-            SDL_RumbleGamepad(m_gamepad->sdl_gamepad(), params.strong_magnitude * NumericLimits<u16>::max(), params.weak_magnitude * NumericLimits<u16>::max(), 0);
-            break;
-        case Bindings::GamepadHapticEffectType::TriggerRumble:
-            SDL_RumbleGamepadTriggers(m_gamepad->sdl_gamepad(), params.left_trigger * NumericLimits<u16>::max(), params.right_trigger * NumericLimits<u16>::max(), 0);
-            break;
-        }
+        // NOTE: We send an effect without an expiration time to the UI process and handle the duration ourselves.
+        //       This avoids a race condition where the device's expiration check and our Platform::Timer resolve at
+        //       slightly different times, potentially causing the stop signal to be missed before the promise
+        //       resolves.
+        auto& page = as<HTML::Window>(HTML::relevant_global_object(*this)).page();
+
+        auto first_magnitude = type == Bindings::GamepadHapticEffectType::DualRumble ? params.strong_magnitude : params.left_trigger;
+        auto second_magnitude = type == Bindings::GamepadHapticEffectType::DualRumble ? params.weak_magnitude : params.right_trigger;
+        page.client().page_did_play_gamepad_effect(m_gamepad->handle(),
+            gamepad_effect_for_type(type,
+                static_cast<u16>(first_magnitude * NumericLimits<u16>::max()),
+                static_cast<u16>(second_magnitude * NumericLimits<u16>::max())));
 
         m_playing_effect_timer = Platform::Timer::create_single_shot(heap, params.duration, GC::create_function(heap, [this, type, on_complete] {
-            // Explicitly stop the rumble before completing, ensuring the stop signal is sent synchronously.
-            switch (type) {
-            case Bindings::GamepadHapticEffectType::DualRumble:
-                SDL_RumbleGamepad(m_gamepad->sdl_gamepad(), 0, 0, 0);
-                break;
-            case Bindings::GamepadHapticEffectType::TriggerRumble:
-                SDL_RumbleGamepadTriggers(m_gamepad->sdl_gamepad(), 0, 0, 0);
-                break;
-            }
+            // Explicitly stop the rumble before completing, ensuring the stop signal is sent before the promise
+            // resolves.
+            auto& page = as<HTML::Window>(HTML::relevant_global_object(*this)).page();
+
+            page.client().page_did_play_gamepad_effect(m_gamepad->handle(), gamepad_effect_for_type(type, 0, 0));
             on_complete->function()();
         }));
 
@@ -357,27 +363,8 @@ bool GamepadHapticActuator::stop_haptic_effects()
     // To stop haptic effects on an actuator, the user agent MUST send a command to the device to abort any effects
     // currently being played. If a haptic effect was interrupted, the actuator SHOULD return to a motionless state
     // as quickly as possible.
-    bool stopped_all = true;
-
-    // https://wiki.libsdl.org/SDL3/SDL_RumbleGamepad
-    // "Each call to this function cancels any previous rumble effect, and calling it with 0 intensity stops any
-    // rumbling."
-    if (m_effects.contains_slow(Bindings::GamepadHapticEffectType::DualRumble)) {
-        bool success = SDL_RumbleGamepad(m_gamepad->sdl_gamepad(), 0, 0, 0);
-        if (!success)
-            stopped_all = false;
-    }
-
-    // https://wiki.libsdl.org/SDL3/SDL_RumbleGamepadTriggers
-    // "Each call to this function cancels any previous trigger rumble effect, and calling it with 0 intensity stops
-    // any rumbling."
-    if (m_effects.contains_slow(Bindings::GamepadHapticEffectType::TriggerRumble)) {
-        bool success = SDL_RumbleGamepadTriggers(m_gamepad->sdl_gamepad(), 0, 0, 0);
-        if (!success)
-            stopped_all = false;
-    }
-
-    return stopped_all;
+    auto& page = as<HTML::Window>(HTML::relevant_global_object(*this)).page();
+    return page.client().page_did_request_stop_gamepad_effects(m_gamepad->handle());
 }
 
 void GamepadHapticActuator::clear_playing_effect_timers()

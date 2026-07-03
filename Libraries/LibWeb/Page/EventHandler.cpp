@@ -60,9 +60,6 @@
 #include <LibWeb/UIEvents/PointerEvent.h>
 #include <LibWeb/UIEvents/WheelEvent.h>
 
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_joystick.h>
-
 namespace Web {
 
 #define FIRE(expression)                                                          \
@@ -1272,54 +1269,34 @@ EventResult EventHandler::handle_paste(Utf16String const& text)
     return EventResult::Handled;
 }
 
-void EventHandler::handle_sdl_input_events()
-{
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_EVENT_GAMEPAD_ADDED:
-            handle_gamepad_connected(event.gdevice.which);
-            break;
-        case SDL_EVENT_GAMEPAD_UPDATE_COMPLETE:
-            handle_gamepad_updated(event.gdevice.which);
-            break;
-        case SDL_EVENT_GAMEPAD_REMOVED:
-            handle_gamepad_disconnected(event.gdevice.which);
-            break;
-        default:
-            break;
-        }
-    }
-}
-
-void EventHandler::handle_gamepad_connected(SDL_JoystickID sdl_joystick_id)
+void EventHandler::handle_gamepad_connected(Gamepad::GamepadDescription const& description)
 {
     auto active_document = m_navigable->active_document();
     if (active_document)
-        active_document->window()->navigator()->handle_gamepad_connected(sdl_joystick_id);
+        active_document->window()->navigator()->handle_gamepad_connected(description);
 
     for (auto const& child_navigable : m_navigable->child_navigables())
-        child_navigable->event_handler().handle_gamepad_connected(sdl_joystick_id);
+        child_navigable->event_handler().handle_gamepad_connected(description);
 }
 
-void EventHandler::handle_gamepad_updated(SDL_JoystickID sdl_joystick_id)
+void EventHandler::handle_gamepad_updated(Gamepad::GamepadState const& state)
 {
     auto active_document = m_navigable->active_document();
     if (active_document)
-        active_document->window()->navigator()->handle_gamepad_updated({}, sdl_joystick_id);
+        active_document->window()->navigator()->handle_gamepad_updated({}, state);
 
     for (auto const& child_navigable : m_navigable->child_navigables())
-        child_navigable->event_handler().handle_gamepad_updated(sdl_joystick_id);
+        child_navigable->event_handler().handle_gamepad_updated(state);
 }
 
-void EventHandler::handle_gamepad_disconnected(SDL_JoystickID sdl_joystick_id)
+void EventHandler::handle_gamepad_disconnected(Gamepad::GamepadHandle handle)
 {
     auto active_document = m_navigable->active_document();
     if (active_document)
-        active_document->window()->navigator()->handle_gamepad_disconnected({}, sdl_joystick_id);
+        active_document->window()->navigator()->handle_gamepad_disconnected({}, handle);
 
     for (auto const& child_navigable : m_navigable->child_navigables())
-        child_navigable->event_handler().handle_gamepad_disconnected(sdl_joystick_id);
+        child_navigable->event_handler().handle_gamepad_disconnected(handle);
 }
 
 void EventHandler::process_auto_scroll()

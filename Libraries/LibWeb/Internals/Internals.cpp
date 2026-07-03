@@ -764,15 +764,17 @@ GC::Ptr<DOM::ShadowRoot> Internals::get_shadow_root(GC::Ref<DOM::Element> elemen
     return element->shadow_root();
 }
 
-void Internals::handle_sdl_input_events()
+void Internals::pump_gamepad_events()
 {
-    page().handle_sdl_input_events();
+    page().client().pump_gamepad_events();
 }
 
 GC::Ref<InternalGamepad> Internals::connect_virtual_gamepad()
 {
     auto& realm = this->realm();
-    auto gamepad = realm.create<InternalGamepad>(realm, *this);
+    auto virtual_gamepad = page().client().create_virtual_gamepad();
+    VERIFY(virtual_gamepad.has_value());
+    auto gamepad = realm.create<InternalGamepad>(realm, *this, virtual_gamepad.release_value());
     m_gamepads.append(gamepad);
     return gamepad;
 }

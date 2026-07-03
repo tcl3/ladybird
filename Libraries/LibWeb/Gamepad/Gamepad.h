@@ -9,7 +9,7 @@
 
 #include <LibWeb/Bindings/Gamepad.h>
 #include <LibWeb/Bindings/PlatformObject.h>
-#include <LibWeb/Gamepad/SDLGamepadForward.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 #include <LibWeb/HighResolutionTime/DOMHighResTimeStamp.h>
 
 namespace Web::Gamepad {
@@ -20,12 +20,10 @@ class Gamepad final : public Bindings::PlatformObject {
     GC_DECLARE_ALLOCATOR(Gamepad);
 
 public:
-    static constexpr bool OVERRIDES_FINALIZE = true;
+    static GC::Ref<Gamepad> create(JS::Realm&, GamepadDescription const&);
 
-    static GC::Ref<Gamepad> create(JS::Realm&, SDL_JoystickID);
-
-    SDL_JoystickID sdl_joystick_id() const { return m_sdl_joystick_id; }
-    SDL_Gamepad* sdl_gamepad() const { return m_sdl_gamepad; }
+    GamepadHandle handle() const { return m_description.handle; }
+    GamepadDescription const& description() const { return m_description; }
 
     Utf16String const& id() const { return m_id; }
 
@@ -47,14 +45,14 @@ public:
 
     GC::Ref<GamepadHapticActuator> vibration_actuator() const;
 
+    void set_latest_state(Badge<NavigatorGamepadPartial>, GamepadState);
     void update_gamepad_state(Badge<NavigatorGamepadPartial>);
 
 private:
-    explicit Gamepad(JS::Realm&, SDL_JoystickID);
+    explicit Gamepad(JS::Realm&, GamepadDescription const&);
 
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;
-    virtual void finalize() override;
 
     void select_a_mapping();
     void initialize_axes();
@@ -108,12 +106,12 @@ private:
 
     // https://w3c.github.io/gamepad/#dfn-axisminimums
     // A list containing the minimum logical value for each axis
-    // NOTE: While the Gamepad API internally uses u32 to represent raw axis values, SDL uses i16 for axes.
+    // NOTE: While the Gamepad API internally uses u32 to represent raw axis values, the UI process reports the i16
+    //       range used by SDL.
     Vector<i16> m_axis_minimums;
 
     // https://w3c.github.io/gamepad/#dfn-axismaximums
     // A list containing the maximum logical value for each axis
-    // NOTE: While the Gamepad API internally uses u32 to represent raw axis values, SDL uses i16 for axes.
     Vector<i16> m_axis_maximums;
 
     // https://w3c.github.io/gamepad/#dfn-buttons
@@ -131,8 +129,6 @@ private:
 
     // https://w3c.github.io/gamepad/#dfn-buttonminimums
     // A list containing the minimum logical value for each button.
-    // NOTE: While the Gamepad API internally uses u32 to represent raw button values, SDL uses bool for buttons and
-    //       i16 for axes. The left and right triggers are buttons in the Gamepad API.
     Vector<i16> m_button_minimums;
 
     // https://w3c.github.io/gamepad/#dfn-buttonmaximums
@@ -151,8 +147,10 @@ private:
     // indicate that a mapping is in use by setting mapping to the corresponding GamepadMappingType value.
     Bindings::GamepadMappingType m_mapping { Bindings::GamepadMappingType::Standard };
 
-    SDL_JoystickID m_sdl_joystick_id { 0 };
-    SDL_Gamepad* m_sdl_gamepad { nullptr };
+    GamepadDescription m_description;
+
+    // The most recent raw input values received from the UI process.
+    GamepadState m_latest_state;
 };
 
 }

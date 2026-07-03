@@ -24,6 +24,7 @@
 #include <LibWeb/CSS/PreferredMotion.h>
 #include <LibWeb/Compositor/Types.h>
 #include <LibWeb/Forward.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 #include <LibWeb/HTML/AutoplayPolicy.h>
 #include <LibWeb/HTML/SessionHistoryEntry.h>
 #include <LibWeb/HTML/WorkerAgentTypes.h>
@@ -62,6 +63,9 @@ public:
     Function<void(IPC::TransportHandle const&)> on_image_decoder_connection;
 
     Queue<Web::QueuedInputEvent>& input_event_queue() { return m_input_event_queue; }
+
+    void notify_started_using_gamepads();
+    void pump_and_dispatch_gamepad_events();
 
 private:
     explicit ConnectionFromClient(NonnullOwnPtr<IPC::Transport>);
@@ -215,6 +219,11 @@ private:
 
     virtual void system_time_zone_changed() override;
 
+    virtual void set_gamepad_state_buffer(Core::AnonymousBuffer gamepad_state_buffer) override;
+    virtual void gamepad_connected(Web::Gamepad::GamepadDescription description) override;
+    virtual void gamepad_disconnected(Web::Gamepad::GamepadHandle handle) override;
+    void dispatch_gamepad_change_event(Web::Gamepad::GamepadChangeEvent const&);
+
     virtual void set_document_cookie_version_buffer(u64 page_id, Core::AnonymousBuffer document_cookie_version_buffer) override;
     virtual void set_document_cookie_version_index(u64 page_id, i64 document_id, Core::SharedVersionIndex document_index) override;
     virtual void cookies_changed(u64 page_id, Vector<HTTP::Cookie::Cookie>) override;
@@ -230,6 +239,8 @@ private:
 
     RefPtr<CompositorConnection> m_compositor_connection;
     NonnullOwnPtr<PageHost> m_page_host;
+
+    bool m_did_notify_started_using_gamepads { false };
 
     HashMap<int, Web::FileRequest> m_requested_files {};
     int last_id { 0 };

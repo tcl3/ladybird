@@ -7,10 +7,12 @@
 #pragma once
 
 #include <LibWeb/Bindings/PlatformObject.h>
-#include <LibWeb/Gamepad/SDLGamepadForward.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 
 namespace Web::Internals {
 
+// A proxy for a virtual gamepad device owned by the UI process. Input is injected and rumble commands are read back
+// over IPC, keyed by the device's GamepadHandle.
 class InternalGamepad : public Bindings::PlatformObject {
     WEB_PLATFORM_OBJECT(InternalGamepad, Bindings::PlatformObject);
     GC_DECLARE_ALLOCATOR(InternalGamepad);
@@ -20,31 +22,31 @@ public:
 
     virtual ~InternalGamepad() override;
 
-    Array<i32, 15> const& buttons();
-    Array<i32, 4> const& axes();
-    Array<i32, 2> const& triggers();
+    Vector<i32> const& buttons() const { return m_buttons; }
+    Vector<i32> const& axes() const { return m_axes; }
+    Vector<i32> const& triggers() const { return m_triggers; }
 
-    void set_button(int button, bool down);
-    void set_axis(int axis, short value);
+    void set_button(i32 button, bool down);
+    void set_axis(i32 axis, i16 value);
 
     GC::RootVector<JS::Object*> get_received_rumble_effects() const;
     GC::RootVector<JS::Object*> get_received_rumble_trigger_effects() const;
 
-    void received_rumble(u16 low_frequency_rumble, u16 high_frequency_rumble);
-    void received_rumble_triggers(u16 left_rumble, u16 right_rumble);
-
     void disconnect();
 
 private:
-    InternalGamepad(JS::Realm&, GC::Ref<Internals>);
+    InternalGamepad(JS::Realm&, GC::Ref<Internals>, Gamepad::VirtualGamepad);
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;
     virtual void finalize() override;
 
-    SDL_JoystickID m_sdl_joystick_id;
-    SDL_Joystick* m_sdl_joystick;
-    Vector<GC::Ref<JS::Object>> m_received_rumble_effects;
-    Vector<GC::Ref<JS::Object>> m_received_rumble_trigger_effects;
+    Page& page() const;
+
+    Gamepad::GamepadHandle m_handle { 0 };
+    Vector<i32> m_buttons;
+    Vector<i32> m_axes;
+    Vector<i32> m_triggers;
+    bool m_disconnected { false };
     GC::Ref<Internals> m_internals;
 };
 

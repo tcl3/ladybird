@@ -1136,6 +1136,61 @@ void PageClient::page_did_change_audio_play_state(Web::HTML::AudioPlayState play
     client().async_did_change_audio_play_state(m_id, play_state);
 }
 
+void PageClient::page_did_start_using_gamepads()
+{
+    client().notify_started_using_gamepads();
+}
+
+void PageClient::page_did_play_gamepad_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect const& effect)
+{
+    client().async_gamepad_play_effect(handle, effect);
+}
+
+bool PageClient::page_did_request_stop_gamepad_effects(Web::Gamepad::GamepadHandle handle)
+{
+    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::GamepadStopEffects>(handle);
+    if (!response)
+        return false;
+    return response->stopped_all();
+}
+
+Optional<Web::Gamepad::VirtualGamepad> PageClient::create_virtual_gamepad()
+{
+    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::CreateVirtualGamepad>();
+    if (!response)
+        return {};
+    return response->take_virtual_gamepad();
+}
+
+void PageClient::set_virtual_gamepad_button(Web::Gamepad::GamepadHandle handle, i32 button, bool down)
+{
+    client().async_set_virtual_gamepad_button(handle, button, down);
+}
+
+void PageClient::set_virtual_gamepad_axis(Web::Gamepad::GamepadHandle handle, i32 axis, i16 value)
+{
+    client().async_set_virtual_gamepad_axis(handle, axis, value);
+}
+
+void PageClient::disconnect_virtual_gamepad(Web::Gamepad::GamepadHandle handle)
+{
+    if (client().is_open())
+        client().async_disconnect_virtual_gamepad(handle);
+}
+
+Web::Gamepad::ReceivedRumbleEffects PageClient::virtual_gamepad_received_rumble_effects(Web::Gamepad::GamepadHandle handle)
+{
+    auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::GetVirtualGamepadReceivedRumbleEffects>(handle);
+    if (!response)
+        return {};
+    return { response->take_dual_rumble_effects(), response->take_trigger_rumble_effects() };
+}
+
+void PageClient::pump_gamepad_events()
+{
+    client().pump_and_dispatch_gamepad_events();
+}
+
 Web::HTML::WorkerAgentId PageClient::start_worker_agent(Web::HTML::WorkerAgentStartRequest&& request)
 {
     auto response = client().send_sync_but_allow_failure<Messages::WebContentClient::StartWorkerAgent>(m_id, move(request));

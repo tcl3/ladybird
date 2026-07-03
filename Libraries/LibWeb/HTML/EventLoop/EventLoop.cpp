@@ -15,6 +15,7 @@
 #include <LibWeb/CSS/FontFaceSet.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Element.h>
+#include <LibWeb/Gamepad/GamepadRegistry.h>
 #include <LibWeb/HTML/BrowsingContext.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/HTMLMediaElement.h>
@@ -286,8 +287,6 @@ void EventLoop::process_input_events() const
         while (!events_for_other_pages.is_empty()) {
             input_events_queue.enqueue(events_for_other_pages.dequeue());
         }
-
-        page.handle_sdl_input_events();
     };
 
     auto documents_of_traversable_navigables = documents_in_this_event_loop_matching([&](auto const& document) {
@@ -302,6 +301,15 @@ void EventLoop::process_input_events() const
 
     for (auto const& document : documents_of_traversable_navigables) {
         process_input_events_queue(document->page());
+    }
+
+    // Raw input for connected gamepads is sampled from the UI process's shared state buffer once per pass and fanned
+    // out to every page, matching the delivery of the queued input events above.
+    auto changed_gamepad_states = Gamepad::GamepadRegistry::the().take_changed_shared_states();
+    for (auto& state : changed_gamepad_states) {
+        Gamepad::GamepadChangeEvent state_updated_event = Gamepad::GamepadStateUpdatedEvent { move(state) };
+        for (auto const& document : documents_of_traversable_navigables)
+            document->page().handle_gamepad_change_event(state_updated_event);
     }
 }
 

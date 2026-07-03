@@ -26,6 +26,7 @@
 #include <LibWeb/CSS/StyleSheetIdentifier.h>
 #include <LibWeb/Compositor/Types.h>
 #include <LibWeb/Forward.h>
+#include <LibWeb/Gamepad/GamepadSnapshot.h>
 #include <LibWeb/HTML/ActivateTab.h>
 #include <LibWeb/HTML/FileFilter.h>
 #include <LibWeb/HTML/Scripting/ScriptRegistry.h>
@@ -237,6 +238,15 @@ private:
     virtual void did_request_primary_paste(u64 page_id) override;
     virtual void did_update_primary_selection(u64 page_id, String) override;
     virtual void did_change_audio_play_state(u64 page_id, Web::HTML::AudioPlayState) override;
+    virtual void did_start_using_gamepads() override;
+    virtual void gamepad_play_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect effect) override;
+    virtual Messages::WebContentClient::GamepadStopEffectsResponse gamepad_stop_effects(Web::Gamepad::GamepadHandle handle) override;
+    virtual Messages::WebContentClient::CreateVirtualGamepadResponse create_virtual_gamepad() override;
+    virtual void set_virtual_gamepad_button(Web::Gamepad::GamepadHandle handle, i32 button, bool down) override;
+    virtual void set_virtual_gamepad_axis(Web::Gamepad::GamepadHandle handle, i32 axis, i16 value) override;
+    virtual void disconnect_virtual_gamepad(Web::Gamepad::GamepadHandle handle) override;
+    virtual Messages::WebContentClient::PumpGamepadEventsResponse pump_gamepad_events() override;
+    virtual Messages::WebContentClient::GetVirtualGamepadReceivedRumbleEffectsResponse get_virtual_gamepad_received_rumble_effects(Web::Gamepad::GamepadHandle handle) override;
     virtual void did_update_session_history(u64 page_id, Vector<Web::HTML::SessionHistoryEntryDescriptor>, Vector<i32>, size_t current_used_step_index) override;
     virtual Messages::WebContentClient::DidRequestUiProcessSessionHistoryForTestingResponse did_request_ui_process_session_history_for_testing(u64 page_id) override;
     virtual Messages::WebContentClient::DidRequestSiteIsolationProcessTreeForTestingResponse did_request_site_isolation_process_tree_for_testing(u64 page_id) override;
