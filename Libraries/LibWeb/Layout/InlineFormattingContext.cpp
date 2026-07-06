@@ -644,6 +644,13 @@ StaticPositionRect InlineFormattingContext::calculate_inline_end_static_position
     }
     logical_block_position = last_fragment.block_offset();
 
+    // Text fragment boxes are anchored to their font's metrics, while the static position tracks the fragment's
+    // leading box, whose block position is recovered from the baseline.
+    if (auto const& layout_node = last_fragment.layout_node(); layout_node.is_text_node() && last_fragment.writing_mode() == CSS::WritingMode::HorizontalTb) {
+        auto leading_box_baseline = LineBuilder::baseline_for_font(layout_node.first_available_font().pixel_metrics(), layout_node.computed_values().line_height());
+        logical_block_position += last_fragment.baseline() - leading_box_baseline;
+    }
+
     return { .rect = { to_physical_position(last_fragment.writing_mode(), logical_inline_position, logical_block_position), { 0, 0 } } };
 }
 

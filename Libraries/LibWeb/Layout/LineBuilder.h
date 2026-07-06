@@ -22,6 +22,8 @@ public:
         Yes,
     };
 
+    static CSSPixels baseline_for_font(Gfx::FontPixelMetrics const&, CSSPixels line_height);
+
     void break_line(ForcedBreak, Optional<CSSPixels> next_item_width = {});
     void append_box(Box const&, CSSPixels leading_size, CSSPixels trailing_size, CSSPixels leading_margin, CSSPixels trailing_margin);
     void append_text_chunk(TextNode const&, size_t offset_in_node, size_t length_in_node, CSSPixels leading_size, CSSPixels trailing_size, CSSPixels leading_margin, CSSPixels trailing_margin, CSSPixels content_width, CSSPixels content_height, RefPtr<Gfx::GlyphRun>);

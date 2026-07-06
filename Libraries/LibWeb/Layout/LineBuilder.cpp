@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibWeb/CSS/ComputedProperties.h>
 #include <LibWeb/Layout/BlockFormattingContext.h>
 #include <LibWeb/Layout/LineBuilder.h>
 #include <LibWeb/Layout/TextNode.h>
@@ -259,6 +260,13 @@ bool LineBuilder::should_break(CSSPixels next_item_width)
     return (current_line_width + next_item_width) > m_available_width_for_current_line;
 }
 
+CSSPixels LineBuilder::baseline_for_font(Gfx::FontPixelMetrics const& font_metrics, CSSPixels line_height)
+{
+    auto const typographic_height = CSSPixels::nearest_value_for(font_metrics.ascent + font_metrics.descent);
+    auto const half_leading = (line_height - typographic_height) / 2;
+    return CSSPixels::nearest_value_for(font_metrics.ascent) + half_leading;
+}
+
 void LineBuilder::update_last_line()
 {
     if (!m_last_line_needs_update)
@@ -325,12 +333,6 @@ void LineBuilder::update_last_line()
             break;
         }
     }
-
-    auto baseline_for_font = [](Gfx::FontPixelMetrics const& font_metrics, CSSPixels line_height) {
-        auto const typographic_height = CSSPixels::nearest_value_for(font_metrics.ascent + font_metrics.descent);
-        auto const half_leading = (line_height - typographic_height) / 2;
-        return CSSPixels::nearest_value_for(font_metrics.ascent) + half_leading;
-    };
 
     auto strut_baseline = [&] {
         auto& font = m_context.containing_block().first_available_font();
@@ -516,6 +518,16 @@ void LineBuilder::update_last_line()
 
         uppermost_box_top = min(uppermost_box_top, top_of_inline_box);
         lowermost_box_bottom = max(lowermost_box_bottom, bottom_of_inline_box);
+
+        // FIXME: Also anchor text fragment boxes to the font baseline in vertical writing modes.
+        if (fragment.layout_node().is_text_node() && m_writing_mode == CSS::WritingMode::HorizontalTb) {
+            auto const& font_metrics = fragment.layout_node().first_available_font().pixel_metrics();
+            auto const font_box_height = CSS::ComputedProperties::normal_line_height(font_metrics);
+            auto const font_baseline = baseline_for_font(font_metrics, font_box_height);
+            fragment.set_block_offset(fragment.block_offset() + fragment.baseline() - font_baseline);
+            fragment.set_baseline(font_baseline);
+            fragment.set_block_length(font_box_height);
+        }
     }
 
     for (auto& marker : line_box.static_position_markers()) {
