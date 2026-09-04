@@ -2338,7 +2338,7 @@ pub unsafe extern "C" fn rust_layout_run_root_layout(
         root,
         sink,
     );
-    callbacks.arena().sweep_stale_fc_run_cache_entries();
+    callbacks.arena().end_layout_pass();
 }
 
 fn drain_and_commit_entry_pass(
@@ -2452,7 +2452,7 @@ pub unsafe extern "C" fn rust_layout_compute_subtree_layout(
         None,
     );
     drain_and_commit_entry_pass(&entry_records, &entry_fragments, &callbacks, false, root, sink);
-    callbacks.arena().sweep_stale_fc_run_cache_entries();
+    callbacks.arena().end_layout_pass();
 }
 
 /// # Safety
@@ -2490,5 +2490,5 @@ pub unsafe extern "C" fn rust_layout_replay_saved_abspos_layout(
     };
     abspos_engine::AbsposEngine::for_run(&run).replay(&run, box_);
     drain_and_commit_entry_pass(&entry_records, &entry_fragments, &callbacks, false, box_, sink);
-    callbacks.arena().sweep_stale_fc_run_cache_entries();
+    callbacks.arena().end_layout_pass();
 }
