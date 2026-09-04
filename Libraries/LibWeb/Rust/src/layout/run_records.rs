@@ -12,6 +12,7 @@ use super::*;
 /// That is sound only because runs strictly nest on the call stack, so an
 /// Rc<RunRecords> must never escape its run.
 pub(crate) struct RunRecords {
+    pub(crate) omitted_line_layout: Cell<bool>,
     root: Node,
     arena: *mut c_void,
     nonce: u64,
@@ -38,6 +39,7 @@ impl RunRecords {
         // the document keeps it alive for the duration of the pass.
         let nonce = unsafe { LayoutNodeArena::from_handle(arena) }.allocate_run_nonce();
         Self {
+            omitted_line_layout: Cell::new(false),
             root,
             arena,
             nonce,

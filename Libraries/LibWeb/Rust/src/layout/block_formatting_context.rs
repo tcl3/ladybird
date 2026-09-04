@@ -1434,6 +1434,10 @@ impl BlockFormattingContext {
         self.margin_state.borrow_mut().reset();
     }
 
+    pub(crate) fn has_floating_boxes(&self) -> bool {
+        !self.floats.borrow().is_empty()
+    }
+
     pub(crate) fn clear_floating_boxes(
         &self,
         node: Node,
