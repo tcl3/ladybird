@@ -19,10 +19,10 @@
 
         let frame = document.createElement("iframe");
         frame.srcdoc = ["red", "blue"]
-            .map(
-                color =>
-                    `<img src='data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><style>rect { fill: ${color}; }</style><rect width="10" height="10"/></svg>`)}'>`
-            )
+            .map(color => {
+                const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><style>rect { fill: ${color}; }</style><rect width="10" height="10"/></svg>`;
+                return `<img src='${URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }))}'>`;
+            })
             .join("");
         await new Promise(resolve => {
             frame.onload = resolve;
