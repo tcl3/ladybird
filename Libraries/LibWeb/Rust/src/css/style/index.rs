@@ -479,7 +479,7 @@ fn next_batch_generation() -> u64 {
 /// inside the evaluator.
 #[derive(Clone, Default)]
 pub struct StyleNodeFacts {
-    attribute_catalogs: Arc<AttributeCatalogs>,
+    attribute_catalogs: Option<Arc<AttributeCatalogs>>,
     primary: bool,
     resident: BitColumn,
     rare_facts: PagedColumn<RareFactPage>,
@@ -1063,8 +1063,8 @@ impl StyleNodeFacts {
             return &self.text[offset as usize..(offset + length) as usize];
         }
         self.attribute_catalogs
-            .language_texts
-            .get(self.language_of(row).0 as usize)
+            .as_ref()
+            .and_then(|catalogs| catalogs.language_texts.get(self.language_of(row).0 as usize))
             .and_then(Option::as_deref)
             .unwrap_or_default()
     }
@@ -1249,6 +1249,7 @@ impl StyleNodeFacts {
             return Some(text);
         }
         self.attribute_catalogs
+            .as_ref()?
             .value_texts
             .get(attribute.value.0 as usize)
             .and_then(Option::as_deref)
@@ -1267,8 +1268,8 @@ impl StyleNodeFacts {
     pub fn attribute_name_forms(&self, name: StyleAtomID) -> AttributeNameForms {
         let mut forms = self
             .attribute_catalogs
-            .name_forms
-            .get(name.0 as usize)
+            .as_ref()
+            .and_then(|catalogs| catalogs.name_forms.get(name.0 as usize))
             .unwrap_or_default();
         if forms.folded_name.is_none() {
             forms.folded_name = name;
@@ -1281,9 +1282,13 @@ impl StyleNodeFacts {
 
     #[cfg(test)]
     pub fn note_attribute_name_forms(&mut self, name: StyleAtomID, forms: AttributeNameForms) {
-        Arc::make_mut(&mut self.attribute_catalogs)
+        Arc::make_mut(self.attribute_catalogs.get_or_insert_default())
             .name_forms
             .insert(name.0 as usize, forms);
+    }
+
+    pub(super) fn release_attribute_catalogs(&mut self) {
+        self.attribute_catalogs = None;
     }
 
     /// Logical bytes occupied by one packed row, excluding the dense directory shared by all rows.
@@ -4001,7 +4006,7 @@ impl Default for ElementFactStore {
     fn default() -> Self {
         let attribute_catalogs = Arc::new(AttributeCatalogs::default());
         let mut rows = StyleNodeFacts::new_primary();
-        rows.attribute_catalogs = Arc::clone(&attribute_catalogs);
+        rows.attribute_catalogs = Some(Arc::clone(&attribute_catalogs));
         let mut store = Self {
             rows: Arc::new(rows),
             attribute_catalogs,
@@ -4052,17 +4057,27 @@ impl ElementFactStore {
         self.attribute_catalog_copies
     }
 
+    #[cfg(test)]
+    pub(super) fn weak_attribute_catalogs(&self) -> std::sync::Weak<impl Sized + use<>> {
+        Arc::downgrade(&self.attribute_catalogs)
+    }
+
     pub(super) fn staging_is_empty(&self) -> bool {
         self.staging.is_empty()
     }
 
     fn prepare_attribute_catalogs(&mut self) {
-        if Arc::ptr_eq(&self.rows.attribute_catalogs, &self.attribute_catalogs) {
+        if self
+            .rows
+            .attribute_catalogs
+            .as_ref()
+            .is_some_and(|catalogs| Arc::ptr_eq(catalogs, &self.attribute_catalogs))
+        {
             return;
         }
         // A retained traversal may still share the old rows and their catalog snapshot.
         let rows = Arc::make_mut(&mut self.rows);
-        rows.attribute_catalogs = Arc::clone(&self.attribute_catalogs);
+        rows.attribute_catalogs = Some(Arc::clone(&self.attribute_catalogs));
     }
 
     fn increment_atom_count(counts: &mut PagedCopyColumn<u32>, atom: StyleAtomID) {
@@ -5438,7 +5453,7 @@ impl ElementFactStore {
     //     owner directly and never needs to mutate the shared primary rows.
     pub fn materialize(&self, nodes: impl Iterator<Item = StyleNodeID>, batch: &mut StyleNodeFacts) {
         batch.clear();
-        batch.attribute_catalogs = Arc::clone(&self.attribute_catalogs);
+        batch.attribute_catalogs = Some(Arc::clone(&self.attribute_catalogs));
         for node in nodes {
             self.materialize_row(node, batch);
         }
@@ -5450,7 +5465,7 @@ impl ElementFactStore {
     /// their ancestor chains, and each row is packed at most once per pass instead of once per
     /// ask.
     pub fn materialize_missing(&self, nodes: impl Iterator<Item = StyleNodeID>, batch: &mut StyleNodeFacts) {
-        batch.attribute_catalogs = Arc::clone(&self.attribute_catalogs);
+        batch.attribute_catalogs = Some(Arc::clone(&self.attribute_catalogs));
         for node in nodes {
             if batch.row_of(node).is_some() {
                 continue;
@@ -5626,7 +5641,7 @@ impl ElementFactStore {
         }
         nodes.sort_unstable();
         let mut before = StyleNodeFacts::new();
-        before.attribute_catalogs = Arc::clone(&self.attribute_catalogs);
+        before.attribute_catalogs = Some(Arc::clone(&self.attribute_catalogs));
         for node in nodes {
             let pair = self
                 .staging
@@ -6061,15 +6076,13 @@ mod tests {
 
             facts.forget(node);
             facts.sweep_auxiliary_catalogs();
+            let catalogs = facts.rows.attribute_catalogs.as_ref().unwrap();
             assert_eq!(
-                facts.rows.attribute_catalogs.language_texts.get(language.0 as usize),
+                catalogs.language_texts.get(language.0 as usize),
                 Some(&Some(Box::from([index as u16])))
             );
-            assert_eq!(
-                facts.rows.attribute_catalogs.name_forms.get(attribute_name.0 as usize),
-                Some(name_forms)
-            );
-            assert!(facts.rows.attribute_catalogs.value_texts.iter().all(Option::is_none));
+            assert_eq!(catalogs.name_forms.get(attribute_name.0 as usize), Some(name_forms));
+            assert!(catalogs.value_texts.iter().all(Option::is_none));
             assert!(facts.custom_property_name_sets.live_is_empty());
             assert!(facts.custom_property_set_ids_by_name.iter().all(Vec::is_empty));
         }

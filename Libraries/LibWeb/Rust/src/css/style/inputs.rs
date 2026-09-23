@@ -891,6 +891,8 @@ impl StyleEngineState {
                 exact_covered_scratch: Vec::new(),
                 cascade_compaction_scratch: ordering::CascadeCompactionWorkspace::default(),
                 cascade_compaction_scratch_memory: MemoryLease::new(MemoryCategory::BatchScratch),
+                element_match_facts_scratch: None,
+                element_match_facts_scratch_memory: MemoryLease::new(MemoryCategory::BatchScratch),
                 next_style_transaction_version: StyleTransactionVersion(1),
                 document_style_computation_inputs: None,
                 font_resolution: None,

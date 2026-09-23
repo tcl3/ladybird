@@ -20,6 +20,15 @@ use super::*;
 use crate::css::property_metadata::property_id;
 use crate::css::style_value::{RetainedStyleValueData, StyleValueData};
 
+impl RetainedState {
+    /// Batch scratch still charged once the scratch that deliberately outlives one ask is set aside.
+    fn transient_batch_scratch_bytes(&self) -> u64 {
+        self.memory.bytes_in_category(MemoryCategory::BatchScratch)
+            - self.cascade_compaction_scratch_memory.bytes()
+            - self.element_match_facts_scratch_memory.bytes()
+    }
+}
+
 fn native_rules(source: &str) -> std::rc::Rc<crate::css::rule::NativeRuleList> {
     use crate::css::css_tokenizer::TokenizerInput;
     use crate::css::parser::syntax_parser::parse_shared_stylesheet;
@@ -930,7 +939,7 @@ fn flat_tree_descendant_collection_follows_shadow_and_slot_relations() {
     engine.for_each_flat_tree_descendant(*host, |node| descendants.push(node));
 
     assert_eq!(descendants, vec![*wrapper, *slot, *assigned, *assigned_child]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -1965,7 +1974,7 @@ fn routing_phases_share_remaining_postings_for_one_transaction() {
         engine.counters().get(Counter::RemainingPostingReuses) > reuses_before,
         "the later routing phase must reuse the posting retained by the earlier phase"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -1981,7 +1990,7 @@ fn a_document_root_arrival_is_already_a_whole_document_plan() {
         engine.memory().bytes_in_category(MemoryCategory::NormalizationJournal),
         0
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -2028,7 +2037,7 @@ fn a_document_program_plan_skips_dom_routing() {
         0,
         "the document envelope makes every DOM route redundant"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -2057,7 +2066,7 @@ fn a_program_change_does_not_repeat_an_arriving_subtree() {
     expected.extend(arriving.iter().map(|node| node.raw()));
     expected.sort_unstable();
     assert_eq!(planned, expected);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -2079,7 +2088,7 @@ fn a_rare_program_candidate_inside_an_arrival_is_already_covered() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, [arriving.raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -2102,7 +2111,7 @@ fn a_program_region_inside_an_arrival_is_already_covered() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, raw);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 fn relations(parent: Option<u32>, previous: Option<u32>, next: Option<u32>) -> TreeRelations {
@@ -2505,7 +2514,7 @@ fn a_nested_arrival_routes_relational_facts_from_the_outer_subtree() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, raw);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 fn add_has_sibling_rule(engine: &mut StyleEngine, anchor: StyleAtomID, witness: StyleAtomID, axis: RelativeAxis) {
@@ -6478,7 +6487,7 @@ fn overlapping_prefix_changes_are_evaluated_once() {
     assert_eq!(planned, vec![nodes[3].raw()]);
     assert_eq!(engine.counters().get(Counter::PrefixConvergencePasses), 1);
     assert_eq!(engine.counters().get(Counter::PrefixConvergenceNodes), 3);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -6511,7 +6520,7 @@ fn retained_prefix_transitions_supply_invalidation_and_matching() {
     planned.clear();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[3].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -6833,7 +6842,7 @@ fn selective_matching_completes_a_bounded_prefix_transition_window() {
         1,
         "invalidation reuses the retained partial prefix transition cache"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -6900,10 +6909,7 @@ fn partial_match_answer_completion_shares_prefix_states_between_nodes() {
     assert!(answer.cascade_winners_are_complete);
     assert_eq!(engine.match_element(nodes[3]).unwrap().len(), 1);
     engine.end_published_match_answer_completion_batch();
-    assert_eq!(
-        engine.memory().bytes_in_category(MemoryCategory::BatchScratch),
-        engine.cascade_compaction_scratch.capacity_bytes()
-    );
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -7325,7 +7331,7 @@ fn retained_prefix_transitions_crossing_pressure_survive_until_the_boundary() {
     engine.end_cold_matching_batch();
 
     assert!(engine.memory().bytes_in_category(MemoryCategory::PrefixTransitionCache) > 0);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
     for category in TIER3_REFUSAL_CATEGORIES {
         if category != MemoryCategory::PrefixTransitionCache {
             engine.memory.record_benefit_lookups(category, 1, 0);
@@ -7338,7 +7344,7 @@ fn retained_prefix_transitions_crossing_pressure_survive_until_the_boundary() {
         engine.memory().bytes_in_category(MemoryCategory::PrefixTransitionCache),
         0
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
     engine.memory.begin_tier3_quota_period();
 
     remove_feature(&mut engine, nodes[1], LocalFeatureKey::Class(guard));
@@ -7584,7 +7590,7 @@ fn prefix_convergence_skips_an_already_dirty_arrival() {
     assert_eq!(planned, vec![nodes[3].raw(), arrival.raw()]);
     assert_eq!(engine.counters().get(Counter::PrefixConvergencePasses), 1);
     assert_eq!(engine.counters().get(Counter::PrefixConvergenceNodes), 3);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -7661,7 +7667,7 @@ fn an_adjacent_replacement_that_preserves_truth_stays_out_of_the_plan() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert!(planned.is_empty());
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -7688,7 +7694,7 @@ fn an_old_adjacent_chain_is_compared_with_its_replacement_chain() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[3].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 /// Admitted plain an+b entries answer through the prefix automaton, whose positional truth
@@ -8057,7 +8063,7 @@ fn consecutive_departures_reconstruct_one_old_sibling_sequence() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[4].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8101,7 +8107,7 @@ fn converging_departure_routes_are_folded_before_exact_tree_evaluation() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert!(planned.is_empty());
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8318,7 +8324,7 @@ fn an_arriving_sibling_with_an_existing_witness_restyles_only_itself() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![inserted.raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8369,7 +8375,47 @@ fn a_sibling_entry_ask_seeds_its_left_context() {
         0,
         "the sibling entry is answered by the automaton, not the fallback"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
+}
+
+#[test]
+fn element_match_scratch_releases_departed_attribute_catalogs() {
+    let mut engine = StyleEngine::new(DeviceClass::ForegroundDesktop);
+    let mut raw = [0; 2];
+    engine.allocate_style_nodes(&mut raw);
+    let [root, child] = raw.map(|raw| StyleNodeID::from_raw(raw).unwrap());
+    let child_relations = TreeRelations {
+        parent: Some(root),
+        ..TreeRelations::detached(TreeScopeID::DOCUMENT)
+    };
+    engine.record_tree_delta(root, None, Some(TreeRelations::detached(TreeScopeID::DOCUMENT)));
+    engine.record_tree_delta(child, None, Some(child_relations));
+    for node in [root, child] {
+        set_atom_feature(&mut engine, node, LocalFeatureKey::TagName, StyleAtomID(1));
+    }
+    engine.set_attribute_value_text(StyleAtomID(100), &[1, 2, 3]);
+    engine.record_input(
+        InputKey::LocalFeature(child, LocalFeatureKey::Attribute(StyleAtomID(99))),
+        InputValue::Feature(FeatureValue::Absent),
+        InputValue::Feature(FeatureValue::Atom(StyleAtomID(100))),
+    );
+    discard_transaction(&mut engine);
+    let catalogs = engine.facts.weak_attribute_catalogs();
+
+    assert!(engine.match_element(child).unwrap().is_empty());
+    let scratch_bytes = engine.element_match_facts_scratch_memory.bytes();
+    assert!(scratch_bytes > 0);
+
+    engine.record_tree_delta(child, Some(child_relations), None);
+    discard_transaction(&mut engine);
+    assert!(
+        catalogs.upgrade().is_none(),
+        "cached scratch must not retain departed attribute values"
+    );
+    assert_eq!(engine.element_match_facts_scratch_memory.bytes(), scratch_bytes);
+
+    assert!(engine.match_element(root).unwrap().is_empty());
+    assert_eq!(engine.element_match_facts_scratch_memory.bytes(), scratch_bytes);
 }
 
 #[test]
@@ -8394,7 +8440,7 @@ fn a_general_sibling_fact_miss_is_batched_before_matching_restarts() {
         2,
         "the first pass requests the sequence and the second completes"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8435,7 +8481,7 @@ fn a_descendant_fact_miss_is_batched_before_matching_restarts() {
         engine.counters().get(Counter::LocalFeatureTests) - feature_tests_before < 200,
         "restarts do linear rather than triangular feature-test work"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8477,7 +8523,7 @@ fn a_broad_matching_batch_shares_facts_between_element_asks() {
         "starting another batch releases the previous one first"
     );
     engine.end_cold_matching_batch();
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8652,7 +8698,7 @@ fn independent_sibling_paths_request_their_fact_ranges_together() {
         "both sibling sequences are requested by the first pass"
     );
     assert_eq!(engine.counters().get(Counter::CandidateChecks) - checks_before, 4);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8686,7 +8732,7 @@ fn completed_cold_candidates_are_not_replayed_after_a_fact_miss() {
         2,
         "a retained match is emitted once"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8716,7 +8762,7 @@ fn a_selector_list_merges_matches_retained_across_retries() {
         1,
         "the retained lower-specificity match is updated rather than emitted again"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8829,13 +8875,13 @@ fn duplicate_fact_requests_share_one_window_per_matching_pass() {
             INITIAL_SIBLING_FACT_WINDOW
         };
         assert_eq!(covered, nodes[1..=expected]);
-        assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+        assert_eq!(engine.transient_batch_scratch_bytes(), 0);
         assert_eq!(
             engine.widen_fact_coverage_for_requests(&mut covered, &requests, &mut window),
             Err(nodes[1]),
             "a row requested again after materialization still reports failure to make progress"
         );
-        assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+        assert_eq!(engine.transient_batch_scratch_bytes(), 0);
     }
 
     let mut covered = vec![nodes[0]];
@@ -8856,7 +8902,7 @@ fn duplicate_fact_requests_share_one_window_per_matching_pass() {
         nodes[..9],
         "overlapping requests retain discovery order without duplicates"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 fn typed_nth_of_type_document() -> (StyleEngine, Vec<StyleNodeID>) {
@@ -8896,7 +8942,7 @@ fn another_type_leaving_does_not_route_an_of_type_position() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert!(planned.is_empty());
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -8911,7 +8957,7 @@ fn the_same_type_leaving_routes_an_of_type_position() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[3].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 fn insert_typed_child(engine: &mut StyleEngine, nodes: &[StyleNodeID], namespace: StyleAtomID) -> StyleNodeID {
@@ -8986,7 +9032,7 @@ fn an_arrival_rejects_an_unchanged_of_type_position() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![inserted.raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -9097,7 +9143,7 @@ fn exact_planning_shares_current_relation_indexes_with_matching() {
     engine.begin_adaptive_cold_matching_batch(nodes[0]);
     assert_eq!(engine.match_element(nodes[2]).unwrap().len(), 1);
     engine.end_cold_matching_batch();
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -9151,7 +9197,7 @@ fn a_prepared_fact_batch_falls_back_for_an_unprepared_node() {
     engine.begin_adaptive_cold_matching_batch(nodes[0]);
     assert_eq!(engine.match_element(nodes[2]).unwrap().len(), 1);
     engine.end_cold_matching_batch();
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -9522,7 +9568,7 @@ fn exact_planning_carries_preorder_topology_into_matching() {
     assert!(engine.begin_cold_matching_batch(nodes[0]));
     assert!(engine.match_element(nodes[3]).unwrap().is_empty());
     engine.end_cold_matching_batch();
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -9581,7 +9627,7 @@ fn an_exact_batch_filters_a_featureless_subject() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[2].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -9595,7 +9641,7 @@ fn ancestor_requirement_scratch_is_released_after_document_matching() {
     discard_transaction(&mut engine);
 
     assert_eq!(engine.match_document(nodes[0]), Ok(1));
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -10071,7 +10117,7 @@ fn rule_activation_reaches_only_current_selector_matches() {
         assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
         assert_eq!(engine.program.rule_conditions_hold(rule), conditions_hold);
         assert_eq!(planned, vec![nodes[3].raw()]);
-        assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+        assert_eq!(engine.transient_batch_scratch_bytes(), 0);
     }
 }
 
@@ -10186,7 +10232,7 @@ fn local_routes_for_one_exact_entry_are_compared_once() {
         0,
         "routes consolidate before late exact-entry grouping"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -10299,7 +10345,7 @@ fn rule_activation_uses_the_fact_side_where_the_rule_contributes() {
         vec![nodes[3].raw()],
         "turning the rule on tests the new selector facts"
     );
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -10330,7 +10376,7 @@ fn a_sheet_transition_reaches_only_selector_matches() {
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[3].raw()], "attaching reads the new selector facts");
     assert_eq!(engine.counters().get(Counter::SheetChangeCandidatesRejected), 2);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -10350,7 +10396,7 @@ fn any_matching_selector_list_entry_keeps_an_activation_candidate() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[3].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 #[test]
@@ -10366,7 +10412,7 @@ fn incomplete_selector_facts_keep_an_activation_candidate() {
     let mut planned = Vec::new();
     assert!(engine.take_style_transaction_nodes(nodes[0], |nodes| planned.extend_from_slice(nodes)));
     assert_eq!(planned, vec![nodes[2].raw()]);
-    assert_eq!(engine.memory().bytes_in_category(MemoryCategory::BatchScratch), 0);
+    assert_eq!(engine.transient_batch_scratch_bytes(), 0);
 }
 
 // -- Stylesheet program deltas -----------------------------------------------------------

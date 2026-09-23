@@ -830,6 +830,9 @@ pub struct RetainedState {
     exact_covered_scratch: Vec<StyleNodeID>,
     cascade_compaction_scratch: ordering::CascadeCompactionWorkspace,
     cascade_compaction_scratch_memory: MemoryLease,
+    /// Scratch for the fact rows one element match materializes, reused across elements.
+    element_match_facts_scratch: Option<StyleNodeFacts>,
+    element_match_facts_scratch_memory: MemoryLease,
     /// Monotonic identity assigned to each non-empty normalized style transaction.
     next_style_transaction_version: StyleTransactionVersion,
     /// Latest document-wide scalar computation facts, copied at the transaction boundary.

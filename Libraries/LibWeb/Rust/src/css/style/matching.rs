@@ -5518,7 +5518,7 @@ impl RetainedState {
             .unwrap_or_else(|| Rc::new(RefCell::new(PrefixCaches::default())));
         let mut completion_scratch_bytes = 0;
         let mut retained_match_answer_is_exact = compact_for_cascade;
-        let mut facts = StyleNodeFacts::new();
+        let mut facts = self.element_match_facts_scratch.take().unwrap_or_default();
         let mut requests = Vec::new();
         loop {
             self.facts.materialize(covered.iter().copied(), &mut facts);
@@ -5637,6 +5637,7 @@ impl RetainedState {
                     if !prefix_caches_return_to_completion_batch {
                         prefix_caches.borrow_mut().states.release();
                     }
+                    self.return_element_match_facts_scratch(facts);
                     return Ok(all);
                 }
                 Err(incomplete) => {
@@ -5653,11 +5654,19 @@ impl RetainedState {
                         if !prefix_caches_return_to_completion_batch {
                             prefix_caches.borrow_mut().states.release();
                         }
+                        self.return_element_match_facts_scratch(facts);
                         return Err(Incomplete::MissingFacts(missing));
                     }
                 }
             }
         }
+    }
+
+    fn return_element_match_facts_scratch(&mut self, mut facts: StyleNodeFacts) {
+        facts.release_attribute_catalogs();
+        self.element_match_facts_scratch_memory
+            .resize_required_to(&mut self.memory, facts.capacity_bytes());
+        self.element_match_facts_scratch = Some(facts);
     }
 }
 

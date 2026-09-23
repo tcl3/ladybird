@@ -58,6 +58,8 @@ fn every_retained_member_is_shareable(state: &RetainedState) {
         exact_covered_scratch,
         cascade_compaction_scratch,
         cascade_compaction_scratch_memory,
+        element_match_facts_scratch,
+        element_match_facts_scratch_memory,
         next_style_transaction_version,
         document_style_computation_inputs,
         font_resolution,
@@ -149,6 +151,8 @@ fn every_retained_member_is_shareable(state: &RetainedState) {
     assert_member_is_sync(exact_covered_scratch);
     assert_member_is_sync(cascade_compaction_scratch);
     assert_member_is_sync(cascade_compaction_scratch_memory);
+    assert_member_is_sync(element_match_facts_scratch);
+    assert_member_is_sync(element_match_facts_scratch_memory);
     assert_member_is_sync(next_style_transaction_version);
     assert_member_is_sync(document_style_computation_inputs);
     assert_member_is_sync(layer_topology_version);
