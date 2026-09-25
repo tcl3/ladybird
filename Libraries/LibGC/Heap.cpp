@@ -49,7 +49,7 @@ static constexpr size_t GC_MIN_BYTES_THRESHOLD { 8 * 1024 * 1024 };
 static constexpr size_t GC_HEAP_GROWTH_FACTOR_NUMERATOR { 7 };
 static constexpr size_t GC_HEAP_GROWTH_FACTOR_DENOMINATOR { 4 };
 
-static constexpr int GC_INCREMENTAL_SWEEP_INTERVAL_MS = 16;
+static constexpr int GC_INCREMENTAL_SWEEP_INTERVAL_MS = 100;
 static constexpr int GC_INCREMENTAL_SWEEP_SLICE_MS = 5;
 
 // The idle GC timer ticks at this interval while the mutator is allocating; IdleCollectionPolicy decides on each tick
@@ -1447,16 +1447,25 @@ void Heap::stop_incremental_sweep_timer()
 
 void Heap::sweep_on_timer()
 {
-    if (!m_incremental_sweep_active)
-        return;
+    sweep_until(MonotonicTime::now() + AK::Duration::from_milliseconds(GC_INCREMENTAL_SWEEP_SLICE_MS));
+}
 
-    if (is_gc_deferred())
-        return;
+void Heap::perform_idle_work(MonotonicTime deadline)
+{
+    auto blocks_swept = sweep_until(deadline);
+
+    if (blocks_swept > 0 && m_incremental_sweep_active)
+        m_incremental_sweep_timer->restart();
+}
+
+size_t Heap::sweep_until(MonotonicTime deadline)
+{
+    if (!m_incremental_sweep_active || is_gc_deferred())
+        return 0;
 
     size_t blocks_swept = 0;
     bool finished_sweep = false;
     auto start_time = MonotonicTime::now();
-    auto deadline = start_time + AK::Duration::from_milliseconds(GC_INCREMENTAL_SWEEP_SLICE_MS);
     while (MonotonicTime::now() < deadline) {
         if (sweep_next_block()) {
             auto elapsed = MonotonicTime::now() - start_time;
@@ -1471,9 +1480,11 @@ void Heap::sweep_on_timer()
     if (blocks_swept > 0 && !finished_sweep) {
         auto elapsed = MonotonicTime::now() - start_time;
         record_incremental_sweep_batch(blocks_swept, elapsed.to_microseconds(), false);
-        dbgln_if(INCREMENTAL_SWEEP_DEBUG, "[sweep] Timer slice: {} blocks in {}ms",
+        dbgln_if(INCREMENTAL_SWEEP_DEBUG, "[sweep] Slice: {} blocks in {}ms",
             blocks_swept, elapsed.to_milliseconds());
     }
+
+    return blocks_swept;
 }
 
 void Heap::start_idle_gc_timer()

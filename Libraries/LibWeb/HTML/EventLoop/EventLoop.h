@@ -123,7 +123,7 @@ public:
     void register_environment_settings_object(Badge<EnvironmentSettingsObject>, EnvironmentSettingsObject&);
     void unregister_environment_settings_object(Badge<EnvironmentSettingsObject>, EnvironmentSettingsObject&);
 
-    double compute_deadline() const;
+    double compute_deadline() const { return compute_deadline(m_last_idle_period_start_time); }
 
     enum class UpdateTheRendering {
         No,
@@ -146,6 +146,8 @@ private:
 
     void process_input_events() const;
     void update_the_rendering();
+
+    double compute_deadline(double idle_period_start_time) const;
 
     Type m_type { Type::Window };
 

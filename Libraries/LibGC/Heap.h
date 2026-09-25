@@ -14,6 +14,7 @@
 #include <AK/RefPtr.h>
 #include <AK/StackInfo.h>
 #include <AK/String.h>
+#include <AK/Time.h>
 #include <AK/Types.h>
 #include <AK/Vector.h>
 #include <LibCore/Forward.h>
@@ -133,6 +134,9 @@ public:
     bool is_gc_deferred() const { return m_gc_deferrals > 0; }
     bool is_incremental_sweep_active() const { return m_incremental_sweep_active; }
 
+    bool has_idle_work() const { return m_incremental_sweep_active; }
+    void perform_idle_work(MonotonicTime deadline);
+
     void sweep_block(HeapBlock&);
 
     bool is_live_heap_block(HeapBlock* block) const { return m_live_heap_blocks.contains(block); }
@@ -206,6 +210,7 @@ private:
     void start_incremental_sweep_timer();
     void stop_incremental_sweep_timer();
     void sweep_on_timer();
+    size_t sweep_until(MonotonicTime deadline);
 
     void start_idle_gc_timer();
     void idle_gc_on_timer();

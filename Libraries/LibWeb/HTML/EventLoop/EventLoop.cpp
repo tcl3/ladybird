@@ -251,6 +251,15 @@ void EventLoop::process()
         }
     }
 
+    // AD-HOC: Give the garbage collector the time until the next timer or rendering update for work it deferred, such
+    //         as sweeping.
+    if (m_type == Type::Window && !m_task_queue->has_runnable_tasks() && heap().has_idle_work()) {
+        auto now = HighResolutionTime::unsafe_shared_current_time();
+        auto idle_time = compute_deadline(now) - now;
+        if (idle_time > 0)
+            heap().perform_idle_work(MonotonicTime::now() + AK::Duration::from_microseconds(static_cast<i64>(idle_time * 1000)));
+    }
+
     // If there are eligible tasks in the queue, schedule a new round of processing. :^)
     if (m_task_queue->has_runnable_tasks() || (!m_microtask_queue.is_empty() && !m_performing_a_microtask_checkpoint)) {
         schedule();
@@ -1028,10 +1037,10 @@ Vector<GC::Root<HTML::Window>> EventLoop::same_loop_windows() const
 }
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#event-loop-processing-model:last-idle-period-start-time
-double EventLoop::compute_deadline() const
+double EventLoop::compute_deadline(double idle_period_start_time) const
 {
     // 1. Let deadline be this event loop's last idle period start time plus 50.
-    auto deadline = m_last_idle_period_start_time + 50;
+    auto deadline = idle_period_start_time + 50;
     // 2. Let hasPendingRenders be false.
     auto has_pending_renders = false;
     // 3. For each windowInSameLoop of the same-loop windows for this event loop:
