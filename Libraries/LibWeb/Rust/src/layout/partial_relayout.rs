@@ -219,7 +219,9 @@ impl LayoutNodeArena {
         !(root.is_invalid()
             || self.needs_full_layout_tree_update()
             || self.pending_updates_escape_partial_relayout.get()
-            || (registered_root_slots.is_empty() && self.deferred_child_list_insertion_parents.borrow().is_empty())
+            || (registered_root_slots.is_empty()
+                && self.deferred_child_list_insertion_parents.borrow().is_empty()
+                && self.deferred_contained_abspos_box_removals.borrow().is_empty())
             || self.node_needs_layout_update(root)
             || facts.container_query_evaluation_is_pending
             || facts.should_collect_devtools_layout_data
@@ -238,6 +240,8 @@ impl LayoutNodeArena {
     ) -> Option<Vec<NodeSlotId>> {
         let pending_updates_escaped =
             self.pending_updates_escape_partial_relayout.replace(false) || layout_tree_update_escaped_rebuild_roots;
+        let removed_contained_abspos_boxes_without_layout =
+            self.removed_contained_abspos_boxes_without_layout.replace(false);
         if pending_updates_escaped {
             self.set_needs_full_scrollable_overflow_recalculation();
         }
@@ -247,7 +251,14 @@ impl LayoutNodeArena {
         {
             return None;
         }
-        self.collect_partial_relayout_roots(registered_root_slots, rebuilt_subtree_root_slots)
+        let partial_relayout_roots =
+            self.collect_partial_relayout_roots(registered_root_slots, rebuilt_subtree_root_slots)?;
+        // Removing a box from the containing block it is a child of needs no layout, so a build that did nothing
+        // else leaves an empty plan. Any other update without a boundary to relay out takes a full layout pass.
+        if partial_relayout_roots.is_empty() && !removed_contained_abspos_boxes_without_layout {
+            return None;
+        }
+        Some(partial_relayout_roots)
     }
 
     fn nearest_inclusive_partial_relayout_boundary(&self, node: NodeSlotId) -> Option<NodeSlotId> {
@@ -275,7 +286,7 @@ impl LayoutNodeArena {
     /// survived the build, plus the nearest boundary containing each rebuilt subtree - which
     /// re-discovers a boundary whose own box the build replaced, since the saved layout inputs
     /// carried over to the replacement. Returns None when any boundary disqualifies partial
-    /// relayout, or when no boundary is left to relay out.
+    /// relayout, and an empty set when no boundary is left to relay out.
     pub(crate) fn collect_partial_relayout_roots(
         &self,
         registered_root_slots: &[NodeSlotId],
@@ -346,9 +357,6 @@ impl LayoutNodeArena {
             true
         });
 
-        if partial_relayout_roots.is_empty() {
-            return None;
-        }
         Some(partial_relayout_roots)
     }
 
@@ -439,6 +447,40 @@ impl LayoutNodeArena {
                 }
                 None => self.set_needs_layout_update(parent, true),
             }
+        }
+    }
+
+    /// Hold back the layout invalidation of an absolutely positioned box that stops generating a
+    /// box while its parent is its containing block, until the layout tree build has removed it.
+    pub(crate) fn defer_contained_abspos_box_removal(&self, node: NodeSlotId) {
+        let data = self.data(node);
+        let parent = data.parent.get();
+        // A descendant positioned against a box outside this one leaves that box's layout too.
+        if parent.is_invalid() || node_facts::has_flag(data, NodeFlag::AbsposDescendantEscapes) {
+            self.set_needs_layout_update(node, true);
+            return;
+        }
+        self.deferred_contained_abspos_box_removals
+            .borrow_mut()
+            .push((parent, node));
+    }
+
+    /// Invalidate what the boxes removed by a layout tree build leave behind, as removing their
+    /// elements from the DOM would.
+    pub(crate) fn resolve_deferred_contained_abspos_box_removals(&self) {
+        let removals = std::mem::take(&mut *self.deferred_contained_abspos_box_removals.borrow_mut());
+        for (parent, node) in removals {
+            // A parent the build replaced took the box with it, and is laid out as a rebuilt subtree.
+            if !self.slot_is_live(parent) {
+                continue;
+            }
+            // A box the build kept still has its style change to lay out.
+            if self.slot_is_live(node) {
+                self.set_needs_layout_update(node, true);
+                continue;
+            }
+            self.note_contained_abspos_child_removal(parent);
+            self.removed_contained_abspos_boxes_without_layout.set(true);
         }
     }
 
@@ -766,6 +808,16 @@ pub unsafe extern "C" fn layout_arena_defer_child_list_insertion_layout_update(a
 
 /// # Safety
 ///
+/// The arena must remain valid for the duration of the call, and `node` must name a live node
+/// in this arena.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn layout_arena_defer_contained_abspos_box_removal(arena: *mut c_void, node: NodeSlotId) {
+    // SAFETY: The C++ caller keeps the arena alive for this synchronous call.
+    unsafe { LayoutNodeArena::from_handle(arena) }.defer_contained_abspos_box_removal(node);
+}
+
+/// # Safety
+///
 /// The arena must remain valid for the duration of the call, and `parent` must name a live node
 /// in this arena.
 #[unsafe(no_mangle)]
@@ -945,12 +997,45 @@ mod tests {
     }
 
     #[test]
-    fn collecting_roots_skips_stale_registered_slots_and_reports_no_eligible_roots() {
+    fn collecting_roots_skips_stale_registered_slots_and_reports_an_empty_root_set() {
         let mut arena = LayoutNodeArena::new();
         let freed = allocate_box_with_a_dummy_shell(&mut arena);
         let stale_slot = freed.slot;
         free_node(&mut arena, &freed);
-        assert_eq!(arena.collect_partial_relayout_roots(&[stale_slot], &[]), None);
+        assert_eq!(
+            arena.collect_partial_relayout_roots(&[stale_slot], &[]),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn planning_an_empty_root_set_needs_a_build_that_removed_contained_abspos_boxes() {
+        let mut arena = LayoutNodeArena::new();
+        let parent = allocate_box_with_a_dummy_shell(&mut arena);
+        let freed = allocate_box_with_a_dummy_shell(&mut arena);
+        let stale_slot = freed.slot;
+        free_node(&mut arena, &freed);
+
+        assert_eq!(
+            arena.plan_partial_relayout(parent.slot, &[stale_slot], &[], false),
+            None
+        );
+
+        arena.removed_contained_abspos_boxes_without_layout.set(true);
+        assert_eq!(
+            arena.plan_partial_relayout(parent.slot, &[stale_slot], &[], false),
+            Some(Vec::new())
+        );
+        assert!(!arena.removed_contained_abspos_boxes_without_layout.get());
+
+        arena.removed_contained_abspos_boxes_without_layout.set(true);
+        arena.set_node_flag(parent.slot, NodeFlag::NeedsLayoutUpdate, true);
+        assert_eq!(
+            arena.plan_partial_relayout(parent.slot, &[stale_slot], &[], false),
+            None
+        );
+        assert!(!arena.removed_contained_abspos_boxes_without_layout.get());
+        free_node(&mut arena, &parent);
     }
 
     #[test]

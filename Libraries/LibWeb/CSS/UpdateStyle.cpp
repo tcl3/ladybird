@@ -62,7 +62,10 @@ static void apply_element_style_invalidation_after_style_change(DOM::Element& el
     if (invalidation.needs_relayout() && element_is_viewport_propagation_source)
         element.document().record_partial_relayout_escape(DOM::PartialRelayoutEscapeReason::ViewportPropagationSourceChangedByStyleChange);
 
-    if (invalidation.needs_relayout()) {
+    // A layout tree rebuild invalidates the layout of every box it replaces or removes.
+    if (invalidation.needs_layout_tree_rebuild()) {
+        element.set_needs_layout_tree_rebuild(DOM::SetNeedsLayoutTreeUpdateReason::StyleChange, invalidation.layout_tree_rebuild_root());
+    } else if (invalidation.needs_relayout()) {
         // A relayout-only style change on an absolutely positioned partial relayout boundary
         // stays confined to it: the box contributes nothing to ancestor layout, and partial
         // relayout re-resolves the boundary's own size and position. A rendered ::backdrop
@@ -70,8 +73,7 @@ static void apply_element_style_invalidation_after_style_change(DOM::Element& el
         // element's invalidation while the ::backdrop box is a sibling of the element's box,
         // outside the subtree a boundary-self relayout covers.
         auto* box = as_if<Layout::Box>(element.unsafe_layout_node());
-        if (!invalidation.needs_layout_tree_rebuild()
-            && !element_is_viewport_propagation_source
+        if (!element_is_viewport_propagation_source
             && box
             && box->is_absolutely_positioned()
             && box->is_partial_relayout_boundary()
@@ -82,8 +84,6 @@ static void apply_element_style_invalidation_after_style_change(DOM::Element& el
             element.set_needs_layout_update(DOM::SetNeedsLayoutReason::StyleChange);
         }
     }
-    if (invalidation.needs_layout_tree_rebuild())
-        element.set_needs_layout_tree_rebuild(DOM::SetNeedsLayoutTreeUpdateReason::StyleChange, invalidation.layout_tree_rebuild_root());
 }
 
 static void apply_document_style_invalidation_after_style_change(DOM::Document& document, RequiredInvalidationAfterStyleChange const& invalidation)

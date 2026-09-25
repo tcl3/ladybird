@@ -1987,6 +1987,13 @@ bool Element::apply_box_presence_change_in_place(SetNeedsLayoutTreeUpdateReason 
 
         // Rebuilding the element in place with display: none clears its stale box out of the
         // retained parent.
+        // OPTIMIZATION: An absolutely positioned child of its containing block leaves nothing
+        //               behind that lays out differently, as when its element is removed.
+        if (layout_node->position() == CSS::Positioning::Absolute && layout_node->parent() == parent_layout_node
+            && layout_node->containing_block() == parent_layout_node) {
+            set_needs_layout_tree_update(true, SetNeedsLayoutTreeUpdateReason::ContainedAbsposBoxRemoval);
+            return true;
+        }
         set_needs_layout_tree_update(true, reason);
         return true;
     }

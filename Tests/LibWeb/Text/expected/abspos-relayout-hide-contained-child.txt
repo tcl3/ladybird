@@ -1,0 +1,16 @@
+shown: scroll-width=200 dropdown=150,10,50,40
+hide: partial=0 full=0
+hidden: scroll-width=100 dropdown-rects=0
+hidden: sibling-unchanged=true
+hidden: tree-matches=true
+show: partial=1 full=0
+shown again: scroll-width=200 dropdown=150,10,50,40
+shown again: tree-matches=true
+hide and show: partial=0 full=1
+hide and show: dropdown=150,10,50,40
+hide and show: tree-matches=true
+escaping fixed descendant: layout-ran=true
+escaping fixed descendant: fixed-rects=0
+escaping fixed descendant: tree-matches=true
+ancestor containing block: layout-ran=true
+ancestor containing block: tree-matches=true

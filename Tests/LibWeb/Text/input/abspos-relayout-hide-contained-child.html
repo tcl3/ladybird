@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<style>
+    body { margin: 0; }
+    .containing-block {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        width: 100px;
+        height: 50px;
+        overflow: auto;
+    }
+    .dropdown {
+        position: absolute;
+        top: 10px;
+        left: 150px;
+        margin: 0;
+        padding: 0;
+        list-style-type: none;
+    }
+    .dropdown li { display: flex; width: 50px; height: 20px; }
+    .fixed { position: fixed; left: 0; top: 200px; width: 10px; height: 10px; }
+    .sibling { width: 40px; height: 30px; }
+</style>
+<div id="fixture"></div>
+<script>
+    function rectToString(rect) {
+        return `${rect.left},${rect.top},${rect.width},${rect.height}`;
+    }
+
+    function measure(callback) {
+        const partialBefore = internals.partialLayoutCount();
+        const fullBefore = internals.fullLayoutCount();
+        callback();
+        document.body.offsetHeight;
+        return `partial=${internals.partialLayoutCount() - partialBefore} full=${internals.fullLayoutCount() - fullBefore}`;
+    }
+
+    function setUp(markup) {
+        fixture.innerHTML = markup;
+        document.body.offsetHeight;
+        return fixture.querySelector(".dropdown");
+    }
+
+    test(() => {
+        const results = [];
+        // The list resets list-item for itself and has no following sibling that could see it.
+        let dropdown = setUp('<div class="containing-block"><div class="sibling"></div><ul class="dropdown"><li>One</li><li>Two</li></ul></div>');
+        const containingBlock = fixture.querySelector(".containing-block");
+        const sibling = fixture.querySelector(".sibling");
+        const siblingRect = rectToString(sibling.getBoundingClientRect());
+        results.push(`shown: scroll-width=${containingBlock.scrollWidth} dropdown=${rectToString(dropdown.getBoundingClientRect())}`);
+
+        results.push(`hide: ${measure(() => { dropdown.style.display = "none"; })}`);
+        results.push(`hidden: scroll-width=${containingBlock.scrollWidth} dropdown-rects=${dropdown.getClientRects().length}`);
+        results.push(`hidden: sibling-unchanged=${rectToString(sibling.getBoundingClientRect()) === siblingRect}`);
+        results.push(`hidden: tree-matches=${internals.compareLayoutTreeWithFullRebuild().matches}`);
+
+        results.push(`show: ${measure(() => { dropdown.style.display = ""; })}`);
+        results.push(`shown again: scroll-width=${containingBlock.scrollWidth} dropdown=${rectToString(dropdown.getBoundingClientRect())}`);
+        results.push(`shown again: tree-matches=${internals.compareLayoutTreeWithFullRebuild().matches}`);
+
+        // Hidden and shown again before layout.
+        results.push(`hide and show: ${measure(() => {
+            dropdown.style.display = "none";
+            getComputedStyle(dropdown).display;
+            dropdown.style.display = "";
+        })}`);
+        results.push(`hide and show: dropdown=${rectToString(dropdown.getBoundingClientRect())}`);
+        results.push(`hide and show: tree-matches=${internals.compareLayoutTreeWithFullRebuild().matches}`);
+
+        // A fixed descendant is laid out against the viewport, outside the containing block.
+        dropdown = setUp('<div class="containing-block"><ul class="dropdown"><li>One<div class="fixed"></div></li></ul></div>');
+        const fixedHide = measure(() => { dropdown.style.display = "none"; });
+        results.push(`escaping fixed descendant: layout-ran=${fixedHide !== "partial=0 full=0"}`);
+        results.push(`escaping fixed descendant: fixed-rects=${fixture.querySelector(".fixed").getClientRects().length}`);
+        results.push(`escaping fixed descendant: tree-matches=${internals.compareLayoutTreeWithFullRebuild().matches}`);
+
+        // The containing block is an ancestor of the parent.
+        dropdown = setUp('<div class="containing-block"><div><ul class="dropdown"><li>One</li></ul></div></div>');
+        const ancestorHide = measure(() => { dropdown.style.display = "none"; });
+        results.push(`ancestor containing block: layout-ran=${ancestorHide !== "partial=0 full=0"}`);
+        results.push(`ancestor containing block: tree-matches=${internals.compareLayoutTreeWithFullRebuild().matches}`);
+
+        for (const result of results)
+            println(result);
+    });
+</script>

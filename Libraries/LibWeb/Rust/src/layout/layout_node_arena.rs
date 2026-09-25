@@ -559,6 +559,12 @@ pub(crate) struct LayoutNodeArena {
     /// Boxes whose child lists gained children since the last layout tree build, held back from
     /// layout invalidation until the build shows what the new children are.
     pub(crate) deferred_child_list_insertion_parents: RefCell<Vec<(NodeSlotId, NodeSlotId)>>,
+    /// Absolutely positioned boxes, with their parents, that stop generating a box while their parent is their
+    /// containing block. Held back from layout invalidation until the build has removed them.
+    pub(crate) deferred_contained_abspos_box_removals: RefCell<Vec<(NodeSlotId, NodeSlotId)>>,
+    /// Whether a layout tree build removed contained absolutely positioned boxes without laying anything out.
+    /// Consumed by the partial relayout plan and cleared by a full layout pass, like the pending rebuilt roots.
+    pub(crate) removed_contained_abspos_boxes_without_layout: Cell<bool>,
     /// Layout inputs for new absolutely positioned boxes that the build confined to themselves.
     /// They stand in for the committed inputs such a box does not have yet.
     pub(crate) confined_abspos_layout_inputs: RefCell<HashMap<NodeSlotId, AbsposLayoutInputs>>,
@@ -640,6 +646,8 @@ impl LayoutNodeArena {
             layout_update_flag_ancestor_visits: Cell::new(0),
             pending_attached_subtree_roots: RefCell::new(Vec::new()),
             deferred_child_list_insertion_parents: RefCell::new(Vec::new()),
+            deferred_contained_abspos_box_removals: RefCell::new(Vec::new()),
+            removed_contained_abspos_boxes_without_layout: Cell::new(false),
             confined_abspos_layout_inputs: RefCell::new(HashMap::default()),
             inline_boxes_lifted_out_of: RefCell::new(HashMap::default()),
             out_of_flow_positioning_contained: RefCell::new(HashMap::default()),
@@ -829,6 +837,7 @@ impl LayoutNodeArena {
             self.layout_root.set(NodeSlotId::INVALID);
             self.pending_rebuilt_subtree_roots.get_mut().clear();
             self.pending_layout_tree_update_escaped_rebuild_roots.set(false);
+            self.removed_contained_abspos_boxes_without_layout.set(false);
         }
         if !self.scrollable_overflow.non_child_boxes.borrow().is_empty() {
             self.scrollable_overflow.contained_boxes_dirty.set(true);
@@ -1147,6 +1156,7 @@ impl LayoutNodeArena {
     pub(crate) fn clear_pending_rebuilt_subtree_roots(&self) {
         self.pending_rebuilt_subtree_roots.borrow_mut().clear();
         self.pending_layout_tree_update_escaped_rebuild_roots.set(false);
+        self.removed_contained_abspos_boxes_without_layout.set(false);
     }
 
     pub(crate) fn set_layout_update_host(&self, host: Option<FfiLayoutUpdateHostCallbacks>) {

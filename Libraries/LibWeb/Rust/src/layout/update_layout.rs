@@ -291,7 +291,9 @@ unsafe fn try_partial_relayout(
         }
     }
 
-    unsafe { arena(arena_handle) }.note_partial_layout();
+    if !partial_relayout_roots.is_empty() {
+        unsafe { arena(arena_handle) }.note_partial_layout();
+    }
 
     host.after_layout_commit(layout_tree_was_built_in_partial_branch);
     if host.needs_style_update_after_layout()

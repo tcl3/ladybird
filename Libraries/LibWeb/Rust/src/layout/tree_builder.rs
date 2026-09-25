@@ -1891,12 +1891,14 @@ pub unsafe extern "C" fn rust_build_layout_tree(
         layout_host
             .arena()
             .resolve_deferred_child_list_insertions(&attached_roots);
+        layout_host.arena().resolve_deferred_contained_abspos_box_removals();
     } else {
         // NB: The full layout entry must derive the facts of this tree.
         host.layout().arena().record_partial_relayout_escape();
         host.layout()
             .arena()
             .resolve_deferred_child_list_insertions(&Default::default());
+        host.layout().arena().resolve_deferred_contained_abspos_box_removals();
     }
 
     // Table fixup can free a rebuilt root after it was recorded, such as whitespace at the edge of a

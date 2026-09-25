@@ -2536,6 +2536,9 @@ void Node::set_needs_layout_tree_update(bool value, SetNeedsLayoutTreeUpdateReas
             } else if (reason == SetNeedsLayoutTreeUpdateReason::NodeInsertBefore) {
                 // What an insertion invalidates depends on the boxes it attaches, which only the layout tree build knows.
                 Layout::RustFFI::layout_arena_defer_child_list_insertion_layout_update(layout_node->arena_handle(), Layout::Node::slot_id(layout_node));
+            } else if (reason == SetNeedsLayoutTreeUpdateReason::ContainedAbsposBoxRemoval) {
+                // The box leaves its containing block like a removed child, once the layout tree build has removed it.
+                Layout::RustFFI::layout_arena_defer_contained_abspos_box_removal(layout_node->arena_handle(), Layout::Node::slot_id(layout_node));
             } else {
                 layout_node->set_needs_layout_update(SetNeedsLayoutReason::LayoutTreeUpdate, Layout::LayoutUpdatePropagation::ThroughAncestors);
             }
