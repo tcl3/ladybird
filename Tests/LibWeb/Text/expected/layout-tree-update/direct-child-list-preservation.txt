@@ -55,6 +55,13 @@ PASS: fall back when inserted pseudo-element changes quote depth | incremental t
 PASS: fall back when inserted pseudo-element affects following counters | rebuild parent
 PASS: fall back when inserted pseudo-element affects following counters | layout tree builds=1
 PASS: fall back when inserted pseudo-element affects following counters | incremental tree matches full rebuild
+PASS: append list resetting its own counter | preserve parent
+PASS: append list resetting its own counter | preserve before
+PASS: append list resetting its own counter | layout tree builds=1
+PASS: append list resetting its own counter | incremental tree matches full rebuild
+PASS: fall back when inserted list resets a counter in scope of a following sibling | rebuild parent
+PASS: fall back when inserted list resets a counter in scope of a following sibling | layout tree builds=1
+PASS: fall back when inserted list resets a counter in scope of a following sibling | incremental tree matches full rebuild
 PASS: insert pseudo-element reading a preceding counter | preserve parent
 PASS: insert pseudo-element reading a preceding counter | preserve before
 PASS: insert pseudo-element reading a preceding counter | preserve after
@@ -191,6 +198,23 @@ PASS: remove child in grid | preserve before
 PASS: remove child in grid | preserve after
 PASS: remove child in grid | layout tree builds=0
 PASS: remove child in grid | incremental tree matches full rebuild
+PASS: remove final list resetting its own counter | preserve parent
+PASS: remove final list resetting its own counter | preserve before
+PASS: remove final list resetting its own counter | layout tree builds=0
+PASS: remove final list resetting its own counter | incremental tree matches full rebuild
+PASS: fall back when removed list resets a counter in scope of a following sibling | rebuild parent
+PASS: fall back when removed list resets a counter in scope of a following sibling | layout tree builds=1
+PASS: fall back when removed list resets a counter in scope of a following sibling | incremental tree matches full rebuild
+PASS: hide final list resetting its own counter | preserve parent
+PASS: hide final list resetting its own counter | preserve before
+PASS: hide final list resetting its own counter | layout tree builds=1
+PASS: hide final list resetting its own counter | incremental tree matches full rebuild
+PASS: fall back when hidden list resets a counter in scope of a following sibling | rebuild parent
+PASS: fall back when hidden list resets a counter in scope of a following sibling | layout tree builds=1
+PASS: fall back when hidden list resets a counter in scope of a following sibling | incremental tree matches full rebuild
+PASS: fall back when removed list resets a counter the parent's ::after reads | rebuild parent
+PASS: fall back when removed list resets a counter the parent's ::after reads | layout tree builds=1
+PASS: fall back when removed list resets a counter the parent's ::after reads | incremental tree matches full rebuild
 PASS: fall back when removed block affects following counters | rebuild parent
 PASS: fall back when removed block affects following counters | layout tree builds=1
 PASS: fall back when removed block affects following counters | incremental tree matches full rebuild

@@ -1962,7 +1962,7 @@ bool Element::apply_box_presence_change_in_place(SetNeedsLayoutTreeUpdateReason 
         return false;
     if (first_letter_owner_for_layout_subtree_from(*parent))
         return false;
-    if (CSS::subtree_affects_generated_content_state(*this))
+    if (CSS::subtree_affects_generated_content_outside_itself(*this))
         return false;
 
     auto style = computed_style();

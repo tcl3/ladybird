@@ -14,6 +14,6 @@ class Node;
 
 namespace Web::CSS {
 
-bool subtree_affects_generated_content_state(DOM::Node const&);
+bool subtree_affects_generated_content_outside_itself(DOM::Node const&);
 
 }

@@ -1245,7 +1245,7 @@ static bool can_detach_layout_subtree_for_removal(Node const& node, Node const& 
     auto const* parent_layout_node = parent.unsafe_layout_node();
     if (!layout_node || !parent_layout_node)
         return false;
-    if (CSS::subtree_affects_generated_content_state(node))
+    if (CSS::subtree_affects_generated_content_outside_itself(node))
         return false;
 
     // OPTIMIZATION: Absolutely positioned boxes do not participate in their DOM parent's inline or block formatting

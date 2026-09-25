@@ -137,6 +137,19 @@
             preserve: false,
         },
         {
+            name: "append list resetting its own counter",
+            markup: '<div class="parent"><i class="before child"></i></div>',
+            mutate: parent => parent.insertAdjacentHTML("beforeend", '<ul class="target child"><li>target</li></ul>'),
+            tracked: ["parent", "before"],
+        },
+        {
+            name: "fall back when inserted list resets a counter in scope of a following sibling",
+            markup: '<div class="parent"><i class="before child"></i><i class="after child"></i></div>',
+            mutate: parent => parent.querySelector(".after").insertAdjacentHTML("beforebegin", '<ul class="target child"><li>target</li></ul>'),
+            tracked: ["parent"],
+            preserve: false,
+        },
+        {
             name: "insert pseudo-element reading a preceding counter",
             markup: '<div class="parent counter"><i class="before child increment"></i><i class="after child"></i></div>',
             mutate: parent => parent.querySelector(".after").insertAdjacentHTML("beforebegin", '<section class="target child counter-value"></section>'),
@@ -302,6 +315,40 @@
     }));
 
     const fallbackRemovalCases = [
+        {
+            name: "remove final list resetting its own counter",
+            markup: '<div class="parent"><i class="before child"></i><ul class="target child"><li>target</li></ul></div>',
+            mutate: parent => parent.querySelector(".target").remove(),
+            tracked: ["parent", "before"],
+            expectNoBuild: true,
+        },
+        {
+            name: "fall back when removed list resets a counter in scope of a following sibling",
+            markup: '<div class="parent"><ul class="target child"><li>target</li></ul><i class="after child list-item">after</i></div>',
+            mutate: parent => parent.querySelector(".target").remove(),
+            tracked: ["parent"],
+            preserve: false,
+        },
+        {
+            name: "hide final list resetting its own counter",
+            markup: '<div class="parent"><i class="before child"></i><ul class="target child"><li>target</li></ul></div>',
+            mutate: parent => { parent.querySelector(".target").style.display = "none"; },
+            tracked: ["parent", "before"],
+        },
+        {
+            name: "fall back when hidden list resets a counter in scope of a following sibling",
+            markup: '<div class="parent"><ul class="target child"><li>target</li></ul><i class="after child list-item">after</i></div>',
+            mutate: parent => { parent.querySelector(".target").style.display = "none"; },
+            tracked: ["parent"],
+            preserve: false,
+        },
+        {
+            name: "fall back when removed list resets a counter the parent's ::after reads",
+            markup: '<div class="parent list-counter-value"><i class="before child"></i><ul class="target child"><li>target</li></ul></div>',
+            mutate: parent => parent.querySelector(".target").remove(),
+            tracked: ["parent"],
+            preserve: false,
+        },
         {
             name: "fall back when removed block affects following counters",
             markup: '<div class="parent counter"><i class="target child increment"></i><i class="after child counter-value"></i></div>',

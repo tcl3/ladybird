@@ -395,7 +395,7 @@ static bool may_reuse_layout_node_for_child_list_insertion(DOM::Node const& node
             return false;
         if (!child->needs_layout_tree_update() || child_display.is_none())
             continue;
-        if (CSS::subtree_affects_generated_content_state(*child_element))
+        if (CSS::subtree_affects_generated_content_outside_itself(*child_element))
             return false;
         if (child_element->rendered_in_top_layer() || is<SVG::SVGElement>(*child_element))
             return false;
