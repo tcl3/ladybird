@@ -52,6 +52,7 @@ public:
     void clear_interval(i32);
     void clear_map_of_active_timers();
     size_t active_timer_count(Badge<Internals::Internals>) const { return m_timers.size(); }
+    void for_each_active_timer_deadline(Function<void(double)> const&) const;
 
     void queue_microtask(WebIDL::CallbackType&);
 

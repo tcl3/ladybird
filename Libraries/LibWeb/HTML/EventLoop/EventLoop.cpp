@@ -1039,10 +1039,14 @@ double EventLoop::compute_deadline() const
         // 1. If windowInSameLoop's map of animation frame callbacks is not empty,
         //    or if the user agent believes that the windowInSameLoop might have pending rendering updates,
         //    set hasPendingRenders to true.
-        if (window->has_animation_frame_callbacks())
+        if (window->has_animation_frame_callbacks() || m_rendering_update_requested)
             has_pending_renders = true;
-        // FIXME: 2. Let timerCallbackEstimates be the result of getting the values of windowInSameLoop's map of active timers.
-        // FIXME: 3. For each timeoutDeadline of timerCallbackEstimates, if timeoutDeadline is less than deadline, set deadline to timeoutDeadline.
+        // 2. Let timerCallbackEstimates be the result of getting the values of windowInSameLoop's map of active timers.
+        // 3. For each timeoutDeadline of timerCallbackEstimates, if timeoutDeadline is less than deadline, set deadline to timeoutDeadline.
+        window->for_each_active_timer_deadline([&](double timeout_deadline) {
+            if (timeout_deadline < deadline)
+                deadline = timeout_deadline;
+        });
     }
     // 4. If hasPendingRenders is true, then:
     if (has_pending_renders) {

@@ -1,0 +1,1 @@
+timeRemaining is at most one frame: true

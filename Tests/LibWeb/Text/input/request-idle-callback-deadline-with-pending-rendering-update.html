@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<script src="include.js"></script>
+<script>
+    asyncTest(done => {
+        requestIdleCallback(deadline => {
+            document.body.style.color = "green";
+            println(`timeRemaining is at most one frame: ${deadline.timeRemaining() <= 1000 / 60}`);
+            done();
+        });
+    });
+</script>
