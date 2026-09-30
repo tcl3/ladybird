@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<style>
+    div {
+        position: absolute;
+        left: 0;
+        width: 100px;
+        height: 20px;
+        background: green;
+    }
+</style>
+<div id="fading" style="top: 0"></div>
+<div id="moving" style="top: 40px"></div>
+<div id="hidden" style="top: 80px; transform-origin: center center 1px"></div>
+<script>
+    function nextTask() {
+        const { promise, resolve } = Promise.withResolvers();
+        const channel = new MessageChannel();
+        channel.port1.onmessage = resolve;
+        channel.port2.postMessage(null);
+        return promise;
+    }
+
+    async function renderingUpdate() {
+        internals.injectRenderingOpportunity(performance.now());
+        await nextTask();
+    }
+
+    const translation = [{ transform: "translateX(0px)" }, { transform: "translateX(1000px)" }];
+
+    promiseTest(async () => {
+        internals.setManualRenderingOpportunities(true);
+        await nextTask();
+        await renderingUpdate();
+
+        const fadingAnimation = fading.animate([{ opacity: 0 }, { opacity: 1 }], 10000);
+        await renderingUpdate();
+        await timeout(50);
+        const opacity = parseFloat(getComputedStyle(fading).opacity);
+        const expectedOpacity = fadingAnimation.currentTime / 10000;
+        println(`computed style follows current time: ${Math.abs(opacity - expectedOpacity) < 0.001}`);
+        fadingAnimation.cancel();
+        // A document-wide read samples every animation, so the next case starts with none throttled.
+        document.elementFromPoint(0, 0);
+
+        const movingAnimation = moving.animate(translation, 10000);
+        await renderingUpdate();
+        await timeout(50);
+        println(`hit testing follows current time: ${document.elementFromPoint(2, 50) !== moving}`);
+        movingAnimation.cancel();
+        document.elementFromPoint(0, 0);
+
+        // The transform origin's z offset keeps this animation on the main thread.
+        const hiddenAnimation = hidden.animate(translation, { duration: 10000, iterations: Infinity });
+        await renderingUpdate();
+        hidden.style.visibility = "hidden";
+        await renderingUpdate();
+        await timeout(50);
+        const offset = hidden.getBoundingClientRect().left;
+        const expectedOffset = hiddenAnimation.currentTime / 10;
+        println(`geometry follows current time: ${Math.abs(offset - expectedOffset) < 1}`);
+
+        internals.setManualRenderingOpportunities(false);
+    });
+</script>

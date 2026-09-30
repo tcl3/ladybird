@@ -2353,8 +2353,8 @@ void Document::flush_throttled_animation_style_update()
 
 void Document::flush_throttled_animation_style_update_for_node(Node const& node)
 {
-    // Only an animation that skipped a per-frame style update has anything for this read to catch
-    // up on. The last sampling pass recorded whether any did, and the document-wide flush above
+    // Only an animation that can skip a per-frame style update has anything for this read to catch
+    // up on. Sampling and painting record whether any can, and the document-wide flush above
     // already trusts that record, so walking every associated animation to find none is wasted on
     // every synchronous geometry read of a page that animates.
     if (!m_has_throttled_animation_style_update)
@@ -7816,6 +7816,8 @@ void Document::update_compositor_animations()
                 effect.request_observation_sample();
                 requested_withdrawn_effect_sample = true;
             }
+            if (!m_has_throttled_animation_style_update && effect.can_skip_per_frame_style_update())
+                note_throttled_animation_style_update();
         };
         auto abstract_target = effect.target_abstract_element();
         if (!abstract_target.has_value() || effect.target_properties().is_empty())
