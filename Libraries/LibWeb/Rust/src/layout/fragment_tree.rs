@@ -110,6 +110,13 @@ impl Fragment {
             && self.is_invisible_for_line_clamp == previous.is_invisible_for_line_clamp
     }
 
+    pub(crate) fn has_same_padding(&self, previous: &Fragment) -> bool {
+        self.padding_left == previous.padding_left
+            && self.padding_right == previous.padding_right
+            && self.padding_top == previous.padding_top
+            && self.padding_bottom == previous.padding_bottom
+    }
+
     pub(crate) fn has_same_child_placements(&self, previous: &Fragment) -> bool {
         self.children.len() == previous.children.len()
             && self
