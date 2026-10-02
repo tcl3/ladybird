@@ -687,10 +687,6 @@ void StyleScope::build_counter_style_cache()
 {
     m_is_doing_counter_style_cache_update = true;
 
-    // Counter styles can be resolved before any keyframe or function lookup builds the rule cache.
-    // Publish this scope's layer order before comparing definitions from different layers.
-    build_rule_cache_if_needed();
-
     // A rebuild is triggered by any sheet arriving, and almost every rebuild produces the same
     // counter styles it produced last time. A style names the one it resolved to by identity, so
     // minting a fresh object for an unchanged style makes every element's inherited list group new,
@@ -895,11 +891,18 @@ void StyleScope::build_counter_style_cache()
         .length_resolution_context = CSS::Length::ResolutionContext::for_document(document())
     };
 
+    // The definitions in cascade order, with the origin and layer that decide between two of the same name.
+    struct CollectedCounterStyle {
+        CSS::CounterStyleDefinition definition;
+        u8 origin;
+        u32 layer;
+    };
+    Vector<CollectedCounterStyle> collected_counter_styles;
+
     auto collect_counter_style_definitions = [&](CSS::CascadeOrigin cascade_origin, CSS::StyleSheetState const& style_sheet) {
         if (!style_sheet.native_media_list().matches())
             return;
         auto& style_engine = document().style_computer().style_engine();
-        auto const tree_scope = style_engine_tree_scope();
         auto const origin_priority = [&]() -> u8 {
             switch (cascade_origin) {
             case CSS::CascadeOrigin::UserAgent:
@@ -919,24 +922,40 @@ void StyleScope::build_counter_style_cache()
             auto name = Utf16FlyString { rule.name() };
             auto qualified_layer_name = Utf16FlyString::from_utf16(layer_prefix);
             auto const layer = qualified_layer_name.is_empty() ? 0 : style_engine.intern_atom(qualified_layer_name).value();
+            if (auto definition = CSS::CounterStyleDefinition::from_descriptors(name.view(), rule.descriptors(), computation_context); definition.has_value())
+                collected_counter_styles.append({ definition.release_value(), origin_priority, layer });
+        });
+    };
+
+    // Comparing two definitions' layers reads this scope's layer order, which building the rule cache publishes. Most
+    // scopes define no counter style, and a shadow tree's scope is asked for its counter styles at every style update,
+    // so the rule cache is built only for a scope that has a definition to compare.
+    auto const prioritize_collected_counter_styles = [&] {
+        if (collected_counter_styles.is_empty())
+            return;
+        build_rule_cache_if_needed();
+        auto& style_engine = document().style_computer().style_engine();
+        auto const tree_scope = style_engine_tree_scope();
+        for (auto& collected : collected_counter_styles) {
             CounterStylePriority priority {
-                .origin = origin_priority,
-                .layer = style_engine.layer_index(tree_scope, layer),
+                .origin = collected.origin,
+                .layer = style_engine.layer_index(tree_scope, collected.layer),
             };
+            auto name = collected.definition.name();
             if (auto existing = counter_style_priorities.get(name); existing.has_value()) {
                 if (existing->origin > priority.origin || (existing->origin == priority.origin && existing->layer > priority.layer))
-                    return;
+                    continue;
             }
-            if (auto const& definition = CSS::CounterStyleDefinition::from_descriptors(name.view(), rule.descriptors(), computation_context); definition.has_value()) {
-                counter_style_definitions.set(definition->name(), *definition);
-                counter_style_priorities.set(definition->name(), priority);
-            }
-        });
+            counter_style_priorities.set(name, priority);
+            counter_style_definitions.set(name, move(collected.definition));
+        }
+        collected_counter_styles.clear();
     };
 
     if (m_node->is_document())
         for_each_stylesheet(CSS::CascadeOrigin::User, [&](auto& sheet) { collect_counter_style_definitions(CSS::CascadeOrigin::User, sheet); });
     for_each_stylesheet(CSS::CascadeOrigin::Author, [&](auto& sheet) { collect_counter_style_definitions(CSS::CascadeOrigin::Author, sheet); });
+    prioritize_collected_counter_styles();
 
     auto const finish_counter_style_cache_update = [&] {
         bool counter_style_environment_changed = previously_registered_counter_styles.size() != m_registered_counter_styles.size();
@@ -978,6 +997,7 @@ void StyleScope::build_counter_style_cache()
         auto user_and_author_counter_style_definitions = move(counter_style_definitions);
         counter_style_definitions.clear();
         for_each_stylesheet(CSS::CascadeOrigin::UserAgent, [&](auto& sheet) { collect_counter_style_definitions(CSS::CascadeOrigin::UserAgent, sheet); });
+        prioritize_collected_counter_styles();
         define_complex_predefined_counter_styles();
         for (auto& [name, definition] : user_and_author_counter_style_definitions)
             counter_style_definitions.set(name, move(definition));
