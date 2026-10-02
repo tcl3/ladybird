@@ -5334,6 +5334,7 @@ pub(crate) fn unresolved_value(
     if presence.attr {
         crate::css::parser::arbitrary_substitution::note_attr_names_read_by(components.as_slice());
     }
+    crate::css::parser::arbitrary_substitution::note_tree_counting_functions_in(components.as_slice());
     StyleValueData::Unresolved {
         components,
         source_text: CssString::from_utf16(source_text),

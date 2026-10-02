@@ -9,7 +9,7 @@ use crate::css::parser::component_value::{ComponentKind, ComponentValue};
 use crate::css::parser::value_parser::equals_ascii_case_insensitive;
 use std::collections::HashSet;
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Clone, Copy)]
 enum ArbitrarySubstitutionFunction {
@@ -364,6 +364,35 @@ fn collect_attr_names_read(values: &[ComponentValue], names: &mut Vec<Vec<u16>>,
             ComponentKind::Token(_) => continue,
         };
         collect_attr_names_read(nested, names, any_name);
+    }
+}
+
+/// Whether an unresolved value anywhere in the process holds `sibling-index()` or `sibling-count()`,
+/// which substituting that value places in another. Only grows.
+static UNRESOLVED_VALUES_COUNT_SIBLINGS: AtomicBool = AtomicBool::new(false);
+
+/// Whether substituting some unresolved value can produce a tree-counting function.
+pub(crate) fn unresolved_values_may_count_siblings() -> bool {
+    UNRESOLVED_VALUES_COUNT_SIBLINGS.load(Ordering::Acquire)
+}
+
+// https://drafts.csswg.org/css-values-5/#tree-counting
+fn contains_tree_counting_function(values: &[ComponentValue]) -> bool {
+    values.iter().any(|value| match &value.kind {
+        ComponentKind::Function { name, values } => {
+            equals_ascii_case_insensitive(name, b"sibling-index")
+                || equals_ascii_case_insensitive(name, b"sibling-count")
+                || contains_tree_counting_function(values)
+        }
+        ComponentKind::SimpleBlock { values, .. } => contains_tree_counting_function(values),
+        ComponentKind::Token(_) => false,
+    })
+}
+
+/// Record whether a declared value holds a tree-counting function, before any engine substitutes it.
+pub(crate) fn note_tree_counting_functions_in(values: &[ComponentValue]) {
+    if !unresolved_values_may_count_siblings() && contains_tree_counting_function(values) {
+        UNRESOLVED_VALUES_COUNT_SIBLINGS.store(true, Ordering::Release);
     }
 }
 

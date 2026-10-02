@@ -2640,9 +2640,15 @@ impl RetainedState {
     }
 
     /// Where `node` stands among its siblings, for the record caches, when a winner of `state` is
-    /// written with a tree-counting function, or a substitution may produce one.
+    /// written with a tree-counting function, or a substitution may produce one: one an unresolved
+    /// value holds, or one an `attr()` reads from an attribute.
     pub(super) fn sibling_position_key(&self, node: StyleNodeID, state: CascadeStateID) -> Option<SiblingPosition> {
-        (self.state_has_written_tree_counting(node, state) || self.state_has_substitutions(node, state))
+        let substitution_may_count_siblings = || {
+            self.state_has_substitutions(node, state)
+                && (crate::css::parser::arbitrary_substitution::unresolved_values_may_count_siblings()
+                    || self.state_reads_attributes(node, state))
+        };
+        (self.state_has_written_tree_counting(node, state) || substitution_may_count_siblings())
             .then(|| self.sibling_position(node))
             .flatten()
     }

@@ -3571,6 +3571,7 @@ pub unsafe extern "C" fn rust_style_value_create_unresolved_from_source(
     if presence_attr {
         crate::css::parser::arbitrary_substitution::note_attr_names_read_by(components.as_slice());
     }
+    crate::css::parser::arbitrary_substitution::note_tree_counting_functions_in(components.as_slice());
     Arc::into_raw(Arc::new(StyleValueData::Unresolved {
         components,
         source_text: CssString::from_utf16(&source_text),
