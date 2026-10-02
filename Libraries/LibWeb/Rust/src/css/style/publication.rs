@@ -1587,9 +1587,15 @@ impl RetainedState {
         if !names_a_counter_style {
             return 0;
         }
+        self.style_scope_counter_style_environment_identity(target.node())
+    }
+
+    /// The counter-style registry of the node's style scope, whichever counter style its records
+    /// name.
+    fn style_scope_counter_style_environment_identity(&self, node: StyleNodeID) -> u64 {
         // An element of a shadow tree built from the document's style sheets has the document's
         // style scope.
-        let mut tree_scope = self.tree.tree_scope(target.node());
+        let mut tree_scope = self.tree.tree_scope(node);
         if self.program.scope_uses_document_sheets(tree_scope) {
             tree_scope = TreeScopeID::DOCUMENT;
         }
@@ -4612,9 +4618,9 @@ pub(super) struct PseudoRecordDelta {
 }
 
 /// What a pseudo-element record is derived from: the originating element's inherited style,
-/// display, dependency flags and custom-property environment (and its record, when the state
-/// inherits a non-inherited property from it), the pseudo-element's winner state and the
-/// element facts and font environment the drive reads.
+/// display, dependency flags, custom-property environment and counter-style registry (and its
+/// record, when the state inherits a non-inherited property from it), the pseudo-element's winner
+/// state and the element facts and font environment the drive reads.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) struct PseudoCohortKey {
     /// What the monospace font-size recascade gives the pseudo-element, as for an element's cohort.
@@ -4626,6 +4632,9 @@ pub(super) struct PseudoCohortKey {
     parent_display: u32,
     dependency_flags: u8,
     environment: u64,
+    /// The counter-style registry of the originating element's style scope, which a record whose
+    /// `list-style-type` names a counter style names.
+    counter_style_environment: u64,
     kind: u8,
     generation: u64,
     state: Option<CascadeStateID>,

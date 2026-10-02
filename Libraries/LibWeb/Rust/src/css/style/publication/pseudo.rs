@@ -423,10 +423,10 @@ impl RetainedState {
                 remove(self, scratch, counters);
                 continue;
             }
-            // What the record is derived from: the element's inherited style, display and
-            // environment, and the element's record itself only when the state inherits a
-            // non-inherited property from it. A record whose winners read the originating
-            // element's attributes is that element's alone.
+            // What the record is derived from: the element's inherited style, display,
+            // environment and counter-style registry, and the element's record itself only when
+            // the state inherits a non-inherited property from it. A record whose winners read the
+            // originating element's attributes is that element's alone.
             let key = self
                 .computed_group_sets
                 .node_inherited_groups_identity(node)
@@ -447,6 +447,7 @@ impl RetainedState {
                     parent_display,
                     dependency_flags: new_view_dependency_flags,
                     environment,
+                    counter_style_environment: self.style_scope_counter_style_environment_identity(node),
                     kind,
                     generation,
                     state,
@@ -541,9 +542,7 @@ impl RetainedState {
                         &mut scratch.computability,
                         counters,
                     )?;
-                    // Another element's marker may sit in another tree scope, so a record naming a
-                    // registry answers for this one alone.
-                    if let Some(key) = key.filter(|_| registry == 0) {
+                    if let Some(key) = key {
                         scratch.pseudo_cohorts.insert(key, record);
                         if self.engine_pseudo_record_cache.len() >= COLD_RECORD_CACHE_LIMIT {
                             self.engine_pseudo_record_cache.clear();
