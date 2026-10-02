@@ -2541,7 +2541,7 @@ impl RetainedState {
     /// Whether any winner of a state was written with a substitution, so the record computed
     /// from it reads the node's custom-property environment.
     pub(super) fn state_has_substitutions(&self, node: StyleNodeID, state: CascadeStateID) -> bool {
-        self.state_substitution_values(node, state).next().is_some()
+        self.state_reads(node, state) & cascade::STATE_READS_SUBSTITUTIONS != 0
     }
 
     /// What a state's winners read beyond the cascade, as `cascade::STATE_READS_*` bits, decided
@@ -2551,11 +2551,12 @@ impl RetainedState {
             return reads;
         }
         let mut reads = 0;
-        if self
-            .state_substitution_values(node, state)
-            .any(|value| custom_property_cascade::value_reads_attributes(value.data()))
-        {
-            reads |= cascade::STATE_READS_ATTRIBUTES;
+        for value in self.state_substitution_values(node, state) {
+            reads |= cascade::STATE_READS_SUBSTITUTIONS;
+            if custom_property_cascade::value_reads_attributes(value.data()) {
+                reads |= cascade::STATE_READS_ATTRIBUTES;
+                break;
+            }
         }
         if self
             .winner_groups
