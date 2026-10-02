@@ -20,6 +20,15 @@ pub(crate) struct StyleSheetResourceContext {
     pub(crate) origin_clean: bool,
 }
 
+/// Whether two base URLs resolve every URL alike: they differ at most in their fragment, which
+/// resolving a URL against them never keeps.
+fn base_urls_resolve_alike(a: &[u8], b: &[u8]) -> bool {
+    fn without_fragment(url: &[u8]) -> &[u8] {
+        url.iter().position(|&byte| byte == b'#').map_or(url, |end| &url[..end])
+    }
+    without_fragment(a) == without_fragment(b)
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct DocumentResourceContexts {
     pub(crate) document_base_url: Box<[u8]>,
@@ -66,8 +75,9 @@ impl DocumentResourceContexts {
         inputs.style_sheet_resource_contexts = FfiHostHandle::default();
         inputs.style_sheet_resource_context_count = 0;
 
-        let base_url_moved = *self.document_base_url != *document_base_url;
-        if base_url_moved {
+        // A same-document navigation moves only the fragment, which no URL resolves differently by.
+        let base_url_moved = !base_urls_resolve_alike(&self.document_base_url, document_base_url);
+        if *self.document_base_url != *document_base_url {
             self.document_base_url = document_base_url.into();
         }
         let context_of = |entry: &FfiStyleSheetResourceContextEntry| StyleSheetResourceContext {
@@ -77,7 +87,7 @@ impl DocumentResourceContexts {
         };
         let held = |entry: &FfiStyleSheetResourceContextEntry| {
             self.by_source.get(&entry.source_identity).is_some_and(|context| {
-                *context.base_url == *lent(entry.base_url, entry.base_url_length)
+                base_urls_resolve_alike(&context.base_url, lent(entry.base_url, entry.base_url_length))
                     && context.has_base_url == entry.has_base_url
                     && context.origin_clean == entry.origin_clean
             })
@@ -89,10 +99,13 @@ impl DocumentResourceContexts {
             .iter()
             .map(|entry| (entry.source_identity, context_of(entry)))
             .collect();
-        let moved = self
-            .by_source
-            .iter()
-            .any(|(source, context)| next.get(source).is_some_and(|next| next != context));
+        let moved = self.by_source.iter().any(|(source, context)| {
+            next.get(source).is_some_and(|next| {
+                !base_urls_resolve_alike(&next.base_url, &context.base_url)
+                    || next.has_base_url != context.has_base_url
+                    || next.origin_clean != context.origin_clean
+            })
+        });
         self.by_source = next;
         base_url_moved || moved
     }
@@ -184,5 +197,10 @@ mod tests {
         );
         assert!(lend(&mut contexts, "https://d/", &[(1, "https://c/one.css")]).0);
         assert_eq!(&*contexts.document_base_url, b"https://d/");
+
+        // A base URL that moves only its fragment resolves every URL as before.
+        assert!(!lend(&mut contexts, "https://d/#one", &[(1, "https://c/one.css#two")]).0);
+        assert_eq!(&*contexts.document_base_url, b"https://d/#one");
+        assert!(lend(&mut contexts, "https://e/#one", &[(1, "https://c/one.css#two")]).0);
     }
 }
