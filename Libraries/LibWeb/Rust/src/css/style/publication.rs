@@ -2207,16 +2207,27 @@ impl RetainedState {
     }
 
     fn state_explicitly_inherits_non_inherited_property(&self, node: StyleNodeID, state: CascadeStateID) -> bool {
-        self.state_explicitly_inherited_group_masks(node, state)
-            .next()
-            .is_some()
+        self.state_explicit_inheritance(node, state).0
     }
 
     /// The non-inherited style groups a winner state reads straight from the parent: what C++
     /// marks the parent with when it computes a record from the state.
     fn state_explicitly_inherited_groups(&self, node: StyleNodeID, state: CascadeStateID) -> u32 {
-        self.state_explicitly_inherited_group_masks(node, state)
-            .fold(0, |groups, mask| groups | mask)
+        self.state_explicit_inheritance(node, state).1
+    }
+
+    /// Whether a winner state inherits a non-inherited property explicitly, and the style groups
+    /// of those properties, decided once for each state.
+    fn state_explicit_inheritance(&self, node: StyleNodeID, state: CascadeStateID) -> (bool, u32) {
+        if let Some(inheritance) = self.winner_groups.state_explicit_inheritance(state) {
+            return inheritance;
+        }
+        let (inherits, groups) = self
+            .state_explicitly_inherited_group_masks(node, state)
+            .fold((false, 0), |(_, groups), mask| (true, groups | mask));
+        self.winner_groups
+            .note_state_explicit_inheritance(state, inherits, groups);
+        (inherits, groups)
     }
 
     /// The style groups of each non-inherited property a winner state declares `inherit` for, and

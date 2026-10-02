@@ -37,7 +37,7 @@ use super::intern_table::content_hash;
 use smallvec::SmallVec;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use crate::css::cascaded_properties::CascadeOrigin;
 
@@ -1392,6 +1392,10 @@ pub(super) const STATE_READS_ATTRIBUTES: u8 = 1 << 0;
 pub(super) const STATE_READS_SIBLING_POSITION: u8 = 1 << 1;
 /// What a state's winners read has been decided.
 const STATE_READS_DECIDED: u8 = 1 << 7;
+/// Which groups a state's winners inherit explicitly has been decided.
+const STATE_EXPLICIT_INHERITANCE_DECIDED: u64 = 1 << 63;
+/// A state's winners inherit some non-inherited property explicitly.
+const STATE_INHERITS_EXPLICITLY: u64 = 1 << 62;
 
 /// Interned per-node winning declarations.
 ///
@@ -1413,6 +1417,9 @@ pub struct WinnerGroups {
     /// first time it is asked and `STATE_READS_DECIDED` from then on. A state's winners never
     /// change, and neither does what they read.
     state_reads: Vec<AtomicU8>,
+    /// Whether each state's winners inherit a non-inherited property explicitly, and the style
+    /// groups of those properties, decided the first time it is asked, as `state_reads` is.
+    state_explicit_inheritance: Vec<AtomicU64>,
     groups: InternTable<WinnerGroupID, Box<[SemanticPropertyWinner]>>,
     provenance_groups: InternTable<WinnerProvenanceGroupID, Box<[WinnerProvenance]>>,
     priorities: InternTable<CascadePriorityID, CascadePriority>,
@@ -1477,6 +1484,7 @@ impl Default for WinnerGroups {
             state_pending_reference_counts: Vec::new(),
             state_winning_rules: Vec::new(),
             state_reads: Vec::new(),
+            state_explicit_inheritance: Vec::new(),
             groups: InternTable::default(),
             provenance_groups: InternTable::default(),
             priorities: InternTable::default(),
@@ -1526,6 +1534,11 @@ impl WinnerGroups {
                 .state_reads
                 .iter()
                 .map(|reads| AtomicU8::new(reads.load(Ordering::Relaxed)))
+                .collect(),
+            state_explicit_inheritance: self
+                .state_explicit_inheritance
+                .iter()
+                .map(|inheritance| AtomicU64::new(inheritance.load(Ordering::Relaxed)))
                 .collect(),
             groups: self.groups.clone(),
             provenance_groups: self.provenance_groups.clone(),
@@ -1736,6 +1749,7 @@ impl WinnerGroups {
         self.state_pending_reference_counts.push(0);
         self.state_winning_rules.push(winning_rules);
         self.state_reads.push(AtomicU8::new(0));
+        self.state_explicit_inheritance.push(AtomicU64::new(0));
         id
     }
 
@@ -2013,6 +2027,27 @@ impl WinnerGroups {
     pub(super) fn note_state_reads(&self, state: CascadeStateID, reads: u8) {
         if let Some(slot) = self.state_reads.get(state.0 as usize) {
             slot.store(reads | STATE_READS_DECIDED, Ordering::Relaxed);
+        }
+    }
+
+    /// Whether `state`'s winners inherit a non-inherited property explicitly, and the style groups
+    /// of those properties, once decided.
+    pub(super) fn state_explicit_inheritance(&self, state: CascadeStateID) -> Option<(bool, u32)> {
+        let inheritance = self
+            .state_explicit_inheritance
+            .get(state.0 as usize)?
+            .load(Ordering::Relaxed);
+        (inheritance & STATE_EXPLICIT_INHERITANCE_DECIDED != 0)
+            .then_some((inheritance & STATE_INHERITS_EXPLICITLY != 0, inheritance as u32))
+    }
+
+    pub(super) fn note_state_explicit_inheritance(&self, state: CascadeStateID, inherits: bool, groups: u32) {
+        if let Some(slot) = self.state_explicit_inheritance.get(state.0 as usize) {
+            let inherits = if inherits { STATE_INHERITS_EXPLICITLY } else { 0 };
+            slot.store(
+                STATE_EXPLICIT_INHERITANCE_DECIDED | inherits | u64::from(groups),
+                Ordering::Relaxed,
+            );
         }
     }
 
@@ -2555,6 +2590,7 @@ impl WinnerGroups {
         self.state_pending_reference_counts = Vec::new();
         self.state_winning_rules = Vec::new();
         self.state_reads = Vec::new();
+        self.state_explicit_inheritance = Vec::new();
         self.groups = InternTable::default();
         self.provenance_groups = InternTable::default();
         self.priorities = InternTable::default();
@@ -2590,6 +2626,7 @@ impl WinnerGroups {
                 self.state_pending_reference_counts,
                 self.state_winning_rules,
                 self.state_reads,
+                self.state_explicit_inheritance,
                 self.winner_rule_references,
                 self.stamps,
             ];
