@@ -83,6 +83,8 @@ impl RetainedState {
             return Ok(());
         }
         let republication = republication.or_refused()?;
+        // The rows the settlement reads next are no cache the memory budget may decline.
+        let admitting = self.winner_groups.admit_demanded_rows();
         // The element row may already be compared with the record derived from it in this flush:
         // keep it and publish only the pseudo rows. An evicted answer is matched again.
         let republished = self.current_winner_groups().row_stamp(node) == Some(self.flush_stamp)
@@ -93,6 +95,7 @@ impl RetainedState {
             let rematched = self.republish_winners_from_answer(node, republication, counters);
             debug_assert!(rematched.is_some(), "a settled node's pseudo winners republish");
         }
+        self.winner_groups.restore_admission(admitting);
         Ok(())
     }
 
