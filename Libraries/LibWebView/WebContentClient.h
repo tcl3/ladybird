@@ -30,6 +30,7 @@
 #include <LibWebCommon/Bindings/Navigation.h>
 #include <LibWebCommon/CSS/StyleSheetIdentifier.h>
 #include <LibWebCommon/Forward.h>
+#include <LibWebCommon/Gamepad/GamepadSnapshot.h>
 #include <LibWebCommon/HTML/ActivateTab.h>
 #include <LibWebCommon/HTML/ApplyHistoryStep.h>
 #include <LibWebCommon/HTML/CrossProcessId.h>
@@ -181,6 +182,15 @@ private:
     virtual Messages::WebContentClient::DidIsKnownHstsHostResponse did_is_known_hsts_host(String) override;
     virtual Messages::WebContentClient::DidLoseRequestServerConnectionResponse did_lose_request_server_connection() override;
     virtual Messages::WebContentClient::RequestMediaServerConnectionResponse request_media_server_connection() override;
+    virtual void did_start_using_gamepads() override;
+    virtual void gamepad_play_effect(Web::Gamepad::GamepadHandle handle, Web::Gamepad::GamepadEffect effect) override;
+    virtual void gamepad_stop_effects(Web::Gamepad::GamepadHandle handle) override;
+    virtual Messages::WebContentClient::CreateVirtualGamepadResponse create_virtual_gamepad() override;
+    virtual void set_virtual_gamepad_button(Web::Gamepad::GamepadHandle handle, i32 button, bool down) override;
+    virtual void set_virtual_gamepad_axis(Web::Gamepad::GamepadHandle handle, i32 axis, i16 value) override;
+    virtual void disconnect_virtual_gamepad(Web::Gamepad::GamepadHandle handle) override;
+    virtual Messages::WebContentClient::PumpGamepadEventsResponse pump_gamepad_events() override;
+    virtual Messages::WebContentClient::GetVirtualGamepadReceivedRumbleEffectsResponse get_virtual_gamepad_received_rumble_effects(Web::Gamepad::GamepadHandle handle) override;
 
     void remember_compositor_context(Web::CompositorContextId, Optional<Web::PageId> page_id);
     void fail_renderer_owned_downloads();
