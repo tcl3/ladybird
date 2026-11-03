@@ -438,6 +438,7 @@ private:
     virtual void page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId) override;
     virtual void page_did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId const&) override;
     virtual void page_did_request_service_worker_ready(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& creation_url) override;
+    virtual void page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord) override;
     virtual void page_did_report_navigation_violation_of_remote_client(Web::HTML::RemoteClientNavigation const&, u64 policy_index, Web::ContentSecurityPolicy::RemoteViolationDirective, bool url_is_https) override;
 
     void setup_palette();

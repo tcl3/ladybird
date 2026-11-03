@@ -2,8 +2,8 @@
 [Global=(Worker,ServiceWorker), Exposed=ServiceWorker, SecureContext]
 interface ServiceWorkerGlobalScope : WorkerGlobalScope {
     [FIXME, SameObject] readonly attribute Clients clients;
-    [FIXME, SameObject] readonly attribute ServiceWorkerRegistration registration;
-    [FIXME, SameObject] readonly attribute ServiceWorker serviceWorker;
+    [SameObject] readonly attribute ServiceWorkerRegistration registration;
+    [SameObject] readonly attribute ServiceWorker serviceWorker;
 
     [NewObject] Promise<undefined> skipWaiting();
 

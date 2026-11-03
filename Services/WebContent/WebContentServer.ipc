@@ -53,6 +53,7 @@
 #include <LibWebCommon/Page/WritingSuggestion.h>
 #include <LibWebCommon/Page/ViewportIsFullscreen.h>
 #include <LibWebCommon/ReferrerPolicy/ReferrerPolicy.h>
+#include <LibWebCommon/HTML/SerializationRecords.h>
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <LibWebCommon/StorageAPI/StorageAreaId.h>
 #include <LibWebCommon/StorageAPI/StorageEndpoint.h>
@@ -341,6 +342,7 @@ endpoint WebContentServer routed by Web::PageId page_id
     service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker) =|
     service_worker_update_found(u64 registration_id) =|
     service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration) =|
+    service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) =|
 
     did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) =|
     did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) =|

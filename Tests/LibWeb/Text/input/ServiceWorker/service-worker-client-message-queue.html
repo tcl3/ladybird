@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A document's client message queue starts disabled, and the end of parsing enables it after DOMContentLoaded.
+    // startMessages() and the first set of onmessage enable it earlier.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("message", event => event.source.postMessage("pong to " + event.data));`,
+        });
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const roundTrip = () => new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", resolve, { once: true });
+            worker.postMessage("top-level document");
+        });
+
+        const runFrame = async (name, listen) => {
+            const token = `held-${uniqueID()}`;
+            const held = await server.createEcho("GET", `/held-${name}.js`, { status: 200, headers: javascript, body: "", wait_for_unblock: token });
+            const frameURL = await server.createEcho("GET", `/frame-${name}.html`, {
+                status: 200,
+                headers: { "Content-Type": "text/html" },
+                body: `<!DOCTYPE html><script>
+                    const events = [];
+                    const listener = event => events.push(event.data);
+                    ${listen}
+                    document.addEventListener("DOMContentLoaded", () => events.push("DOMContentLoaded"));
+                    window.addEventListener("load", () => parent.postMessage(events, "*"));
+                    navigator.serviceWorker.getRegistration("${registration.scope}").then(registration => {
+                        registration.active.postMessage("${name}");
+                        parent.postMessage("posted", "*");
+                    });
+                <\/script><script src="${held}"><\/script>`,
+            });
+            const nextMessage = () => new Promise(resolve => addEventListener("message", event => resolve(event.data), { once: true }));
+            let message = nextMessage();
+            const frame = document.createElement("iframe");
+            frame.src = frameURL;
+            document.body.append(frame);
+            await message;
+
+            // NB: The worker answers in the order it is posted to, so the frame's answer has reached the frame's process
+            //     once this one arrives.
+            await roundTrip();
+            message = nextMessage();
+            await fetch(`${server.baseURL}/unblock/${token}`);
+            println(`${name}: ${(await message).join(", ")}`);
+            frame.remove();
+        };
+
+        await runFrame("addEventListener", `navigator.serviceWorker.addEventListener("message", listener);`);
+        await runFrame("startMessages", `navigator.serviceWorker.addEventListener("message", listener); navigator.serviceWorker.startMessages();`);
+        await runFrame("onmessage", `navigator.serviceWorker.onmessage = listener;`);
+    });
+</script>

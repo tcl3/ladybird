@@ -1,0 +1,18 @@
+// https://w3c.github.io/ServiceWorker/#extendablemessageevent-interface
+[Exposed=ServiceWorker, ImplementedIn=Rust]
+interface ExtendableMessageEvent : ExtendableEvent {
+    constructor(DOMString type, optional ExtendableMessageEventInit eventInitDict = {});
+    readonly attribute any data;
+    readonly attribute USVString origin;
+    readonly attribute DOMString lastEventId;
+    [SameObject] readonly attribute (Client or ServiceWorker or MessagePort)? source;
+    readonly attribute FrozenArray<MessagePort> ports;
+};
+
+dictionary ExtendableMessageEventInit : ExtendableEventInit {
+    any data = null;
+    USVString origin = "";
+    DOMString lastEventId = "";
+    (Client or ServiceWorker or MessagePort)? source = null;
+    sequence<MessagePort> ports = [];
+};

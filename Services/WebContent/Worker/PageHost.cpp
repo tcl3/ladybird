@@ -248,6 +248,21 @@ void PageHost::page_did_call_service_worker_skip_waiting(Web::ServiceWorker::Ser
     m_client.async_did_call_service_worker_skip_waiting(request_id);
 }
 
+void PageHost::page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, Web::ServiceWorker::ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    m_client.async_did_post_message_to_service_worker(source, service_worker_id, move(message));
+}
+
+void PageHost::page_did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message)
+{
+    m_client.async_did_post_message_to_service_worker_client(client_id, move(message));
+}
+
+void PageHost::did_change_service_worker_pending_events(bool has_pending_events)
+{
+    m_client.async_did_change_service_worker_pending_events(has_pending_events);
+}
+
 PageHost::PageHost(ConnectionFromClient& client)
     : m_client(client)
     , m_page(Web::Page::create(*this))

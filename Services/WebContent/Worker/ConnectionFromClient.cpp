@@ -374,6 +374,8 @@ void ConnectionFromClient::service_worker_registration_lookup_finished(u64 reque
 
 void ConnectionFromClient::service_worker_registration_state_changed(u64 registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> source)
 {
+    if (m_service_worker_host)
+        m_service_worker_host->registration_state_changed(registration_id, target, source);
     Web::ServiceWorker::service_worker_registration_state_changed(registration_id, target, move(source));
 }
 
@@ -404,6 +406,17 @@ void ConnectionFromClient::service_worker_skip_waiting_finished(u64 request_id)
 {
     if (m_service_worker_host)
         m_service_worker_host->skip_waiting_finished(request_id);
+}
+
+void ConnectionFromClient::dispatch_service_worker_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin origin, Web::HTML::SerializedTransferRecord message, u64 timeout_ms)
+{
+    if (m_service_worker_host)
+        m_service_worker_host->dispatch_message_event(move(source), origin, move(message), AK::Duration::from_milliseconds(timeout_ms));
+}
+
+void ConnectionFromClient::service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message)
+{
+    Web::ServiceWorker::service_worker_message_to_client(client_id, move(source), origin, move(message));
 }
 
 void ConnectionFromClient::rtc_transform_init(u64 transform_id, Web::HTML::SerializedTransferRecord options_record)

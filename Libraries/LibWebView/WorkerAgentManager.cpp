@@ -449,12 +449,12 @@ void WorkerAgentManager::for_each_client_with_inside_settings(Function<Iteration
     }
 }
 
-void WorkerAgentManager::for_each_agent_environment(Function<void(WebWorkerClient&, CanonicalWorkerEnvironmentSettingsObject const&, IsPrivate)> const& callback) const
+void WorkerAgentManager::for_each_agent_environment(Function<void(WebWorkerClient&, CanonicalWorkerEnvironmentSettingsObject const&, IsPrivate, Web::HTML::AgentType)> const& callback) const
 {
     auto clients = m_clients;
     for (auto& client : clients) {
         if (auto const* inside_settings = client->inside_settings())
-            callback(*client, *inside_settings, client->is_private());
+            callback(*client, *inside_settings, client->is_private(), client->agent_type());
     }
 }
 

@@ -21,6 +21,7 @@ use crate::bindings::CallContext;
 use crate::bindings::callback::CallbackInterface;
 use crate::bindings::cpp_cell::CppCell;
 use crate::bindings::interface::{Interface, Ref, Wrappable, cell_from_abi, cell_into_abi};
+use crate::service_worker::service_worker::ServiceWorker;
 
 unsafe extern "C" {
     fn web_bindings_create_event_target() -> *mut c_void;
@@ -75,6 +76,15 @@ unsafe extern "C" {
         count: usize,
         origin: *const FfiOrigin,
         source: *mut c_void,
+    ) -> *mut c_void;
+    fn web_bindings_create_service_worker_message_event(
+        realm: *mut c_void,
+        r#type: ak::Span<'_, u8>,
+        data: u64,
+        origin: ak::Span<'_, u8>,
+        source: *mut c_void,
+        ports: *const *mut c_void,
+        count: usize,
     ) -> *mut c_void;
     fn web_bindings_message_event_data(event: u64) -> u64;
     fn web_bindings_set_event_owner(event: *mut c_void, interface_name: u16, owner: *mut c_void);
@@ -253,6 +263,32 @@ impl CppEvent {
                 bubbles,
                 cancelable,
                 composed,
+            ))
+        })
+    }
+
+    /// A MessageEvent in the realm with its data, origin and ports attributes initialized to the data, the serialized
+    /// origin and the ports, and its source attribute initialized to the ServiceWorker.
+    pub(crate) fn create_service_worker_message_event(
+        realm: Gc<Realm>,
+        r#type: &str,
+        data: Value,
+        origin: &str,
+        source: Ref<ServiceWorker>,
+        ports: &[Gc<Object>],
+    ) -> Self {
+        let ports: Vec<*mut c_void> = ports.iter().map(|port| port.as_ptr().cast()).collect();
+        // SAFETY: The realm, the data, the source and the ports are live, the type, the origin and the ports are lent
+        //         for the call, and LibWeb returns a live event.
+        Self(unsafe {
+            CppCell::from_raw(web_bindings_create_service_worker_message_event(
+                realm.as_ptr().cast(),
+                ak::Span::new(r#type.as_bytes()),
+                data.to_raw(),
+                ak::Span::new(origin.as_bytes()),
+                cell_into_abi(source),
+                ports.as_ptr(),
+                ports.len(),
             ))
         })
     }

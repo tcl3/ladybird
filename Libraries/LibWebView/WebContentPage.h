@@ -402,6 +402,7 @@ private:
     virtual void did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id) override;
     virtual void did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id) override;
     virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url) override;
+    virtual void did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) override;
     Messages::WebContentClient::DidRequestCookieResponse did_request_cookie(Optional<Web::HTML::EnvironmentId> const&, URL::URL, HTTP::Cookie::Source);
     Messages::WebContentClient::DidRequestAllCookiesCookiestoreResponse did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId const&, URL::URL);
     Messages::WebContentClient::DidAddBlobUrlEntryResponse did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry);

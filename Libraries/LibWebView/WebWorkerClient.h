@@ -87,6 +87,9 @@ public:
     virtual void did_request_service_worker_registration(Web::HTML::EnvironmentId, u64 request_id, URL::URL client_url) override;
     virtual void did_request_service_worker_registrations(Web::HTML::EnvironmentId, u64 request_id) override;
     virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId, u64 request_id, URL::URL creation_url) override;
+    virtual void did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) override;
+    virtual void did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message) override;
+    virtual void did_change_service_worker_pending_events(bool has_pending_events) override;
     virtual void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult) override;
     virtual void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) override;
     virtual void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded) override;

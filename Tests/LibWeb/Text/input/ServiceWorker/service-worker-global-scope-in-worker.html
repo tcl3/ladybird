@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const imported = await server.createEcho("GET", "/imported.js", { status: 200, headers: javascript, body: "self.importCount = (self.importCount ?? 0) + 1;" });
+        const notImported = await server.createEcho("GET", "/not-imported.js", { status: 200, headers: javascript, body: "" });
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `const results = {};
+            const exceptionName = steps => { try { steps(); return "no exception"; } catch (error) { return error.name; } };
+
+            results["registration is the same object each time"] = self.registration === self.registration;
+            results["serviceWorker is the same object each time"] = self.serviceWorker === self.serviceWorker;
+            results["serviceWorker.state during evaluation"] = self.serviceWorker.state;
+            results["registration.installing during evaluation"] = String(self.registration.installing);
+
+            results["new ExtendableEvent() takes its init dictionary"] = new ExtendableEvent("type", { bubbles: true }).bubbles;
+            results["new InstallEvent() is an ExtendableEvent"] = new InstallEvent("type") instanceof ExtendableEvent;
+            results["waitUntil() on a constructed event"] = exceptionName(() => new ExtendableEvent("type").waitUntil(Promise.resolve()));
+            const port = new MessageChannel().port1;
+            const messageEvent = new ExtendableMessageEvent("type", { data: 1, origin: "origin", lastEventId: "id", source: port, ports: [port] });
+            results["new ExtendableMessageEvent() takes its init dictionary"] = [messageEvent.data, messageEvent.origin, messageEvent.lastEventId, messageEvent.source === port, messageEvent.ports.length, messageEvent.ports === messageEvent.ports].join(" ");
+
+            importScripts("${imported}");
+            results["importScripts() during evaluation"] = self.importCount;
+
+            let installEvent;
+            self.addEventListener("install", event => {
+                installEvent = event;
+                results["serviceWorker.state during install"] = self.serviceWorker.state;
+                results["registration.installing during install is serviceWorker"] = self.registration.installing === self.serviceWorker;
+            });
+            self.addEventListener("message", event => {
+                results["waitUntil() on the install event after it was dispatched"] = exceptionName(() => installEvent.waitUntil(Promise.resolve()));
+                results["importScripts() of a stored script after install"] = exceptionName(() => importScripts("${imported}"));
+                results["importScripts() count afterwards"] = self.importCount;
+                results["importScripts() of a new script after install"] = exceptionName(() => importScripts("${notImported}"));
+                results["serviceWorker.state now"] = self.serviceWorker.state;
+                results["registration.active now is serviceWorker"] = self.registration.active === self.serviceWorker;
+                event.source.postMessage(results);
+            });`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const reply = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        worker.postMessage("report");
+        for (const [name, value] of Object.entries(await reply))
+            println(`${name}: ${value}`);
+    });
+</script>

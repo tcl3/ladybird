@@ -91,6 +91,8 @@ private:
     virtual void service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration) override;
     virtual void dispatch_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, u64 timeout_ms) override;
     virtual void service_worker_skip_waiting_finished(u64 request_id) override;
+    virtual void dispatch_service_worker_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin origin, Web::HTML::SerializedTransferRecord message, u64 timeout_ms) override;
+    virtual void service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) override;
 
     GC::Root<PageHost> m_page_host;
 

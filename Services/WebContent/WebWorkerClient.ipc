@@ -7,6 +7,7 @@
 #include <LibWebCommon/HTML/BroadcastChannelMessage.h>
 #include <LibWebCommon/HTML/WorkerAgentForward.h>
 #include <LibWebCommon/HTML/WorkerAgentTypes.h>
+#include <LibWebCommon/HTML/SerializationRecords.h>
 #include <LibWebCommon/Permissions/Permissions.h>
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 
@@ -38,4 +39,7 @@ endpoint WebWorkerClient {
     did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) =|
     did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, bool succeeded) =|
     did_call_service_worker_skip_waiting(u64 request_id) =|
+    did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) =|
+    did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message) =|
+    did_change_service_worker_pending_events(bool has_pending_events) =|
 }

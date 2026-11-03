@@ -648,11 +648,18 @@ static bool should_skip_event(StringView event_name, Vector<String> const& set_o
 }
 
 // https://w3c.github.io/ServiceWorker/#service-worker-has-no-pending-events
-static bool service_worker_has_no_pending_events()
+bool ServiceWorkerRegistry::service_worker_has_no_pending_events(Optional<ServiceWorkerId> worker_id) const
 {
+    // NB: A registration without the worker has none to wait for.
+    if (!worker_id.has_value())
+        return true;
+    auto worker = m_service_workers.get(*worker_id);
+
     // 1. For each event of worker's set of extended events:
     //    1. If event is active, return false.
-    // NB: No event that extends a worker's set of extended events is dispatched yet, so the set is empty.
+    // NB: The worker's process reports whether its set holds an active event.
+    if (worker.has_value() && (*worker)->has_pending_events)
+        return false;
 
     // 2. Return true.
     return true;
@@ -805,7 +812,7 @@ void ServiceWorkerRegistry::try_activate(Registration& registration)
     //    - The result of running Service Worker Has No Pending Events with registration's active worker is true, and
     //      no service worker client is using registration or registration's waiting worker's skip waiting flag is set.
     // NB: No service worker client uses a registration yet, as none is controlled.
-    if (!registration.active_worker.has_value() || service_worker_has_no_pending_events())
+    if (!registration.active_worker.has_value() || service_worker_has_no_pending_events(registration.active_worker))
         activate(registration);
 }
 
@@ -949,6 +956,146 @@ void ServiceWorkerRegistry::service_worker_did_call_skip_waiting(Web::HTML::Work
         running_worker->process->async_service_worker_skip_waiting_finished(request_id);
 }
 
+void ServiceWorkerRegistry::service_worker_did_change_pending_events(Web::HTML::WorkerAgentId agent_id, bool has_pending_events)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || worker->has_pending_events == has_pending_events)
+        return;
+    worker->has_pending_events = has_pending_events;
+    if (has_pending_events)
+        return;
+
+    // https://w3c.github.io/ServiceWorker/#extendableevent-add-lifetime-promise
+    // 5.2. If event's pending promises count is 0, then:
+    // 1. Let registration be the current global object's associated service worker's containing service worker
+    //    registration.
+    auto* registration = registration_by_id(worker->registration_id);
+    if (!registration)
+        return;
+
+    // 2. If registration is unregistered, invoke Try Clear Registration with registration.
+    if (is_unregistered(*registration)) {
+        try_clear_registration(*registration);
+        return;
+    }
+
+    // 3. If registration is not null, invoke Try Activate with registration.
+    try_activate(*registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
+void ServiceWorkerRegistry::post_message_to_service_worker(ServiceWorkerClientEnvironment const& client, ServiceWorkerClientSnapshot source, ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
+    if (!partition.has_value())
+        return;
+
+    // AD-HOC: The source's id is that of the canonical record of the environment that sent the message.
+    source.id = client.settings.id();
+
+    // 2. Let incumbentSettings be the incumbent settings object.
+    // 6.2.2. Let origin be incumbentSettings's origin.
+    dispatch_message_event(*partition, service_worker_id, move(source), client.settings.origin(), move(message));
+}
+
+void ServiceWorkerRegistry::service_worker_did_post_message_to_service_worker(Web::HTML::WorkerAgentId agent_id, ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    auto* sender = service_worker_of_agent(agent_id);
+    if (!sender)
+        return;
+
+    // 6.2.1. Let source be determined by switching on the type of incumbentGlobal:
+    //        ServiceWorkerGlobalScope
+    //            The result of getting the service worker object that represents incumbentGlobal's service worker in
+    //            the relevant settings object of serviceWorker's global object.
+    // NB: The service worker's process gets the object from the descriptor.
+    auto source = ServiceWorkerDescriptor { .id = sender->id, .script_url = sender->script_url, .state = sender->state };
+    auto origin = sender->partition.storage_key.origin;
+    dispatch_message_event(sender->partition, service_worker_id, move(source), origin, move(message));
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
+void ServiceWorkerRegistry::dispatch_message_event(Partition const& sender_partition, ServiceWorkerId service_worker_id, ServiceWorkerMessageSource source, URL::Origin const& origin, Web::HTML::SerializedTransferRecord message)
+{
+    // 1. Let serviceWorker be the service worker represented by this.
+    auto worker = m_service_workers.get(service_worker_id);
+    if (!worker.has_value())
+        return;
+    auto& service_worker = **worker;
+
+    // AD-HOC: Only an environment in the partition of the worker's registration can have an object for the worker.
+    if (service_worker.partition != sender_partition)
+        return;
+
+    // 5. If the result of running the Should Skip Event algorithm with "message" and serviceWorker is true, then return.
+    if (should_skip_event("message"sv, service_worker.set_of_event_types_to_handle))
+        return;
+
+    // 6. Run these substeps in parallel:
+    //    1. If the result of running the Run Service Worker algorithm with serviceWorker is failure, then return.
+    // FIXME: Run a worker that is not running from its stored scripts.
+    if (!service_worker.process || !service_worker.process->is_open())
+        return;
+
+    //    2. Queue a task on the DOM manipulation task source to run the following steps:
+    // NB: The worker's process queues the task, and ends the event at its deadline.
+    // FIXME: Terminate a worker whose process does not end an extended message event soon after the deadline.
+    service_worker.process->async_dispatch_service_worker_message_event(move(source), origin, move(message), lifecycle_event_deadline().to_milliseconds());
+}
+
+// https://w3c.github.io/ServiceWorker/#client-postmessage-options
+void ServiceWorkerRegistry::service_worker_did_post_message_to_client(Web::HTML::WorkerAgentId agent_id, String const& client_id, Web::HTML::SerializedTransferRecord message)
+{
+    auto* service_worker = service_worker_of_agent(agent_id);
+    if (!service_worker)
+        return;
+
+    // 4.1. Let targetClient be null.
+    Optional<ServiceWorkerClientConnection> target_connection;
+    Optional<Web::HTML::EnvironmentId> target_client;
+
+    // 4.2. For each service worker client client:
+    //      1. If client is the contextObject's service worker client, set targetClient to client, and break.
+    // AD-HOC: Only a client in the partition of the worker's registration can be one the worker has a Client object for.
+    WebContentClient::for_each_client([&](WebContentClient& client) {
+        if (client.is_private() != m_is_private)
+            return IterationDecision::Continue;
+        client.for_each_page([&](WebContentPage& page) {
+            page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                if (settings.id().to_string() != client_id || partition_of(settings, has_cross_site_ancestor) != service_worker->partition)
+                    return IterationDecision::Continue;
+                target_connection = ServiceWorkerClientConnection { client };
+                target_client = settings.id();
+                return IterationDecision::Break;
+            });
+            return target_client.has_value() ? IterationDecision::Break : IterationDecision::Continue;
+        });
+        return target_client.has_value() ? IterationDecision::Break : IterationDecision::Continue;
+    });
+    if (!target_client.has_value()) {
+        WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private, Web::HTML::AgentType agent_type) {
+            if (target_client.has_value() || agent_type == Web::HTML::AgentType::ServiceWorker || is_private != m_is_private)
+                return;
+            if (settings.id().to_string() != client_id || partition_of(settings, settings.has_cross_site_ancestor()) != service_worker->partition)
+                return;
+            target_connection = ServiceWorkerClientConnection { client };
+            target_client = settings.id();
+        });
+    }
+
+    // 4.3. If targetClient is null, return.
+    if (!target_client.has_value())
+        return;
+
+    // 4.4. Let destination be the ServiceWorkerContainer object whose associated service worker client is targetClient.
+    // 4.5. Add a task that runs the following steps to destination's client message queue:
+    // NB: The target client's process adds the task.
+    auto source = ServiceWorkerDescriptor { .id = service_worker->id, .script_url = service_worker->script_url, .state = service_worker->state };
+    target_connection->visit_open_connection([&](auto& client) {
+        client.async_service_worker_message_to_client(*target_client, source, service_worker->partition.storage_key.origin, move(message));
+    });
+}
+
 // https://w3c.github.io/ServiceWorker/#terminate-service-worker
 void ServiceWorkerRegistry::terminate_service_worker(ServiceWorkerRecord& worker)
 {
@@ -1018,7 +1165,8 @@ void ServiceWorkerRegistry::unregister(RegistrationKey const& job_queue_key, Job
     }
 
     // 3. Remove registration map[(registration's storage key, job's scope url)].
-    auto unregistered_registration = m_registration_map.take(registration->key).release_value();
+    m_unregistered_registrations.append(m_registration_map.take(registration->key).release_value());
+    auto& unregistered_registration = *m_unregistered_registrations.last();
 
     // 4. Invoke Resolve Job Promise with job and true.
     resolve_job_promise(job, true);
@@ -1027,7 +1175,7 @@ void ServiceWorkerRegistry::unregister(RegistrationKey const& job_queue_key, Job
     // NOTE: If Try Clear Registration does not trigger Clear Registration here, Clear Registration is tried again when
     //       the last client using the registration is unloaded or the extend lifetime promises for the registration's
     //       service workers settle.
-    try_clear_registration(*unregistered_registration);
+    try_clear_registration(unregistered_registration);
 
     // 6. Invoke Finish Job with job.
     finish_job(job_queue_key, job);
@@ -1045,8 +1193,16 @@ void ServiceWorkerRegistry::try_clear_registration(Registration& registration)
     //    - registration's active worker is null or the result of running Service Worker Has No Pending Events with
     //      registration's active worker is true.
     // NB: No service worker client uses a registration yet, as none is controlled.
-    if (service_worker_has_no_pending_events())
-        clear_registration(registration);
+    if (!service_worker_has_no_pending_events(registration.installing_worker)
+        || !service_worker_has_no_pending_events(registration.waiting_worker)
+        || !service_worker_has_no_pending_events(registration.active_worker))
+        return;
+    clear_registration(registration);
+
+    // NB: Nothing refers to a cleared registration that was unregistered.
+    m_unregistered_registrations.remove_first_matching([&](auto const& unregistered_registration) {
+        return unregistered_registration.ptr() == &registration;
+    });
 }
 
 // https://w3c.github.io/ServiceWorker/#clear-registration-algorithm
@@ -1185,7 +1341,7 @@ void ServiceWorkerRegistry::for_each_process_in_partition(Partition const& parti
         return IterationDecision::Continue;
     });
 
-    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private) {
+    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private, Web::HTML::AgentType) {
         if (is_private == m_is_private && partition_of(settings, settings.has_cross_site_ancestor()) == partition)
             callback(ServiceWorkerClientConnection { client });
     });
@@ -1272,7 +1428,20 @@ ServiceWorkerRegistry::Registration* ServiceWorkerRegistry::registration_by_id(S
         if (registration->id == registration_id)
             return registration.ptr();
     }
+    for (auto& registration : m_unregistered_registrations) {
+        if (registration->id == registration_id)
+            return registration.ptr();
+    }
     return nullptr;
+}
+
+// https://w3c.github.io/ServiceWorker/#dfn-service-worker-registration-unregistered
+bool ServiceWorkerRegistry::is_unregistered(Registration const& registration) const
+{
+    // A service worker registration is said to be unregistered if registration map[this service worker registration's
+    // (storage key, serialized scope url)] is not this service worker registration.
+    auto registered = m_registration_map.get(registration.key);
+    return !registered.has_value() || *registered != &registration;
 }
 
 void ServiceWorkerRegistry::remove_registration(Registration& registration)
@@ -1437,6 +1606,16 @@ void ServiceWorkerRegistry::clear_registrations_for_testing(URL::Origin const& t
         if (auto registration = m_registration_map.take(key); registration.has_value())
             clear_registration(**registration);
     }
+
+    Vector<NonnullOwnPtr<Registration>> unregistered_registrations_of_test;
+    for (size_t i = 0; i < m_unregistered_registrations.size();) {
+        if (is_of_test(m_unregistered_registrations[i]->key.partition))
+            unregistered_registrations_of_test.append(m_unregistered_registrations.take(i));
+        else
+            ++i;
+    }
+    for (auto& registration : unregistered_registrations_of_test)
+        clear_registration(*registration);
 }
 
 }

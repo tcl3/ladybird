@@ -43,8 +43,13 @@ public:
     GC::Ref<WebIDL::Promise> skip_waiting();
     void skip_waiting_finished(ServiceWorkerRequestId);
 
-    void set_service_worker_state(ServiceWorkerState state) { m_service_worker_state = state; }
-    void set_registration_update_via_cache(ServiceWorkerUpdateViaCache update_via_cache) { m_registration_update_via_cache = update_via_cache; }
+    GC::Ref<ServiceWorkerRegistration> registration();
+    GC::Ref<ServiceWorker> service_worker();
+
+    void set_service_worker(ServiceWorkerDescriptor service_worker) { m_service_worker = move(service_worker); }
+    void set_registration(ServiceWorkerRegistrationSnapshot registration) { m_registration = move(registration); }
+    void service_worker_state_changed(ServiceWorkerDescriptor const&);
+    void registration_state_changed(ServiceWorkerRegistrationSlot, Optional<ServiceWorkerDescriptor>);
     void prune_script_resource_map();
 
     virtual HTML::PerformTheFetchHook import_scripts_perform_the_fetch_hook() override;
@@ -58,11 +63,10 @@ private:
 
     GC::Ptr<CookieStore::CookieStore> m_cookie_store;
 
-    // https://w3c.github.io/ServiceWorker/#dfn-state
-    ServiceWorkerState m_service_worker_state { ServiceWorkerState::Parsed };
-
-    // https://w3c.github.io/ServiceWorker/#dfn-update-via-cache
-    ServiceWorkerUpdateViaCache m_registration_update_via_cache { ServiceWorkerUpdateViaCache::Imports };
+    // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope-service-worker
+    // NB: The UI process holds the service worker and its containing registration, and describes them here.
+    ServiceWorkerDescriptor m_service_worker;
+    ServiceWorkerRegistrationSnapshot m_registration;
 
     struct ScriptResource {
         GC::Ref<Fetch::Infrastructure::ResponseView> response;

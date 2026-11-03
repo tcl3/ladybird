@@ -197,3 +197,4 @@ WEBCOMMON_API ErrorOr<Web::HTML::SerializedTransferRecord> decode(Decoder&);
 }
 
 GC_UNTRACED_CAPTURE(Web::HTML::TransferDataEncoder);
+GC_UNTRACED_CAPTURE(Web::HTML::SerializedTransferRecord);

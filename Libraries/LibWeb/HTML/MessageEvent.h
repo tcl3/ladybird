@@ -20,10 +20,9 @@
 
 namespace Web::HTML {
 
-// FIXME: Include ServiceWorker
 // https://html.spec.whatwg.org/multipage/comms.html#messageeventsource
-using MessageEventSource = Variant<GC::Ref<WindowProxy>, GC::Ref<MessagePort>>;
-using NullableMessageEventSource = Variant<GC::Ref<WindowProxy>, GC::Ref<MessagePort>, Empty>;
+using MessageEventSource = Variant<GC::Ref<WindowProxy>, GC::Ref<MessagePort>, GC::Ref<ServiceWorker::ServiceWorker>>;
+using NullableMessageEventSource = Variant<GC::Ref<WindowProxy>, GC::Ref<MessagePort>, GC::Ref<ServiceWorker::ServiceWorker>, Empty>;
 
 struct MessageEventInit : DOM::EventInit {
     JS::Value data { JS::js_null() };

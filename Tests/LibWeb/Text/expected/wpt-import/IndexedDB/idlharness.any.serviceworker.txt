@@ -1,0 +1,212 @@
+Harness status: OK
+
+Found 207 tests
+
+207 Pass
+Pass	idl_test setup
+Pass	idl_test validation
+Pass	Partial interface mixin WindowOrWorkerGlobalScope: original interface mixin defined
+Pass	Partial interface mixin WindowOrWorkerGlobalScope: member names are unique
+Pass	Partial interface Window: member names are unique
+Pass	Window includes GlobalEventHandlers: member names are unique
+Pass	Window includes WindowEventHandlers: member names are unique
+Pass	Window includes WindowOrWorkerGlobalScope: member names are unique
+Pass	WorkerGlobalScope includes WindowOrWorkerGlobalScope: member names are unique
+Pass	Window includes AnimationFrameProvider: member names are unique
+Pass	Window includes WindowSessionStorage: member names are unique
+Pass	Window includes WindowLocalStorage: member names are unique
+Pass	IDBRequest interface: existence and properties of interface object
+Pass	IDBRequest interface object length
+Pass	IDBRequest interface object name
+Pass	IDBRequest interface: existence and properties of interface prototype object
+Pass	IDBRequest interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBRequest interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBRequest interface: attribute result
+Pass	IDBRequest interface: attribute error
+Pass	IDBRequest interface: attribute source
+Pass	IDBRequest interface: attribute transaction
+Pass	IDBRequest interface: attribute readyState
+Pass	IDBRequest interface: attribute onsuccess
+Pass	IDBRequest interface: attribute onerror
+Pass	IDBOpenDBRequest interface: existence and properties of interface object
+Pass	IDBOpenDBRequest interface object length
+Pass	IDBOpenDBRequest interface object name
+Pass	IDBOpenDBRequest interface: existence and properties of interface prototype object
+Pass	IDBOpenDBRequest interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBOpenDBRequest interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBOpenDBRequest interface: attribute onblocked
+Pass	IDBOpenDBRequest interface: attribute onupgradeneeded
+Pass	IDBVersionChangeEvent interface: existence and properties of interface object
+Pass	IDBVersionChangeEvent interface object length
+Pass	IDBVersionChangeEvent interface object name
+Pass	IDBVersionChangeEvent interface: existence and properties of interface prototype object
+Pass	IDBVersionChangeEvent interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBVersionChangeEvent interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBVersionChangeEvent interface: attribute oldVersion
+Pass	IDBVersionChangeEvent interface: attribute newVersion
+Pass	IDBVersionChangeEvent must be primary interface of new IDBVersionChangeEvent("type")
+Pass	Stringification of new IDBVersionChangeEvent("type")
+Pass	IDBVersionChangeEvent interface: new IDBVersionChangeEvent("type") must inherit property "oldVersion" with the proper type
+Pass	IDBVersionChangeEvent interface: new IDBVersionChangeEvent("type") must inherit property "newVersion" with the proper type
+Pass	IDBFactory interface: existence and properties of interface object
+Pass	IDBFactory interface object length
+Pass	IDBFactory interface object name
+Pass	IDBFactory interface: existence and properties of interface prototype object
+Pass	IDBFactory interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBFactory interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBFactory interface: operation open(DOMString, optional unsigned long long)
+Pass	IDBFactory interface: operation deleteDatabase(DOMString)
+Pass	IDBFactory interface: operation databases()
+Pass	IDBFactory interface: operation cmp(any, any)
+Pass	IDBFactory must be primary interface of [object IDBFactory]
+Pass	Stringification of [object IDBFactory]
+Pass	IDBFactory interface: [object IDBFactory] must inherit property "open(DOMString, optional unsigned long long)" with the proper type
+Pass	IDBFactory interface: calling open(DOMString, optional unsigned long long) on [object IDBFactory] with too few arguments must throw TypeError
+Pass	IDBFactory interface: [object IDBFactory] must inherit property "deleteDatabase(DOMString)" with the proper type
+Pass	IDBFactory interface: calling deleteDatabase(DOMString) on [object IDBFactory] with too few arguments must throw TypeError
+Pass	IDBFactory interface: [object IDBFactory] must inherit property "databases()" with the proper type
+Pass	IDBFactory interface: [object IDBFactory] must inherit property "cmp(any, any)" with the proper type
+Pass	IDBFactory interface: calling cmp(any, any) on [object IDBFactory] with too few arguments must throw TypeError
+Pass	IDBDatabase interface: existence and properties of interface object
+Pass	IDBDatabase interface object length
+Pass	IDBDatabase interface object name
+Pass	IDBDatabase interface: existence and properties of interface prototype object
+Pass	IDBDatabase interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBDatabase interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBDatabase interface: attribute name
+Pass	IDBDatabase interface: attribute version
+Pass	IDBDatabase interface: attribute objectStoreNames
+Pass	IDBDatabase interface: operation transaction((DOMString or sequence<DOMString>), optional IDBTransactionMode, optional IDBTransactionOptions)
+Pass	IDBDatabase interface: operation close()
+Pass	IDBDatabase interface: operation createObjectStore(DOMString, optional IDBObjectStoreParameters)
+Pass	IDBDatabase interface: operation deleteObjectStore(DOMString)
+Pass	IDBDatabase interface: attribute onabort
+Pass	IDBDatabase interface: attribute onclose
+Pass	IDBDatabase interface: attribute onerror
+Pass	IDBDatabase interface: attribute onversionchange
+Pass	IDBObjectStore interface: existence and properties of interface object
+Pass	IDBObjectStore interface object length
+Pass	IDBObjectStore interface object name
+Pass	IDBObjectStore interface: existence and properties of interface prototype object
+Pass	IDBObjectStore interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBObjectStore interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBObjectStore interface: attribute name
+Pass	IDBObjectStore interface: attribute keyPath
+Pass	IDBObjectStore interface: attribute indexNames
+Pass	IDBObjectStore interface: attribute transaction
+Pass	IDBObjectStore interface: attribute autoIncrement
+Pass	IDBObjectStore interface: operation put(any, optional any)
+Pass	IDBObjectStore interface: operation add(any, optional any)
+Pass	IDBObjectStore interface: operation delete(any)
+Pass	IDBObjectStore interface: operation clear()
+Pass	IDBObjectStore interface: operation get(any)
+Pass	IDBObjectStore interface: operation getKey(any)
+Pass	IDBObjectStore interface: operation getAll(optional any, optional unsigned long)
+Pass	IDBObjectStore interface: operation getAllKeys(optional any, optional unsigned long)
+Pass	IDBObjectStore interface: operation getAllRecords(optional IDBGetAllOptions)
+Pass	IDBObjectStore interface: operation count(optional any)
+Pass	IDBObjectStore interface: operation openCursor(optional any, optional IDBCursorDirection)
+Pass	IDBObjectStore interface: operation openKeyCursor(optional any, optional IDBCursorDirection)
+Pass	IDBObjectStore interface: operation index(DOMString)
+Pass	IDBObjectStore interface: operation createIndex(DOMString, (DOMString or sequence<DOMString>), optional IDBIndexParameters)
+Pass	IDBObjectStore interface: operation deleteIndex(DOMString)
+Pass	IDBIndex interface: existence and properties of interface object
+Pass	IDBIndex interface object length
+Pass	IDBIndex interface object name
+Pass	IDBIndex interface: existence and properties of interface prototype object
+Pass	IDBIndex interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBIndex interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBIndex interface: attribute name
+Pass	IDBIndex interface: attribute objectStore
+Pass	IDBIndex interface: attribute keyPath
+Pass	IDBIndex interface: attribute multiEntry
+Pass	IDBIndex interface: attribute unique
+Pass	IDBIndex interface: operation get(any)
+Pass	IDBIndex interface: operation getKey(any)
+Pass	IDBIndex interface: operation getAll(optional any, optional unsigned long)
+Pass	IDBIndex interface: operation getAllKeys(optional any, optional unsigned long)
+Pass	IDBIndex interface: operation getAllRecords(optional IDBGetAllOptions)
+Pass	IDBIndex interface: operation count(optional any)
+Pass	IDBIndex interface: operation openCursor(optional any, optional IDBCursorDirection)
+Pass	IDBIndex interface: operation openKeyCursor(optional any, optional IDBCursorDirection)
+Pass	IDBKeyRange interface: existence and properties of interface object
+Pass	IDBKeyRange interface object length
+Pass	IDBKeyRange interface object name
+Pass	IDBKeyRange interface: existence and properties of interface prototype object
+Pass	IDBKeyRange interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBKeyRange interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBKeyRange interface: attribute lower
+Pass	IDBKeyRange interface: attribute upper
+Pass	IDBKeyRange interface: attribute lowerOpen
+Pass	IDBKeyRange interface: attribute upperOpen
+Pass	IDBKeyRange interface: operation only(any)
+Pass	IDBKeyRange interface: operation lowerBound(any, optional boolean)
+Pass	IDBKeyRange interface: operation upperBound(any, optional boolean)
+Pass	IDBKeyRange interface: operation bound(any, any, optional boolean, optional boolean)
+Pass	IDBKeyRange interface: operation includes(any)
+Pass	IDBKeyRange must be primary interface of [object IDBKeyRange]
+Pass	Stringification of [object IDBKeyRange]
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "lower" with the proper type
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "upper" with the proper type
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "lowerOpen" with the proper type
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "upperOpen" with the proper type
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "only(any)" with the proper type
+Pass	IDBKeyRange interface: calling only(any) on [object IDBKeyRange] with too few arguments must throw TypeError
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "lowerBound(any, optional boolean)" with the proper type
+Pass	IDBKeyRange interface: calling lowerBound(any, optional boolean) on [object IDBKeyRange] with too few arguments must throw TypeError
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "upperBound(any, optional boolean)" with the proper type
+Pass	IDBKeyRange interface: calling upperBound(any, optional boolean) on [object IDBKeyRange] with too few arguments must throw TypeError
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "bound(any, any, optional boolean, optional boolean)" with the proper type
+Pass	IDBKeyRange interface: calling bound(any, any, optional boolean, optional boolean) on [object IDBKeyRange] with too few arguments must throw TypeError
+Pass	IDBKeyRange interface: [object IDBKeyRange] must inherit property "includes(any)" with the proper type
+Pass	IDBKeyRange interface: calling includes(any) on [object IDBKeyRange] with too few arguments must throw TypeError
+Pass	IDBRecord interface: existence and properties of interface object
+Pass	IDBRecord interface object length
+Pass	IDBRecord interface object name
+Pass	IDBRecord interface: existence and properties of interface prototype object
+Pass	IDBRecord interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBRecord interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBRecord interface: attribute key
+Pass	IDBRecord interface: attribute primaryKey
+Pass	IDBRecord interface: attribute value
+Pass	IDBCursor interface: existence and properties of interface object
+Pass	IDBCursor interface object length
+Pass	IDBCursor interface object name
+Pass	IDBCursor interface: existence and properties of interface prototype object
+Pass	IDBCursor interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBCursor interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBCursor interface: attribute source
+Pass	IDBCursor interface: attribute direction
+Pass	IDBCursor interface: attribute key
+Pass	IDBCursor interface: attribute primaryKey
+Pass	IDBCursor interface: attribute request
+Pass	IDBCursor interface: operation advance(unsigned long)
+Pass	IDBCursor interface: operation continue(optional any)
+Pass	IDBCursor interface: operation continuePrimaryKey(any, any)
+Pass	IDBCursor interface: operation update(any)
+Pass	IDBCursor interface: operation delete()
+Pass	IDBCursorWithValue interface: existence and properties of interface object
+Pass	IDBCursorWithValue interface object length
+Pass	IDBCursorWithValue interface object name
+Pass	IDBCursorWithValue interface: existence and properties of interface prototype object
+Pass	IDBCursorWithValue interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBCursorWithValue interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBCursorWithValue interface: attribute value
+Pass	IDBTransaction interface: existence and properties of interface object
+Pass	IDBTransaction interface object length
+Pass	IDBTransaction interface object name
+Pass	IDBTransaction interface: existence and properties of interface prototype object
+Pass	IDBTransaction interface: existence and properties of interface prototype object's "constructor" property
+Pass	IDBTransaction interface: existence and properties of interface prototype object's @@unscopables property
+Pass	IDBTransaction interface: attribute objectStoreNames
+Pass	IDBTransaction interface: attribute mode
+Pass	IDBTransaction interface: attribute durability
+Pass	IDBTransaction interface: attribute db
+Pass	IDBTransaction interface: attribute error
+Pass	IDBTransaction interface: operation objectStore(DOMString)
+Pass	IDBTransaction interface: operation commit()
+Pass	IDBTransaction interface: operation abort()
+Pass	IDBTransaction interface: attribute onabort
+Pass	IDBTransaction interface: attribute oncomplete
+Pass	IDBTransaction interface: attribute onerror
+Pass	WorkerGlobalScope interface: attribute indexedDB

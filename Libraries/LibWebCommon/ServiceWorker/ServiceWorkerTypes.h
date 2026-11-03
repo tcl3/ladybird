@@ -13,6 +13,9 @@
 #include <LibGC/Forward.h>
 #include <LibURL/Origin.h>
 #include <LibURL/URL.h>
+#include <LibWebCommon/Bindings/Client.h>
+#include <LibWebCommon/Bindings/Clients.h>
+#include <LibWebCommon/Bindings/Document.h>
 #include <LibWebCommon/Bindings/ServiceWorker.h>
 #include <LibWebCommon/Bindings/ServiceWorkerRegistration.h>
 #include <LibWebCommon/Export.h>
@@ -61,6 +64,22 @@ struct ServiceWorkerDescriptor {
 };
 
 // https://w3c.github.io/ServiceWorker/#dfn-service-worker-registration
+// https://w3c.github.io/ServiceWorker/#dfn-service-worker-client
+// What a Client or WindowClient object says of the service worker client it represents. The visibility state, focus
+// state and ancestor origins are those of a window client.
+struct ServiceWorkerClientSnapshot {
+    HTML::EnvironmentId id;
+    URL::URL url;
+    Bindings::ClientType type { Bindings::ClientType::Window };
+    Bindings::FrameType frame_type { Bindings::FrameType::None };
+    Bindings::DocumentVisibilityState visibility_state { Bindings::DocumentVisibilityState::Hidden };
+    bool focused { false };
+    Vector<String> ancestor_origins;
+};
+
+// The source of a message that a service worker receives: a client, or another service worker.
+using ServiceWorkerMessageSource = Variant<ServiceWorkerClientSnapshot, ServiceWorkerDescriptor>;
+
 struct ServiceWorkerRegistrationSnapshot {
     ServiceWorkerRegistrationId id { 0 };
     URL::URL scope_url;
@@ -108,6 +127,7 @@ using ServiceWorkerScriptFetchResult = Optional<ServiceWorkerJobError>;
 
 }
 
+GC_UNTRACED_CAPTURE(Web::ServiceWorker::ServiceWorkerClientSnapshot);
 GC_UNTRACED_CAPTURE(Web::ServiceWorker::ServiceWorkerDescriptor);
 GC_UNTRACED_CAPTURE(Web::ServiceWorker::ServiceWorkerRegistrationSnapshot);
 

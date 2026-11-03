@@ -3493,6 +3493,23 @@ void WebContentPage::did_request_service_worker_ready(Web::HTML::EnvironmentId e
     client().session().service_worker_registry->get_ready_registration(client_environment, request_id, move(creation_url));
 }
 
+void WebContentPage::did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    auto settings = hosted_environment(source.id);
+    if (!settings.has_value())
+        return;
+    if (source.type != Web::Bindings::ClientType::Window) {
+        client().did_misbehave("did_post_message_to_service_worker"sv, "a page sent a message from a client that is not a window"sv);
+        return;
+    }
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(source.id).value_or(true),
+    };
+    client().session().service_worker_registry->post_message_to_service_worker(client_environment, move(source), service_worker_id, move(message));
+}
+
 void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)
 {
     if (!hosted_environment(environment_id).has_value())

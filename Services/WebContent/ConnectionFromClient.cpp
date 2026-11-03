@@ -3870,6 +3870,11 @@ void ConnectionFromClient::service_worker_ready(u64 request_id, Web::ServiceWork
     Web::ServiceWorker::service_worker_ready(request_id, move(registration));
 }
 
+void ConnectionFromClient::service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message)
+{
+    Web::ServiceWorker::service_worker_message_to_client(client_id, move(source), origin, move(message));
+}
+
 void ConnectionFromClient::service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker)
 {
     Web::ServiceWorker::service_worker_state_changed(move(worker));

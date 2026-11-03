@@ -11,14 +11,27 @@ use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
-use libjs_rust::api::{Gc, Realm, Trace, Visitor, Vm};
+use libjs_rust::api::{Gc, MarkedVec, Object, Realm, Trace, Value, Visitor, Vm};
 
 use crate::bindings::conversions::UsvString;
 use crate::bindings::event_target::{CppEvent, CppEventTarget, GetTheParent};
 use crate::bindings::interface::{Ref, Wrappable, allocate};
 use crate::bindings::realm_data::realm_data;
 use crate::bindings::{CallContext, WebIdlResult};
+use crate::html::message_port::StructuredSerializeOptions;
+use crate::html::structured_serialize::structured_serialize_with_transfer;
+use crate::html::structured_serialize::transfer_record::TransferRecord;
 use crate::service_worker::{LiveObjects, ServiceWorkerDescriptor};
+
+unsafe extern "C" {
+    /// Sends the message to the service worker, with the incumbent settings object as its source. LibWeb takes the
+    /// record over.
+    fn web_service_worker_post_message_to_service_worker(
+        realm: *mut c_void,
+        service_worker_id: u64,
+        record: *mut c_void,
+    );
+}
 
 // https://w3c.github.io/ServiceWorker/#enumdef-serviceworkerstate
 /// In the order of Web::Bindings::ServiceWorkerState, which C++ passes as its underlying value.
@@ -106,6 +119,54 @@ impl ServiceWorker {
     pub(crate) fn state(&self, _: &mut CallContext) -> WebIdlResult<ServiceWorkerState> {
         // The state attribute must return the value (in ServiceWorkerState enumeration) to which it was last set.
         Ok(self.state.get())
+    }
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-postmessage
+    pub(crate) fn post_message(
+        &self,
+        cx: &mut CallContext,
+        message: Value,
+        transfer: MarkedVec<'_, Gc<Object>>,
+    ) -> WebIdlResult<()> {
+        // 1. Let options be «[ "transfer" → transfer ]».
+        // 2. Invoke postMessage(message, options) with message and options.
+        self.post_message_steps(cx, message, &transfer.values())
+    }
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
+    pub(crate) fn post_message_with_options(
+        &self,
+        cx: &mut CallContext,
+        message: Value,
+        options: StructuredSerializeOptions<'_>,
+    ) -> WebIdlResult<()> {
+        self.post_message_steps(cx, message, &options.transfer.values())
+    }
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
+    fn post_message_steps(&self, cx: &CallContext, message: Value, transfer: &[Gc<Object>]) -> WebIdlResult<()> {
+        // 1. Let serviceWorker be the service worker represented by this.
+        // 2. Let incumbentSettings be the incumbent settings object.
+        // 3. Let incumbentGlobal be incumbentSettings's global object.
+        // NB: LibWeb reads the incumbent settings object when it sends the message.
+
+        // 4. Let serializeWithTransferResult be StructuredSerializeWithTransfer(message, options["transfer"]). Rethrow
+        //    any exceptions.
+        let serialize_with_transfer_result = structured_serialize_with_transfer(cx, message, transfer)?;
+
+        // 5. If the result of running the Should Skip Event algorithm with "message" and serviceWorker is true, then
+        //    return.
+        // 6. Run these substeps in parallel:
+        // NB: The UI process runs step 5 and the substeps, and the service worker's process queues the task.
+        // SAFETY: The realm is live, and LibWeb takes the record over.
+        unsafe {
+            web_service_worker_post_message_to_service_worker(
+                self.realm.as_ptr().cast(),
+                self.id,
+                TransferRecord::into_cpp(serialize_with_transfer_result, cx.vm()).into_raw(),
+            );
+        }
+        Ok(())
     }
 }
 

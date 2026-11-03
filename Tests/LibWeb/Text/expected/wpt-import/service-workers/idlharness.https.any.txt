@@ -2,8 +2,8 @@ Harness status: OK
 
 Found 175 tests
 
-153 Pass
-22 Fail
+161 Pass
+14 Fail
 Pass	idl_test setup
 Pass	idl_test validation
 Pass	Partial interface Navigator: original interface defined
@@ -42,17 +42,17 @@ Pass	ServiceWorker interface: existence and properties of interface prototype ob
 Pass	ServiceWorker interface: existence and properties of interface prototype object's @@unscopables property
 Pass	ServiceWorker interface: attribute scriptURL
 Pass	ServiceWorker interface: attribute state
-Fail	ServiceWorker interface: operation postMessage(any, sequence<object>)
-Fail	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
+Pass	ServiceWorker interface: operation postMessage(any, sequence<object>)
+Pass	ServiceWorker interface: operation postMessage(any, optional StructuredSerializeOptions)
 Pass	ServiceWorker interface: attribute onstatechange
 Pass	ServiceWorker must be primary interface of registrationInstance.installing
 Pass	Stringification of registrationInstance.installing
 Pass	ServiceWorker interface: registrationInstance.installing must inherit property "scriptURL" with the proper type
 Pass	ServiceWorker interface: registrationInstance.installing must inherit property "state" with the proper type
-Fail	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, sequence<object>)" with the proper type
-Fail	ServiceWorker interface: calling postMessage(any, sequence<object>) on registrationInstance.installing with too few arguments must throw TypeError
-Fail	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, optional StructuredSerializeOptions)" with the proper type
-Fail	ServiceWorker interface: calling postMessage(any, optional StructuredSerializeOptions) on registrationInstance.installing with too few arguments must throw TypeError
+Pass	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, sequence<object>)" with the proper type
+Pass	ServiceWorker interface: calling postMessage(any, sequence<object>) on registrationInstance.installing with too few arguments must throw TypeError
+Pass	ServiceWorker interface: registrationInstance.installing must inherit property "postMessage(any, optional StructuredSerializeOptions)" with the proper type
+Pass	ServiceWorker interface: calling postMessage(any, optional StructuredSerializeOptions) on registrationInstance.installing with too few arguments must throw TypeError
 Pass	ServiceWorker interface: registrationInstance.installing must inherit property "onstatechange" with the proper type
 Pass	ServiceWorkerRegistration interface: existence and properties of interface object
 Pass	ServiceWorkerRegistration interface object length
@@ -91,7 +91,7 @@ Pass	ServiceWorkerContainer interface: attribute ready
 Pass	ServiceWorkerContainer interface: operation register((TrustedScriptURL or USVString), optional RegistrationOptions)
 Pass	ServiceWorkerContainer interface: operation getRegistration(optional USVString)
 Pass	ServiceWorkerContainer interface: operation getRegistrations()
-Fail	ServiceWorkerContainer interface: operation startMessages()
+Pass	ServiceWorkerContainer interface: operation startMessages()
 Pass	ServiceWorkerContainer interface: attribute oncontrollerchange
 Pass	ServiceWorkerContainer interface: attribute onmessage
 Pass	ServiceWorkerContainer interface: attribute onmessageerror
@@ -104,7 +104,7 @@ Pass	ServiceWorkerContainer interface: calling register((TrustedScriptURL or USV
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistration(optional USVString)" with the proper type
 Pass	ServiceWorkerContainer interface: calling getRegistration(optional USVString) on navigator.serviceWorker with too few arguments must throw TypeError
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "getRegistrations()" with the proper type
-Fail	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
+Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "startMessages()" with the proper type
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type

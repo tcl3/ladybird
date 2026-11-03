@@ -7,10 +7,14 @@
 //! Service Workers, https://w3c.github.io/ServiceWorker/. The UI process holds the registrations, service workers and
 //! job queues of every process, and describes them to the realms that have objects for them.
 
+pub(crate) mod client;
+pub(crate) mod clients;
 pub(crate) mod exports;
 pub(crate) mod extendable_event;
+pub(crate) mod extendable_message_event;
 pub(crate) mod install_event;
 pub(crate) mod lifecycle_events;
+pub(crate) mod messages;
 #[allow(
     clippy::module_inception,
     reason = "the bindings name the module of an interface after its IDL file"
@@ -18,6 +22,7 @@ pub(crate) mod lifecycle_events;
 pub(crate) mod service_worker;
 pub(crate) mod service_worker_container;
 pub(crate) mod service_worker_registration;
+pub(crate) mod window_client;
 
 use libjs_rust::api::{EmbedderCell, GcWeak, MarkedVec, Vm};
 
@@ -31,6 +36,7 @@ pub(crate) fn shut_down_service_workers_of_agent() {
     service_worker::forget_service_worker_objects_of_agent();
     service_worker_registration::forget_registration_objects_of_agent();
     lifecycle_events::forget_lifecycle_event_of_agent();
+    messages::forget_extended_events_of_agent();
 }
 
 /// A service worker, https://w3c.github.io/ServiceWorker/#dfn-service-worker, as the UI process describes it.

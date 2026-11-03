@@ -17,6 +17,7 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/WindowProxy.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
+#include <LibWeb/ServiceWorker/ServiceWorker.h>
 #include <LibWeb/WebIDL/CallbackType.h>
 
 // Defined by the generated Rust bindings.
@@ -119,6 +120,7 @@ void web_bindings_remove_event_listener_without_options(DOM::EventTarget*, Reado
 DOM::Event* web_bindings_create_event(void* realm, ReadonlyBytes type, bool bubbles, bool cancelable, bool composed);
 RustEvent* web_bindings_create_rust_event(void* realm, FlatPtr type, bool bubbles, bool cancelable, bool composed);
 DOM::Event* web_bindings_create_message_event(void* realm, ReadonlyBytes type, JSValue data, JSObject* const* ports, size_t count, URL::FFI::FfiOrigin const* origin, HTML::WindowProxy* source);
+DOM::Event* web_bindings_create_service_worker_message_event(void* realm, ReadonlyBytes type, JSValue data, ReadonlyBytes origin, RustInterfaceCell* source, JSObject* const* ports, size_t count);
 JSValue web_bindings_message_event_data(JSValue event);
 void web_bindings_set_event_owner(RustEvent*, u16 interface_name, RustInterfaceCell* owner);
 void web_bindings_event_set_is_trusted(DOM::Event*, bool is_trusted);
@@ -219,6 +221,21 @@ DOM::Event* web_bindings_create_message_event(void* realm, ReadonlyBytes type, J
     if (!origin)
         return HTML::MessageEvent::create(js_realm.global_object(), event_type, event_init).ptr();
     return HTML::MessageEvent::create(js_realm.global_object(), event_type, event_init, URL::RustIntegration::origin_from_ffi(*origin)).ptr();
+}
+
+DOM::Event* web_bindings_create_service_worker_message_event(void* realm, ReadonlyBytes type, JSValue data, ReadonlyBytes origin, RustInterfaceCell* source, JSObject* const* ports, size_t count)
+{
+    auto& js_realm = *static_cast<JS::Realm*>(realm);
+    HTML::MessageEventInit event_init;
+    event_init.data = JS::HostABI::value_from_abi(data);
+    event_init.origin = Utf16String::from_utf8_without_validation(origin);
+    event_init.source = GC::Ref { static_cast<ServiceWorker::ServiceWorker&>(*source) };
+    for (size_t i = 0; i < count; ++i) {
+        auto* port = impl_from<HTML::MessagePort>(JS::HostABI::object_from_abi(ports[i]));
+        VERIFY(port);
+        event_init.ports.append(*port);
+    }
+    return HTML::MessageEvent::create(js_realm.global_object(), Utf16FlyString::from_utf8_without_validation(type), event_init).ptr();
 }
 
 JSValue web_bindings_message_event_data(JSValue event)

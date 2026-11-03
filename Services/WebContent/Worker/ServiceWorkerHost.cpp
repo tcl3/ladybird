@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibCore/EventLoop.h>
 #include <LibCore/Timer.h>
 #include <LibGC/Heap.h>
 #include <LibJS/HostClassBuilder.h>
@@ -88,6 +89,9 @@ void ServiceWorkerHost::run_closing_steps()
     if (m_lifecycle_event_deadline_timer)
         m_lifecycle_event_deadline_timer->stop();
     m_lifecycle_event_deadline_timer = nullptr;
+    for (auto& [event_id, timer] : m_extended_event_deadline_timers)
+        timer->stop();
+    m_extended_event_deadline_timers.clear();
 
     // NB: The roots have to go before the heap does.
     m_page = nullptr;
@@ -161,8 +165,8 @@ void ServiceWorkerHost::set_up_service_worker_global_scope(GC::Ref<Web::Page> pa
     m_console = GC::Heap::the().allocate<Web::HTML::WorkerDebugConsoleClient>(console_object.console());
     console_object.console().set_client(*m_console);
 
-    m_global_scope->set_service_worker_state(m_request.worker.state);
-    m_global_scope->set_registration_update_via_cache(m_request.registration.update_via_cache);
+    m_global_scope->set_service_worker(m_request.worker);
+    m_global_scope->set_registration(m_request.registration);
 
     // NB: The rest of the steps run once the script resource is fetched.
 }
@@ -285,8 +289,49 @@ void ServiceWorkerHost::run_service_worker(GC::Ref<Web::Page> page, GC::Ref<Web:
 
 void ServiceWorkerHost::service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor const& worker)
 {
-    if (worker.id == m_request.worker.id && m_global_scope)
-        m_global_scope->set_service_worker_state(worker.state);
+    if (m_global_scope)
+        m_global_scope->service_worker_state_changed(worker);
+}
+
+void ServiceWorkerHost::registration_state_changed(Web::ServiceWorker::ServiceWorkerRegistrationId registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> const& source)
+{
+    if (m_global_scope && registration_id == m_request.registration.id)
+        m_global_scope->registration_state_changed(target, source);
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
+void ServiceWorkerHost::dispatch_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin const& origin, Web::HTML::SerializedTransferRecord message, AK::Duration timeout)
+{
+    if (!m_global_scope)
+        return;
+
+    // 6.2. Queue a task on the DOM manipulation task source to run the following steps:
+    auto record = make<Web::HTML::SerializedTransferRecord>(move(message));
+    Web::HTML::queue_global_task(Web::HTML::Task::Source::DOMManipulation, Web::HTML::relevant_global_object(*m_global_scope), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, move(source), origin, move(record), timeout), [](auto& protected_this, auto& source, auto& origin, auto& record, auto timeout) {
+        auto event_id = Web::ServiceWorker::dispatch_message_event(*protected_this->m_global_scope, source, origin, move(*record), protected_this.ptr(), [](void* ctx, bool has_pending_events) {
+            static_cast<ServiceWorkerHost*>(ctx)->pending_events_changed(has_pending_events);
+        });
+        if (event_id == 0)
+            return;
+
+        // NB: An extendable event's timed out flag "is set after an optional user agent imposed delay if the pending
+        //     promises count is greater than zero", which this is.
+        auto timer = Core::Timer::create_single_shot(timeout, [protected_this, event_id] {
+            Web::ServiceWorker::time_out_extended_event(event_id);
+
+            // NB: The timer outlives its own handler.
+            Core::deferred_invoke([protected_this, event_id] {
+                protected_this->m_extended_event_deadline_timers.remove(event_id);
+            });
+        });
+        timer->start();
+        protected_this->m_extended_event_deadline_timers.set(event_id, move(timer));
+    }));
+}
+
+void ServiceWorkerHost::pending_events_changed(bool has_pending_events)
+{
+    as<PageHost>(m_page->client()).did_change_service_worker_pending_events(has_pending_events);
 }
 
 void ServiceWorkerHost::dispatch_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, AK::Duration timeout)

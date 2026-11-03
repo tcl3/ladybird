@@ -9,11 +9,11 @@ interface ServiceWorkerContainer : EventTarget {
     [NewObject] Promise<(ServiceWorkerRegistration or undefined)> getRegistration(optional USVString clientURL = "");
     [NewObject] Promise<FrozenArray<ServiceWorkerRegistration>> getRegistrations();
 
-    [FIXME] undefined startMessages();
+    undefined startMessages();
 
     // events
     attribute EventHandler oncontrollerchange;
-    attribute EventHandler onmessage; // event.source of message events is ServiceWorker object
+    [ImplementedAs=set_onmessage] attribute EventHandler onmessage; // event.source of message events is ServiceWorker object
     attribute EventHandler onmessageerror;
 };
 

@@ -52,6 +52,8 @@ public:
     virtual void page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId) override;
     virtual void page_did_request_service_worker_ready(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& creation_url) override;
     virtual void page_did_call_service_worker_skip_waiting(Web::ServiceWorker::ServiceWorkerRequestId) override;
+    virtual void page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord) override;
+    virtual void page_did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord) override;
     virtual void request_file(Web::FileRequest) override;
     virtual URL::BlobURLEntry::Token page_did_add_blob_url_entry(Web::HTML::EnvironmentSettingsObject const&, Utf16String const& url, Web::FileAPI::SerializedBlobURLEntry const&) override;
     virtual void page_did_remove_blob_url_entries(Web::HTML::EnvironmentSettingsObject const&, Vector<Utf16String> const& urls) override;
@@ -75,6 +77,7 @@ public:
     void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult);
     void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle);
     void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
+    void did_change_service_worker_pending_events(bool has_pending_events);
 
 private:
     explicit PageHost(ConnectionFromClient&);

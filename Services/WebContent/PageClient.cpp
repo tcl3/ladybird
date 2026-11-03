@@ -1761,6 +1761,11 @@ void PageClient::page_did_request_service_worker_ready(Web::HTML::EnvironmentId 
     client().async_did_request_service_worker_ready(m_id, environment_id, request_id, creation_url);
 }
 
+void PageClient::page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, Web::ServiceWorker::ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    client().async_did_post_message_to_service_worker(m_id, source, service_worker_id, move(message));
+}
+
 // The UI process passes the violation on to the process hosting the navigation's source, while it still hosts it.
 void PageClient::page_did_report_navigation_violation_of_remote_client(Web::HTML::RemoteClientNavigation const& navigation, u64 policy_index, Web::ContentSecurityPolicy::RemoteViolationDirective directive, bool url_is_https)
 {

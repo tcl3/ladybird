@@ -22,9 +22,12 @@ use liburl_rust::origin::Origin;
 use liburl_rust::url::{BasicParseOptions, ExcludeFragment, Url, basic_parse};
 
 use crate::bindings::conversions::{TrustedScriptURLOrUSVString, UsvString};
-use crate::bindings::event_target::{CppEventTarget, GetTheParent};
+use crate::bindings::event_target::{CppEvent, CppEventTarget, GetTheParent, set_event_handler_attribute};
 use crate::bindings::global_object::window_from_global_object;
-use crate::bindings::interface::{Ref, Wrappable, allocate, with_temporary_execution_context_and_callbacks, wrap};
+use crate::bindings::interface::{
+    Interface, Ref, Wrappable, allocate, cell_from_abi, with_temporary_execution_context,
+    with_temporary_execution_context_and_callbacks, wrap,
+};
 use crate::bindings::promise::{
     TaskSource, WebIdlPromise, create_promise, create_rejected_promise_from_exception, promise_realm,
     queue_a_global_task, queue_a_task, reject_promise_with_exception, resolve_promise,
@@ -32,6 +35,10 @@ use crate::bindings::promise::{
 use crate::bindings::realm_data::realm_data;
 use crate::bindings::{CallContext, Exception, WebIdlResult};
 use crate::domurl::url_input;
+use crate::html::message_port::MessagePort;
+use crate::html::structured_serialize::cpp::OwnedSerializedTransferRecord;
+use crate::html::structured_serialize::structured_deserialize_with_transfer;
+use crate::html::structured_serialize::transfer_record::TransferRecord;
 use crate::html::worker::WorkerType;
 use crate::service_worker::service_worker::{ServiceWorker, ServiceWorkerState, get_the_service_worker_object};
 use crate::service_worker::service_worker_registration::{
@@ -80,6 +87,10 @@ unsafe extern "C" {
     /// Has the UI process resolve the ready promise of the realm's settings object, which
     /// web_rust_service_worker_ready() reports.
     fn web_service_worker_request_ready(realm: *mut c_void, request_id: u64);
+
+    /// The ServiceWorkerContainer of the Navigator or WorkerNavigator of the realm's global object, which LibWeb creates
+    /// if it does not exist yet.
+    fn web_service_worker_container_of_realm(realm: *mut c_void) -> *mut c_void;
 
     /// Has the UI process look up the registration that matches the client URL, or every registration if the URL is
     /// empty, for the realm's settings object, which web_rust_service_worker_registration_lookup_finished() reports.
@@ -503,6 +514,22 @@ impl ServiceWorkerContainer {
         // 5. Return promise.
         Ok(promise)
     }
+
+    // https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-startmessages
+    pub(crate) fn start_messages(&self, cx: &mut CallContext) -> WebIdlResult<()> {
+        // The startMessages() method steps are to enable this's client message queue if it is not enabled.
+        enable_client_message_queue(cx.vm(), self.realm);
+        Ok(())
+    }
+
+    // https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-onmessage
+    pub(crate) fn set_onmessage(this: &Ref<Self>, cx: &mut CallContext, value: Value) {
+        let container: &Self = this;
+        set_event_handler_attribute(container, "message", value);
+
+        // The first time the onmessage setter steps are performed, enable this's client message queue.
+        enable_client_message_queue(cx.vm(), this.realm);
+    }
 }
 
 fn get_trusted_type_compliant_script_url(
@@ -819,4 +846,141 @@ pub(crate) fn service_worker_ready(vm: &Vm, request_id: u64, registration: Servi
             });
         },
     );
+}
+
+/// A message that a service worker posted to the service worker client of a container, which a task of the
+/// container's client message queue dispatches.
+pub(crate) struct ClientMessage {
+    source: ServiceWorkerDescriptor,
+    origin: String,
+    serialize_with_transfer_result: OwnedSerializedTransferRecord,
+}
+
+// https://w3c.github.io/ServiceWorker/#dfn-client-message-queue
+/// The client message queue of the ServiceWorkerContainer whose service worker client is the settings object of a
+/// realm, which the realm keeps, so that a message can reach a client before its container exists.
+#[derive(Default)]
+pub(crate) struct ClientMessageQueue {
+    // A client message queue can be enabled or disabled, and is initially disabled.
+    enabled: Cell<bool>,
+    messages: RefCell<std::collections::VecDeque<ClientMessage>>,
+}
+
+pub(crate) fn enable_client_message_queue(vm: &Vm, realm: Gc<Realm>) {
+    let data = realm_data(vm, realm);
+    let queue = &data.service_worker_client_message_queue;
+    if queue.enabled.replace(true) {
+        return;
+    }
+    // When a ServiceWorkerContainer object's client message queue is enabled, the event loop must use it as one of
+    // its task sources.
+    for _ in 0..queue.messages.borrow().len() {
+        queue_client_message_task(vm, realm);
+    }
+}
+
+// https://w3c.github.io/ServiceWorker/#client-postmessage-options
+pub(crate) fn add_client_message(
+    vm: &Vm,
+    realm: Gc<Realm>,
+    source: ServiceWorkerDescriptor,
+    origin: String,
+    serialize_with_transfer_result: OwnedSerializedTransferRecord,
+) {
+    // 4.5. Add a task that runs the following steps to destination's client message queue:
+    let data = realm_data(vm, realm);
+    let queue = &data.service_worker_client_message_queue;
+    queue.messages.borrow_mut().push_back(ClientMessage {
+        source,
+        origin,
+        serialize_with_transfer_result,
+    });
+    if queue.enabled.get() {
+        queue_client_message_task(vm, realm);
+    }
+}
+
+fn queue_client_message_task(vm: &Vm, realm: Gc<Realm>) {
+    // NB: The tasks of the client message queue run on the posted message task source. When the container's relevant
+    //     global object is a Window, a global task is associated with its document, as the queue's tasks must be.
+    queue_a_global_task(
+        vm,
+        realm.global_object(),
+        TaskSource::PostedMessage,
+        realm,
+        |vm, realm| {
+            let message = realm_data(vm, realm)
+                .service_worker_client_message_queue
+                .messages
+                .borrow_mut()
+                .pop_front();
+            if let Some(message) = message {
+                dispatch_client_message(vm, realm, message);
+            }
+        },
+    );
+}
+
+// https://w3c.github.io/ServiceWorker/#client-postmessage-options
+fn dispatch_client_message(vm: &Vm, realm: Gc<Realm>, message: ClientMessage) {
+    // 4.4. Let destination be the ServiceWorkerContainer object whose associated service worker client is
+    //      targetClient.
+    // SAFETY: The realm is live, and LibWeb returns the cell of its container.
+    let destination: Ref<ServiceWorkerContainer> =
+        unsafe { cell_from_abi(web_service_worker_container_of_realm(realm.as_ptr().cast())) };
+
+    // 4.5.1. Let origin be sourceSettings's origin.
+    // 4.5.2. Let source be the result of getting the service worker object that represents contextObject's relevant
+    //        global object's service worker in targetClient.
+    let source = get_the_service_worker_object(vm, realm, &message.source);
+
+    // 4.5.3. Let deserializeRecord be StructuredDeserializeWithTransfer(serializeWithTransferResult, destination's
+    //        relevant Realm). If this throws an exception, catch it, fire an event named messageerror at destination,
+    //        using MessageEvent, with its origin initialized to origin and the source attribute initialized to source,
+    //        and then abort these steps.
+    let cx = CallContext::new(vm, realm);
+    // NB: The execution context must not stay on the stack while the event is dispatched, so that a microtask
+    //     checkpoint can be performed after each listener.
+    let serialize_with_transfer_result = TransferRecord::from_cpp(vm, message.serialize_with_transfer_result.record());
+    let deserialize_record = with_temporary_execution_context(realm, || {
+        structured_deserialize_with_transfer(&cx, serialize_with_transfer_result)
+    });
+    TransferRecord::discard(serialize_with_transfer_result);
+    let Ok(deserialize_record) = deserialize_record else {
+        let event = CppEvent::create_service_worker_message_event(
+            realm,
+            "messageerror",
+            Value::NULL,
+            &message.origin,
+            source,
+            &[],
+        );
+        event.set_is_trusted(true);
+        destination.event_target.dispatch_event(&event);
+        return;
+    };
+
+    // 4.5.4. Let messageClone be deserializeRecord.[[Deserialized]].
+    // 4.5.5. Let newPorts be a new frozen array consisting of all MessagePort objects in
+    //        deserializeRecord.[[TransferredValues]], if any.
+    let new_ports = MarkedVec::new(vm);
+    for value in deserialize_record.transferred_values.values().iter() {
+        if libjs_rust::api::is_host_instance_of(value, MessagePort::wrapper_class()) {
+            new_ports.push(*value);
+        }
+    }
+
+    // 4.5.6. Dispatch an event named message at destination, using MessageEvent, with its origin initialized to
+    //        origin, the source attribute initialized to source, the data attribute initialized to messageClone, and
+    //        the ports attribute initialized to newPorts.
+    let event = CppEvent::create_service_worker_message_event(
+        realm,
+        "message",
+        deserialize_record.deserialized,
+        &message.origin,
+        source,
+        &new_ports.values(),
+    );
+    event.set_is_trusted(true);
+    destination.event_target.dispatch_event(&event);
 }

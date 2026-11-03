@@ -6,10 +6,12 @@
 
 #pragma once
 
+#include <AK/HashMap.h>
 #include <AK/RefCounted.h>
 #include <LibCore/Forward.h>
 #include <LibGC/Root.h>
 #include <LibWeb/Forward.h>
+#include <LibWebCommon/HTML/SerializationRecords.h>
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <WebContent/Worker/Forward.h>
 
@@ -30,7 +32,9 @@ public:
     void run_closing_steps();
 
     void service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor const&);
+    void registration_state_changed(Web::ServiceWorker::ServiceWorkerRegistrationId, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> const& source);
     void dispatch_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, AK::Duration timeout);
+    void dispatch_message_event(Web::ServiceWorker::ServiceWorkerMessageSource, URL::Origin const&, Web::HTML::SerializedTransferRecord, AK::Duration timeout);
     void skip_waiting_finished(Web::ServiceWorker::ServiceWorkerRequestId);
 
 private:
@@ -39,6 +43,7 @@ private:
     bool finish_setting_up_service_worker_global_scope(GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void run_service_worker(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void lifecycle_event_finished(bool failed);
+    void pending_events_changed(bool has_pending_events);
 
     Web::ServiceWorker::ServiceWorkerStartRequest m_request;
 
@@ -49,6 +54,7 @@ private:
 
     Optional<Web::ServiceWorker::ServiceWorkerLifecycleEvent> m_lifecycle_event_in_flight;
     RefPtr<Core::Timer> m_lifecycle_event_deadline_timer;
+    HashMap<u64, NonnullRefPtr<Core::Timer>> m_extended_event_deadline_timers;
 };
 
 }

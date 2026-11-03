@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A message's source is a Client for a dedicated worker, and a ServiceWorker for another service worker.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const describe = source => `${source.constructor.name}${source.type ? ` of type ${source.type}, frame type ${source.frameType}` : ""}`;
+        const relay = await server.createEcho("GET", "/relay/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `let client;
+            self.addEventListener("message", async event => {
+                const describe = ${describe.toString()};
+                if (event.data.type === "relay") {
+                    client = event.source;
+                    const registration = await navigator.serviceWorker.getRegistration(event.data.scope);
+                    registration.active.postMessage({ type: "from relay" });
+                    return;
+                }
+                client.postMessage({ sourceSeenByEcho: event.data.source, sourceSeenByRelay: describe(event.source) });
+            });`,
+        });
+        const echo = await server.createEcho("GET", "/echo/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("message", event => {
+                const describe = ${describe.toString()};
+                event.source.postMessage({ type: "echo", source: describe(event.source) });
+            });`,
+        });
+        const dedicatedWorkerURL = await server.createEcho("GET", "/dedicated-worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `onmessage = async event => {
+                const registration = await navigator.serviceWorker.getRegistration(event.data);
+                navigator.serviceWorker.onmessage = reply => postMessage({ data: reply.data, sourceIsWorker: reply.source === registration.active });
+                registration.active.postMessage({ type: "from dedicated worker" });
+            };`,
+        });
+
+        const activate = async script => {
+            const registration = await navigator.serviceWorker.register(script);
+            const worker = registration.installing;
+            await waitForCondition(() => worker.state === "activated");
+            return registration;
+        };
+        const relayRegistration = await activate(relay);
+        const echoRegistration = await activate(echo);
+
+        const dedicatedWorker = new Worker(dedicatedWorkerURL);
+        const fromDedicatedWorker = new Promise(resolve => (dedicatedWorker.onmessage = event => resolve(event.data)));
+        dedicatedWorker.postMessage(echoRegistration.scope);
+        const { data, sourceIsWorker } = await fromDedicatedWorker;
+        println(`Source of a message from a dedicated worker: ${data.source}`);
+        println(`The dedicated worker's reply comes from the service worker: ${sourceIsWorker}`);
+
+        const reply = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        relayRegistration.active.postMessage({ type: "relay", scope: echoRegistration.scope });
+        const relayed = await reply;
+        println(`Source of a message from another service worker: ${relayed.sourceSeenByEcho}`);
+        println(`Source of the reply to it: ${relayed.sourceSeenByRelay}`);
+    });
+</script>

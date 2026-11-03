@@ -13,7 +13,10 @@
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/ServiceWorker/EventNames.h>
+#include <LibWeb/ServiceWorker/ServiceWorker.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerRegistration.h>
 #include <LibWebCommon/Fetch/Infrastructure/HTTP/Statuses.h>
 
 namespace Web::ServiceWorker {
@@ -106,6 +109,45 @@ GC::Ref<CookieStore::CookieStore> ServiceWorkerGlobalScope::cookie_store()
     return *m_cookie_store;
 }
 
+// https://w3c.github.io/ServiceWorker/#service-worker-global-scope-registration
+GC::Ref<ServiceWorkerRegistration> ServiceWorkerGlobalScope::registration()
+{
+    // The registration getter steps are to return the result of getting the service worker registration object
+    // representing this's service worker's containing service worker registration in this's relevant settings object.
+    return service_worker_registration_object(HTML::relevant_realm(*this), m_registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-global-scope-serviceworker
+GC::Ref<ServiceWorker> ServiceWorkerGlobalScope::service_worker()
+{
+    // The serviceWorker getter steps are to return the result of getting the service worker object that represents
+    // this's service worker in this's relevant settings object.
+    return service_worker_object(HTML::relevant_realm(*this), m_service_worker);
+}
+
+void ServiceWorkerGlobalScope::service_worker_state_changed(ServiceWorkerDescriptor const& worker)
+{
+    for (auto* descriptor : { &m_service_worker, m_registration.installing_worker.ptr(), m_registration.waiting_worker.ptr(), m_registration.active_worker.ptr() }) {
+        if (descriptor && descriptor->id == worker.id)
+            descriptor->state = worker.state;
+    }
+}
+
+void ServiceWorkerGlobalScope::registration_state_changed(ServiceWorkerRegistrationSlot target, Optional<ServiceWorkerDescriptor> source)
+{
+    switch (target) {
+    case ServiceWorkerRegistrationSlot::Installing:
+        m_registration.installing_worker = move(source);
+        break;
+    case ServiceWorkerRegistrationSlot::Waiting:
+        m_registration.waiting_worker = move(source);
+        break;
+    case ServiceWorkerRegistrationSlot::Active:
+        m_registration.active_worker = move(source);
+        break;
+    }
+}
+
 // https://w3c.github.io/ServiceWorker/#dom-serviceworkerglobalscope-skipwaiting
 GC::Ref<WebIDL::Promise> ServiceWorkerGlobalScope::skip_waiting()
 {
@@ -181,7 +223,7 @@ HTML::PerformTheFetchHook ServiceWorkerGlobalScope::import_scripts_perform_the_f
         auto url = request->url();
 
         // 4. If serviceWorker's state is not "parsed" or "installing":
-        if (!first_is_one_of(self->m_service_worker_state, ServiceWorkerState::Parsed, ServiceWorkerState::Installing)) {
+        if (!first_is_one_of(self->m_service_worker.state, ServiceWorkerState::Parsed, ServiceWorkerState::Installing)) {
             // 1. Return map[url] if it exists and a network error otherwise.
             if (auto resource = self->m_script_resource_map.get(url); resource.has_value())
                 stored_response(*resource);
@@ -209,7 +251,7 @@ HTML::PerformTheFetchHook ServiceWorkerGlobalScope::import_scripts_perform_the_f
         //    - registration's update via cache mode is "none".
         //    - FIXME: The current global object's force bypass cache for import scripts flag is set.
         //    - FIXME: registration is stale.
-        if (self->m_registration_update_via_cache == ServiceWorkerUpdateViaCache::None)
+        if (self->m_registration.update_via_cache == ServiceWorkerUpdateViaCache::None)
             request->set_cache_mode(HTTP::CacheMode::NoCache);
 
         // 9. Let response be the result of fetching request.

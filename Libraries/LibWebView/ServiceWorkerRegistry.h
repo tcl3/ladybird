@@ -19,6 +19,7 @@
 #include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibWebCommon/HTML/Scripting/EnvironmentId.h>
+#include <LibWebCommon/HTML/SerializationRecords.h>
 #include <LibWebCommon/HTML/WorkerAgentForward.h>
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <LibWebCommon/StorageAPI/StorageKey.h>
@@ -79,6 +80,11 @@ public:
     void service_worker_did_run(Web::HTML::WorkerAgentId, bool succeeded, Vector<String> event_types_to_handle);
     void service_worker_did_finish_lifecycle_event(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
     void service_worker_did_call_skip_waiting(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
+    void service_worker_did_change_pending_events(Web::HTML::WorkerAgentId, bool has_pending_events);
+
+    void post_message_to_service_worker(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
+    void service_worker_did_post_message_to_service_worker(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
+    void service_worker_did_post_message_to_client(Web::HTML::WorkerAgentId, String const& client_id, Web::HTML::SerializedTransferRecord);
     void service_worker_process_did_exit(Web::HTML::WorkerAgentId);
 
     void clear_registrations_for_testing(URL::Origin const& top_level_origin);
@@ -131,6 +137,9 @@ private:
         Web::ServiceWorker::ServiceWorkerState state { Web::ServiceWorker::ServiceWorkerState::Parsed };
         Vector<String> set_of_event_types_to_handle;
         bool skip_waiting_flag { false };
+
+        // NB: Whether the worker's set of extended events holds an event that is active, as its process reports.
+        bool has_pending_events { false };
 
         Optional<Web::HTML::WorkerAgentId> agent_id;
         RefPtr<WebWorkerClient> process;
@@ -214,6 +223,9 @@ private:
     void update_worker_state(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerState);
 
     void dispatch_lifecycle_event(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerLifecycleEvent);
+    void dispatch_message_event(Partition const& sender_partition, Web::ServiceWorker::ServiceWorkerId, Web::ServiceWorker::ServiceWorkerMessageSource, URL::Origin const&, Web::HTML::SerializedTransferRecord);
+    bool service_worker_has_no_pending_events(Optional<Web::ServiceWorker::ServiceWorkerId>) const;
+    bool is_unregistered(Registration const&) const;
     void terminate_service_worker(ServiceWorkerRecord&);
     void service_worker_stopped(ServiceWorkerRecord&);
     void forget_service_worker_if_unused(Web::ServiceWorker::ServiceWorkerId);
@@ -235,6 +247,9 @@ private:
     IsPrivate m_is_private { IsPrivate::No };
 
     HashMap<RegistrationKey, NonnullOwnPtr<Registration>, RegistrationKeyTraits> m_registration_map;
+
+    // NB: The registrations that Unregister removed from the registration map, until Clear Registration clears them.
+    Vector<NonnullOwnPtr<Registration>> m_unregistered_registrations;
 
     HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 

@@ -1,0 +1,14 @@
+Reply is a MessageEvent: true
+Reply source is the worker: true
+Reply origin is this origin: true
+Data: {"greeting":"hello"}
+Origin is this origin: true
+ExtendableMessageEvent: true
+isTrusted: true
+Source interface: WindowClient
+Source type: window
+Source frame type: top-level
+Source URL is this page: true
+Source id is a string: true
+Source visibility state: visible
+Ports: 0, frozen: true

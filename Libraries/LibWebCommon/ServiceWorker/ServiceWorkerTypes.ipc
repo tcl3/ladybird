@@ -13,6 +13,17 @@ struct Web::ServiceWorker::ServiceWorkerDescriptor {
 }
 
 [ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerClientSnapshot {
+    Web::HTML::EnvironmentId id;
+    URL::URL url;
+    Web::Bindings::ClientType type;
+    Web::Bindings::FrameType frame_type;
+    Web::Bindings::DocumentVisibilityState visibility_state;
+    bool focused;
+    Vector<String> ancestor_origins;
+}
+
+[ExistingCpp]
 struct Web::ServiceWorker::ServiceWorkerRegistrationSnapshot {
     u64 id;
     URL::URL scope_url;

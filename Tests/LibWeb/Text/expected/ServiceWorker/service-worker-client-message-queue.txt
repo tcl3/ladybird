@@ -1,0 +1,3 @@
+addEventListener: DOMContentLoaded, pong to addEventListener
+startMessages: pong to startMessages, DOMContentLoaded
+onmessage: pong to onmessage, DOMContentLoaded

@@ -1,0 +1,4 @@
+Source of a message from a dedicated worker: Client of type worker, frame type none
+The dedicated worker's reply comes from the service worker: true
+Source of a message from another service worker: ServiceWorker
+Source of the reply to it: ServiceWorker

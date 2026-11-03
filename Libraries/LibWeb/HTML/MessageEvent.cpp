@@ -16,6 +16,7 @@
 #include <LibWeb/HTML/WindowProxy.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
 #include <LibWeb/Infra/SerializedURL.h>
+#include <LibWeb/ServiceWorker/ServiceWorker.h>
 
 namespace Web::HTML {
 

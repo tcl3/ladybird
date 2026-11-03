@@ -1,0 +1,4 @@
+unregister(): true
+Registration afterwards: undefined
+Worker while its message event is extended: activated
+State changes after the release: redundant

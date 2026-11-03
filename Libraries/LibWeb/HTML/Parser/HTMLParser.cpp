@@ -71,6 +71,7 @@
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/SVG/SVGDecodedImageData.h>
 #include <LibWeb/SVG/SVGScriptElement.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/WebDriver/BiDi/BiDi.h>
 #include <LibWebCommon/HTML/BrowsingContext.h>
 #include <LibWebCommon/Infra/CharacterTypes.h>
@@ -923,7 +924,8 @@ void HTMLParserEndState::advance_to_dom_content_loaded_phase()
         if (document->has_service_worker_jobs_waiting_for_dom_content_loaded())
             document->page().client().page_did_dispatch_dom_content_loaded_for_service_worker_jobs(HTML::relevant_settings_object(*document).id);
 
-        // FIXME: 4. Enable the client message queue of the ServiceWorkerContainer object whose associated service worker client is the Document object's relevant settings object.
+        // 4. Enable the client message queue of the ServiceWorkerContainer object whose associated service worker client is the Document object's relevant settings object.
+        ServiceWorker::enable_client_message_queue(HTML::relevant_settings_object(*document));
 
         // 5. Invoke WebDriver BiDi DOM content loaded with the Document's browsing context, and a new WebDriver BiDi navigation status whose id is the Document object's during-loading navigation ID for WebDriver BiDi, status is "pending", and url is the Document object's URL.
         // NB: The browsing context's active document's node navigable is the navigable the steps report on.

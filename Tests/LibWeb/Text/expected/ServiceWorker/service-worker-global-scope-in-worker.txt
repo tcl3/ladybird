@@ -1,0 +1,17 @@
+registration is the same object each time: true
+serviceWorker is the same object each time: true
+serviceWorker.state during evaluation: parsed
+registration.installing during evaluation: null
+new ExtendableEvent() takes its init dictionary: true
+new InstallEvent() is an ExtendableEvent: true
+waitUntil() on a constructed event: InvalidStateError
+new ExtendableMessageEvent() takes its init dictionary: 1 origin id true 1 true
+importScripts() during evaluation: 1
+serviceWorker.state during install: installing
+registration.installing during install is serviceWorker: true
+waitUntil() on the install event after it was dispatched: InvalidStateError
+importScripts() of a stored script after install: no exception
+importScripts() count afterwards: 2
+importScripts() of a new script after install: NetworkError
+serviceWorker.state now: activated
+registration.active now is serviceWorker: true

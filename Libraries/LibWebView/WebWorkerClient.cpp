@@ -315,6 +315,44 @@ void WebWorkerClient::did_request_service_worker_ready(Web::HTML::EnvironmentId 
     session->service_worker_registry->get_ready_registration(client_environment, request_id, move(creation_url));
 }
 
+void WebWorkerClient::did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message)
+{
+    auto session = m_session.strong_ref();
+    if (!session)
+        return;
+    auto& registry = *session->service_worker_registry;
+    if (registry.is_service_worker_agent(m_agent_id)) {
+        registry.service_worker_did_post_message_to_service_worker(m_agent_id, service_worker_id, move(message));
+        return;
+    }
+
+    auto settings = hosted_environment(source.id);
+    if (!settings.has_value())
+        return;
+    if (source.type == Web::Bindings::ClientType::Window) {
+        did_misbehave("did_post_message_to_service_worker"sv, "a worker sent a message from a window client"sv);
+        return;
+    }
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    registry.post_message_to_service_worker(client_environment, move(source), service_worker_id, move(message));
+}
+
+void WebWorkerClient::did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_post_message_to_service_worker_client"sv))
+        registry->service_worker_did_post_message_to_client(m_agent_id, client_id, move(message));
+}
+
+void WebWorkerClient::did_change_service_worker_pending_events(bool has_pending_events)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_change_service_worker_pending_events"sv))
+        registry->service_worker_did_change_pending_events(m_agent_id, has_pending_events);
+}
+
 ServiceWorkerRegistry* WebWorkerClient::service_worker_registry_of_this_service_worker(StringView message_name)
 {
     auto session = m_session.strong_ref();

@@ -20,7 +20,7 @@ use crate::bindings::interface::Ref;
 
 use crate::bindings::services::web_bindings_wrapper_world;
 use crate::service_worker::service_worker::ServiceWorker;
-use crate::service_worker::service_worker_container::PendingRequestRef;
+use crate::service_worker::service_worker_container::{ClientMessageQueue, PendingRequestRef};
 use crate::service_worker::service_worker_registration::ServiceWorkerRegistration;
 use crate::web_assembly::tag::Tag;
 
@@ -56,6 +56,9 @@ pub(crate) struct RealmData {
     pub(crate) service_worker_objects: GcRefCell<Vec<Ref<ServiceWorker>>>,
     /// https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-registration-object-map
     pub(crate) service_worker_registration_objects: GcRefCell<Vec<Ref<ServiceWorkerRegistration>>>,
+    /// https://w3c.github.io/ServiceWorker/#dfn-client-message-queue
+    #[gc(untraced)]
+    pub(crate) service_worker_client_message_queue: ClientMessageQueue,
     /// The requests to the UI process whose promises are of this realm, which it keeps alive while they wait for an
     /// answer.
     pub(crate) service_worker_pending_requests: GcRefCell<Vec<PendingRequestRef>>,

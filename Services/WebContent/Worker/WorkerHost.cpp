@@ -32,6 +32,7 @@
 #include <LibWeb/HTML/WorkerGlobalScope.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
 #include <LibWeb/Loader/ResourceLoader.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <WebContent/Worker/PageHost.h>
 #include <WebContent/Worker/WorkerHost.h>
 
@@ -355,8 +356,9 @@ void WorkerHost::run(GC::Ref<Web::Page> page, Web::HTML::TransferDataEncoder mes
             protected_this->flush_pending_shared_worker_connections();
         }
 
-        // FIXME: 14. Enable the client message queue of the ServiceWorkerContainer object whose associated service
-        //     worker client is worker global scope's relevant settings object.
+        // 14. Enable the client message queue of the ServiceWorkerContainer object whose associated service worker
+        //     client is worker global scope's relevant settings object.
+        Web::ServiceWorker::enable_client_message_queue(*inside_settings);
 
         // 15. Event loop: Run the responsible event loop specified by inside settings until it is destroyed.
         // NB: The event loop runs on from here, and the steps after it are in run_closing_steps().

@@ -69,6 +69,10 @@ impl ExtendableEventLifetime {
         !self.timed_out_flag.get() && (self.pending_promises_count.get() > 0 || self.event.dispatched())
     }
 
+    pub(crate) fn dispatch_flag(&self) -> bool {
+        self.event.dispatched()
+    }
+
     pub(crate) fn timed_out_flag(&self) -> bool {
         self.timed_out_flag.get()
     }
@@ -206,10 +210,12 @@ fn add_lifetime_promise(vm: &Vm, event: ExtendableEventLifetimeRef, promise: Web
 
             // 2. If event's pending promises count is 0, then:
             if event.pending_promises_count.get() == 0 {
-                // FIXME: 1. Let registration be the current global object's associated service worker's containing
-                //           service worker registration.
-                // FIXME: 2. If registration is unregistered, invoke Try Clear Registration with registration.
-                // FIXME: 3. If registration is not null, invoke Try Activate with registration.
+                // 1. Let registration be the current global object's associated service worker's containing service
+                //    worker registration.
+                // 2. If registration is unregistered, invoke Try Clear Registration with registration.
+                // 3. If registration is not null, invoke Try Activate with registration.
+                // NB: The worker's process tells the UI process once the worker has no pending events, which runs these
+                //     steps then.
                 ExtendableEventLifetime::run_steps_if_inactive(event, vm);
             }
         });

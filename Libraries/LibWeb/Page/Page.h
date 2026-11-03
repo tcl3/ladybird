@@ -1035,6 +1035,8 @@ public:
     virtual void page_did_dispatch_dom_content_loaded_for_service_worker_jobs([[maybe_unused]] HTML::EnvironmentId const& environment_id) { }
     virtual void page_did_request_service_worker_ready([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] URL::URL const& creation_url) { }
     virtual void page_did_call_service_worker_skip_waiting([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }
+    virtual void page_did_post_message_to_service_worker([[maybe_unused]] ServiceWorker::ServiceWorkerClientSnapshot source, [[maybe_unused]] ServiceWorker::ServiceWorkerId service_worker_id, [[maybe_unused]] HTML::SerializedTransferRecord message) { }
+    virtual void page_did_post_message_to_service_worker_client([[maybe_unused]] String client_id, [[maybe_unused]] HTML::SerializedTransferRecord message) { }
 
     struct StartedWorkerAgent {
         HTML::WorkerAgentId agent_id { 0 };
