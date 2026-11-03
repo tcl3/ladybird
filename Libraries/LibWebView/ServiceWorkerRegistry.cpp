@@ -7,7 +7,9 @@
 #include <AK/QuickSort.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/Timer.h>
+#include <LibURL/Site.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
+#include <LibWebView/Application.h>
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
 #include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/WebContentClient.h>
@@ -19,6 +21,15 @@ namespace WebView {
 using namespace Web::ServiceWorker;
 
 static constexpr auto new_service_worker_start_deadline = AK::Duration::from_seconds(5 * 60);
+static constexpr auto lifecycle_event_deadline_grace_period = AK::Duration::from_seconds(10);
+
+static AK::Duration lifecycle_event_deadline()
+{
+    // NB: Tests of what happens at the deadline would otherwise take minutes.
+    if (Application::web_content_options().is_test_mode == IsTestMode::Yes)
+        return AK::Duration::from_seconds(3);
+    return AK::Duration::from_seconds(5 * 60);
+}
 
 static Vector<ServiceWorkerRegistry*>& live_registries()
 {
@@ -70,25 +81,31 @@ ServiceWorkerRegistry::~ServiceWorkerRegistry()
 {
     live_registries().remove_first_matching([this](auto* registry) { return registry == this; });
 
-    for (auto& updating_worker : m_updating_workers)
-        WorkerAgentManager::the().close_service_worker_agent(updating_worker.agent_id);
+    for (auto& [id, worker] : m_service_workers) {
+        if (worker->agent_id.has_value())
+            WorkerAgentManager::the().close_service_worker_agent(*worker->agent_id);
+    }
 }
 
 void ServiceWorkerRegistry::environment_was_discarded(Web::HTML::EnvironmentId const& environment_id)
 {
-    for (auto* registry : live_registries())
+    for (auto* registry : live_registries()) {
         registry->client_did_dispatch_dom_content_loaded(environment_id);
+        registry->m_ready_requests.remove_all_matching([&](ReadyRequest const& ready_request) {
+            return ready_request.environment_id == environment_id;
+        });
+    }
 }
 
-Optional<ServiceWorkerRegistry::Partition> ServiceWorkerRegistry::partition_of(ServiceWorkerClientEnvironment const& client)
+Optional<ServiceWorkerRegistry::Partition> ServiceWorkerRegistry::partition_of(CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor)
 {
-    auto storage_key = obtain_a_storage_key(client.settings);
+    auto storage_key = obtain_a_storage_key(settings);
     if (!storage_key.has_value())
         return {};
     return Partition {
         .storage_key = storage_key.release_value(),
-        .top_level_site = network_isolation_top_level_site(client.settings),
-        .has_cross_site_ancestor = client.has_cross_site_ancestor,
+        .top_level_site = network_isolation_top_level_site(settings),
+        .has_cross_site_ancestor = has_cross_site_ancestor,
     };
 }
 
@@ -127,7 +144,7 @@ void ServiceWorkerRegistry::schedule_job(ServiceWorkerClientEnvironment const& c
 {
     // NB: The client's process runs the steps of register() up to the creation of its job, which is created here,
     //     from the client's environment as this process knows it.
-    auto partition = partition_of(client);
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
     if (!partition.has_value()) {
         // AD-HOC: Obtaining a storage key can fail, which the job algorithms do not expect.
         client.connection.service_worker_job_settled(request.request_id, ServiceWorkerJobError::TypeError);
@@ -246,10 +263,8 @@ void ServiceWorkerRegistry::run_job(RegistrationKey const& job_queue_key)
 
         // 4. Else if job's job type is unregister, run Unregister with job in parallel.
         case ServiceWorkerJobType::Unregister:
-            // FIXME: Run Unregister. Until it runs, the job fails.
             job.has_started = true;
-            registry->reject_job_promise(job, ServiceWorkerJobError::TypeError);
-            registry->finish_job(job_queue_key, job);
+            registry->unregister(job_queue_key, job);
             break;
         }
     });
@@ -335,7 +350,7 @@ void ServiceWorkerRegistry::reject_job_promise(Job& job, ServiceWorkerJobError e
 // https://w3c.github.io/ServiceWorker/#register-algorithm
 void ServiceWorkerRegistry::register_(RegistrationKey const& job_queue_key, Job& job)
 {
-    auto script_origin = job.script_url.origin();
+    auto script_origin = job.script_url->origin();
     auto scope_origin = job.scope_url.origin();
 
     // 1. If the result of running potentially trustworthy origin with the origin of job's script url as the argument is
@@ -383,7 +398,7 @@ void ServiceWorkerRegistry::register_(RegistrationKey const& job_queue_key, Job&
         //    then:
         if (newest_worker.has_value()) {
             auto const& worker = m_service_workers.get(*newest_worker).value();
-            if (job.script_url == worker.script_url && job.worker_type == worker.type && job.update_via_cache == registration->update_via_cache) {
+            if (job.script_url == worker->script_url && job.worker_type == worker->type && job.update_via_cache == registration->update_via_cache) {
                 // 1. Invoke Resolve Job Promise with job and registration.
                 resolve_job_promise(job, snapshot_of(*registration));
 
@@ -424,7 +439,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
 
     // 4. If job's job type is update, and newestWorker is not null and its script url does not equal job's script url,
     //    then:
-    if (job.job_type == ServiceWorkerJobType::Update && newest_worker.has_value() && m_service_workers.get(*newest_worker)->script_url != job.script_url) {
+    if (job.job_type == ServiceWorkerJobType::Update && newest_worker.has_value() && m_service_workers.get(*newest_worker).value()->script_url != job.script_url) {
         // 1. Invoke Reject Job Promise with job and TypeError.
         reject_job_promise(job, ServiceWorkerJobError::TypeError);
 
@@ -438,15 +453,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
     // 7. Switching on job's worker type, run these substeps with the following options:
     // NB: The service worker this creates runs in a process of its own, which runs these steps and the perform the
     //     fetch hook with the environment settings object it creates for the worker. It reports how they end to
-    //     continue_update().
-    ServiceWorkerRecord worker {
-        .id = ++m_next_service_worker_id,
-        .registration_id = registration->id,
-        .script_url = job.script_url,
-        .type = job.worker_type,
-        .state = ServiceWorkerState::Parsed,
-    };
-
+    //     service_worker_did_fetch_script(), and then, once it has run the script, to service_worker_did_run().
     auto fail_to_start = [&] {
         reject_job_promise(job, ServiceWorkerJobError::TypeError);
         if (!newest_worker.has_value())
@@ -467,13 +474,34 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
         return;
     }
 
+    auto worker_id = ++m_next_service_worker_id;
+    auto worker = make<ServiceWorkerRecord>(ServiceWorkerRecord {
+        .id = worker_id,
+        .registration_id = registration->id,
+        .partition = registration->key.partition,
+        .script_url = *job.script_url,
+        .type = job.worker_type,
+        .state = ServiceWorkerState::Parsed,
+        .set_of_event_types_to_handle = {},
+        .skip_waiting_flag = false,
+        .agent_id = agent.value().id,
+        .process = agent.value().client,
+        .awaited_step = AwaitedStep::Start,
+        .job_in_progress = JobInProgress {
+            .job_id = job.id,
+            .job_queue_key = job_queue_key,
+            .newest_worker = newest_worker,
+        },
+        .deadline_timer = {},
+    });
+
     ServiceWorkerStartRequest start_request {
         .worker = ServiceWorkerDescriptor {
-            .id = worker.id,
-            .script_url = worker.script_url,
-            .state = worker.state,
+            .id = worker->id,
+            .script_url = worker->script_url,
+            .state = worker->state,
         },
-        .worker_type = worker.type,
+        .worker_type = worker->type,
         .registration = snapshot_of(*registration),
         .environment_id = agent.value().environment_id,
         .origin = job.client->settings.origin,
@@ -486,82 +514,94 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
     };
     agent.value().client->async_start_service_worker(start_request);
 
-    auto agent_id = agent.value().id;
-    auto start_deadline_timer = Core::Timer::create_single_shot(new_service_worker_start_deadline, [weak_this = make_weak_ptr(), agent_id] {
-        if (auto* registry = weak_this.ptr())
-            registry->continue_update(agent_id, ServiceWorkerJobError::TypeError);
+    worker->deadline_timer = Core::Timer::create_single_shot(new_service_worker_start_deadline, [weak_this = make_weak_ptr(), worker_id] {
+        auto* registry = weak_this.ptr();
+        if (!registry)
+            return;
+        if (auto worker = registry->m_service_workers.get(worker_id); worker.has_value())
+            registry->terminate_service_worker(**worker);
     });
-    start_deadline_timer->start();
+    worker->deadline_timer->start();
 
-    m_updating_workers.append(UpdatingWorker {
-        .worker = move(worker),
-        .job_id = job.id,
-        .job_queue_key = job_queue_key,
-        .newest_worker = newest_worker,
-        .agent_id = agent_id,
-        .process = agent.value().client,
-        .start_deadline_timer = move(start_deadline_timer),
-    });
+    m_service_workers.set(worker_id, move(worker));
+}
+
+ServiceWorkerRegistry::Job* ServiceWorkerRegistry::job_in_progress_of(ServiceWorkerRecord const& worker)
+{
+    if (!worker.job_in_progress.has_value())
+        return nullptr;
+    auto job_queue = m_scope_to_job_queue_map.get(worker.job_in_progress->job_queue_key);
+    VERIFY(job_queue.has_value() && !job_queue->is_empty());
+    auto& job = *job_queue->first();
+    VERIFY(job.id == worker.job_in_progress->job_id);
+    return &job;
+}
+
+// https://w3c.github.io/ServiceWorker/#update-algorithm
+void ServiceWorkerRegistry::fail_update(ServiceWorkerRecord& worker, ServiceWorkerJobError error)
+{
+    auto job_in_progress = worker.job_in_progress.release_value();
+    worker.awaited_step = AwaitedStep::None;
+    terminate_service_worker(worker);
+
+    auto job_queue = m_scope_to_job_queue_map.get(job_in_progress.job_queue_key);
+    auto& job = *job_queue->first();
+    auto* registration = registration_by_id(worker.registration_id);
+
+    // 8. If script is null or Is Async Module with script's record, script's base URL, and « » is true, then:
+    // 1. Invoke Reject Job Promise with job and TypeError.
+    // NOTE: This will do nothing if Reject Job Promise was previously invoked with "SecurityError" DOMException.
+    // 16. If runResult is failure or an abrupt completion, then:
+    // 1. Invoke Reject Job Promise with job and TypeError.
+    // NB: The worker's process reports the exception the job promise was first rejected with.
+    reject_job_promise(job, error);
+
+    // 2. If newestWorker is null, then remove registration map[(registration's storage key, serialized scopeURL)].
+    if (!job_in_progress.newest_worker.has_value() && registration)
+        remove_registration(*registration);
+
+    // 3. Invoke Finish Job with job and abort these steps.
+    forget_service_worker_if_unused(worker.id);
+    finish_job(job_in_progress.job_queue_key, job);
 }
 
 bool ServiceWorkerRegistry::is_service_worker_agent(Web::HTML::WorkerAgentId agent_id) const
 {
-    return any_of(m_updating_workers, [&](auto const& updating_worker) { return updating_worker.agent_id == agent_id; });
+    for (auto const& [id, worker] : m_service_workers) {
+        if (worker->agent_id == agent_id)
+            return true;
+    }
+    return false;
+}
+
+ServiceWorkerRegistry::ServiceWorkerRecord* ServiceWorkerRegistry::service_worker_of_agent(Web::HTML::WorkerAgentId agent_id)
+{
+    for (auto& [id, worker] : m_service_workers) {
+        if (worker->agent_id == agent_id)
+            return worker.ptr();
+    }
+    return nullptr;
 }
 
 void ServiceWorkerRegistry::service_worker_did_fetch_script(Web::HTML::WorkerAgentId agent_id, ServiceWorkerScriptFetchResult result)
 {
-    continue_update(agent_id, result);
-}
-
-void ServiceWorkerRegistry::service_worker_process_did_exit(Web::HTML::WorkerAgentId agent_id)
-{
-    continue_update(agent_id, ServiceWorkerJobError::TypeError);
-}
-
-void ServiceWorkerRegistry::stop_updating_worker(UpdatingWorker& updating_worker)
-{
-    if (updating_worker.start_deadline_timer)
-        updating_worker.start_deadline_timer->stop();
-    WorkerAgentManager::the().close_service_worker_agent(updating_worker.agent_id);
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || worker->awaited_step != AwaitedStep::Start || !result.has_value())
+        return;
+    fail_update(*worker, *result);
 }
 
 // https://w3c.github.io/ServiceWorker/#update-algorithm
-void ServiceWorkerRegistry::continue_update(Web::HTML::WorkerAgentId agent_id, ServiceWorkerScriptFetchResult result)
+void ServiceWorkerRegistry::service_worker_did_run(Web::HTML::WorkerAgentId agent_id, bool succeeded, Vector<String> event_types_to_handle)
 {
-    auto index = m_updating_workers.find_first_index_if([&](auto const& updating_worker) { return updating_worker.agent_id == agent_id; });
-    if (!index.has_value())
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || worker->awaited_step != AwaitedStep::Start)
         return;
+    worker->deadline_timer->stop();
 
-    auto updating_worker = m_updating_workers.take(*index);
-    // NB: The deadline timer may be what continues the update, so it outlives its own handler.
-    Core::deferred_invoke([timer = move(updating_worker.start_deadline_timer)] { });
-    stop_updating_worker(updating_worker);
-
-    auto job_queue = m_scope_to_job_queue_map.get(updating_worker.job_queue_key);
-    VERIFY(job_queue.has_value() && !job_queue->is_empty());
-    auto& job = *job_queue->first();
-    VERIFY(job.id == updating_worker.job_id);
-
-    auto* registration = get_registration(job.partition, job.scope_url);
-    VERIFY(registration);
-
-    // When the algorithm asynchronously completes, continue the rest of these steps, with script being the asynchronous
-    // completion value.
-
-    // 8. If script is null or Is Async Module with script's record, script's base URL, and « » is true, then:
-    if (result.has_value()) {
-        // 1. Invoke Reject Job Promise with job and TypeError.
-        // NOTE: This will do nothing if Reject Job Promise was previously invoked with "SecurityError" DOMException.
-        // NB: The worker's process reports the exception the job promise was first rejected with.
-        reject_job_promise(job, *result);
-
-        // 2. If newestWorker is null, then remove registration map[(registration's storage key, serialized scopeURL)].
-        if (!updating_worker.newest_worker.has_value())
-            remove_registration(*registration);
-
-        // 3. Invoke Finish Job with job and abort these steps.
-        finish_job(updating_worker.job_queue_key, job);
+    // NB: Only the test-web reset removes a registration while its job runs.
+    if (!registration_by_id(worker->registration_id)) {
+        fail_update(*worker, ServiceWorkerJobError::TypeError);
         return;
     }
 
@@ -578,23 +618,577 @@ void ServiceWorkerRegistry::continue_update(Web::HTML::WorkerAgentId agent_id, S
     // NB: The worker's process holds its script resource and script resource map.
 
     // 14. Let forceBypassCache be true if job's force bypass cache flag is set, and false otherwise.
-    // FIXME: 15. Let runResult be the result of running the Run Service Worker algorithm with worker and forceBypassCache.
-    // NB: Until Run Service Worker runs the script, its result is failure.
+    // 15. Let runResult be the result of running the Run Service Worker algorithm with worker and forceBypassCache.
+    // NB: The worker's process runs the worker once its script is fetched, and reports the result here.
 
     // 16. If runResult is failure or an abrupt completion, then:
-    {
-        // 1. Invoke Reject Job Promise with job and TypeError.
-        reject_job_promise(job, ServiceWorkerJobError::TypeError);
-
-        // 2. If newestWorker is null, then remove registration map[(registration's storage key, serialized scopeURL)].
-        if (!updating_worker.newest_worker.has_value())
-            remove_registration(*registration);
-
-        // 3. Invoke Finish Job with job.
-        finish_job(updating_worker.job_queue_key, job);
+    if (!succeeded) {
+        fail_update(*worker, ServiceWorkerJobError::TypeError);
+        return;
     }
 
-    // FIXME: 17. Else, invoke Install algorithm with job, worker, and registration as its arguments.
+    // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+    // 9.8.1.1. Append eventType to workerGlobalScope's associated service worker's set of event types to handle.
+    worker->set_of_event_types_to_handle = move(event_types_to_handle);
+
+    // 17. Else, invoke Install algorithm with job, worker, and registration as its arguments.
+    install(*worker);
+}
+
+// https://w3c.github.io/ServiceWorker/#should-skip-event-algorithm
+static bool should_skip_event(StringView event_name, Vector<String> const& set_of_event_types_to_handle)
+{
+    // 1. If serviceWorker's set of event types to handle does not contain eventName, then the user agent may return
+    //    true.
+    if (!set_of_event_types_to_handle.contains_slow(event_name))
+        return true;
+
+    // 2. Return false.
+    return false;
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-has-no-pending-events
+static bool service_worker_has_no_pending_events()
+{
+    // 1. For each event of worker's set of extended events:
+    //    1. If event is active, return false.
+    // NB: No event that extends a worker's set of extended events is dispatched yet, so the set is empty.
+
+    // 2. Return true.
+    return true;
+}
+
+// https://w3c.github.io/ServiceWorker/#installation-algorithm
+void ServiceWorkerRegistry::install(ServiceWorkerRecord& worker)
+{
+    auto& job = *job_in_progress_of(worker);
+    auto& registration = *registration_by_id(worker.registration_id);
+
+    // 1. Let installFailed be false.
+    // 2. Let newestWorker be the result of running Get Newest Worker algorithm passing registration as its argument.
+    // NB: Update already took the newest worker, which it holds with the job.
+
+    // 3. Set registration's update via cache mode to job's update via cache mode.
+    registration.update_via_cache = job.update_via_cache;
+
+    // 4. Run the Update Registration State algorithm passing registration, "installing" and worker as the arguments.
+    update_registration_state(registration, ServiceWorkerRegistrationSlot::Installing, worker.id);
+
+    // 5. Run the Update Worker State algorithm passing registration's installing worker and "installing" as the
+    //    arguments.
+    update_worker_state(worker, ServiceWorkerState::Installing);
+
+    // 6. Assert: job's job promise is not null.
+    // 7. Invoke Resolve Job Promise with job and registration.
+    resolve_job_promise(job, snapshot_of(registration));
+
+    // 8. Let settingsObjects be all environment settings objects whose origin is registration's scope url's origin.
+    // 9. For each settingsObject of settingsObjects, queue a task on settingsObject's responsible event loop in the DOM
+    //    manipulation task source to run the following steps:
+    // NB: The processes that host environments in the registration's partition run the task's steps.
+    for_each_process_in_partition(registration.key.partition, [&](ServiceWorkerClientConnection const& connection) {
+        connection.visit_open_connection([&](auto& client) { client.async_service_worker_update_found(registration.id); });
+    });
+
+    // 10. Let installingWorker be registration's installing worker.
+    // 11. If the result of running the Should Skip Event algorithm with installingWorker and "install" is false, then:
+    if (!should_skip_event("install"sv, worker.set_of_event_types_to_handle)) {
+        // 1. Let forceBypassCache be true if job's force bypass cache flag is set, and false otherwise.
+        // 2. If the result of running the Run Service Worker algorithm with installingWorker and forceBypassCache is
+        //    failure, then:
+        //    1. Set installFailed to true.
+        // NB: The worker runs, as it ran in Update.
+
+        // 3. Else:
+        // 1. Queue a task task on installingWorker's event loop using the DOM manipulation task source to run the
+        //    following steps:
+        // 2. Wait for task to have executed or been discarded.
+        // 3. Wait for the step labeled WaitForAsynchronousExtensions to complete.
+        // NB: The worker's process runs the task, and reports to service_worker_did_finish_lifecycle_event() whether
+        //     installFailed is true once the step labeled WaitForAsynchronousExtensions completes.
+        dispatch_lifecycle_event(worker, ServiceWorkerLifecycleEvent::Install);
+        return;
+    }
+
+    finish_install(worker, false);
+}
+
+// https://w3c.github.io/ServiceWorker/#installation-algorithm
+void ServiceWorkerRegistry::finish_install(ServiceWorkerRecord& worker, bool install_failed)
+{
+    auto job_in_progress = worker.job_in_progress.release_value();
+    worker.awaited_step = AwaitedStep::None;
+    auto job_queue = m_scope_to_job_queue_map.get(job_in_progress.job_queue_key);
+    auto& job = *job_queue->first();
+    auto& registration = *registration_by_id(worker.registration_id);
+
+    // 12. If installFailed is true, then:
+    if (install_failed) {
+        // 1. Run the Update Worker State algorithm passing registration's installing worker and "redundant" as the
+        //    arguments.
+        update_worker_state(worker, ServiceWorkerState::Redundant);
+        terminate_service_worker(worker);
+
+        // 2. Run the Update Registration State algorithm passing registration, "installing" and null as the arguments.
+        update_registration_state(registration, ServiceWorkerRegistrationSlot::Installing, {});
+
+        // 3. If newestWorker is null, then remove registration map[(registration's storage key, serialized
+        //    registration's scope url)].
+        if (!job_in_progress.newest_worker.has_value())
+            remove_registration(registration);
+
+        // 4. Invoke Finish Job with job and abort these steps.
+        forget_service_worker_if_unused(worker.id);
+        finish_job(job_in_progress.job_queue_key, job);
+        return;
+    }
+
+    // 13. Let map be registration's installing worker's script resource map.
+    // 14. Let usedSet be registration's installing worker's set of used scripts.
+    // 15. For each url of map:
+    //     1. If usedSet does not contain url, then remove map[url].
+    // NB: The worker's process holds the map and the set, and prunes the map once the install event has finished.
+
+    // 16. If registration's waiting worker is not null, then:
+    if (registration.waiting_worker.has_value()) {
+        auto& waiting_worker = **m_service_workers.get(*registration.waiting_worker);
+
+        // 1. Terminate registration's waiting worker.
+        terminate_service_worker(waiting_worker);
+
+        // 2. Run the Update Worker State algorithm passing registration's waiting worker and "redundant" as the
+        //    arguments.
+        update_worker_state(waiting_worker, ServiceWorkerState::Redundant);
+    }
+    auto previous_waiting_worker = registration.waiting_worker;
+
+    // 17. Run the Update Registration State algorithm passing registration, "waiting" and registration's installing
+    //     worker as the arguments.
+    update_registration_state(registration, ServiceWorkerRegistrationSlot::Waiting, registration.installing_worker);
+
+    // 18. Run the Update Registration State algorithm passing registration, "installing" and null as the arguments.
+    update_registration_state(registration, ServiceWorkerRegistrationSlot::Installing, {});
+
+    // 19. Run the Update Worker State algorithm passing registration's waiting worker and "installed" as the arguments.
+    update_worker_state(worker, ServiceWorkerState::Installed);
+    if (previous_waiting_worker.has_value())
+        forget_service_worker_if_unused(*previous_waiting_worker);
+
+    // 20. Invoke Finish Job with job.
+    finish_job(job_in_progress.job_queue_key, job);
+
+    // 21. Wait for all the tasks queued by Update Worker State invoked in this algorithm to have executed.
+    // NB: Each process queues the tasks of the state changes it is told of in the order it is told of them.
+
+    // 22. Invoke Try Activate with registration.
+    // NOTE: If Try Activate does not trigger Activate here, Activate is tried again when the last client controlled by
+    //       the existing active worker is unloaded, skipWaiting() is asynchronously called, or the extend lifetime
+    //       promises for the existing active worker settle.
+    try_activate(registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#try-activate-algorithm
+void ServiceWorkerRegistry::try_activate(Registration& registration)
+{
+    // 1. If registration's waiting worker is null, return.
+    if (!registration.waiting_worker.has_value())
+        return;
+
+    // 2. If registration's active worker is not null and registration's active worker's state is "activating", return.
+    // NOTE: If the existing active worker is still in activating state, the activation of the waiting worker is
+    //       delayed.
+    if (registration.active_worker.has_value() && m_service_workers.get(*registration.active_worker).value()->state == ServiceWorkerState::Activating)
+        return;
+
+    // 3. Invoke Activate with registration if either of the following is true:
+    //    - registration's active worker is null.
+    //    - The result of running Service Worker Has No Pending Events with registration's active worker is true, and
+    //      no service worker client is using registration or registration's waiting worker's skip waiting flag is set.
+    // NB: No service worker client uses a registration yet, as none is controlled.
+    if (!registration.active_worker.has_value() || service_worker_has_no_pending_events())
+        activate(registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#activation-algorithm
+void ServiceWorkerRegistry::activate(Registration& registration)
+{
+    // 1. If registration's waiting worker is null, abort these steps.
+    if (!registration.waiting_worker.has_value())
+        return;
+
+    // 2. If registration's active worker is not null, then:
+    auto previous_active_worker = registration.active_worker;
+    if (previous_active_worker.has_value()) {
+        auto& active_worker = **m_service_workers.get(*previous_active_worker);
+
+        // 1. Terminate registration's active worker.
+        terminate_service_worker(active_worker);
+
+        // 2. Run the Update Worker State algorithm passing registration's active worker and "redundant" as the
+        //    arguments.
+        update_worker_state(active_worker, ServiceWorkerState::Redundant);
+    }
+
+    // 3. Run the Update Registration State algorithm passing registration, "active" and registration's waiting worker as
+    //    the arguments.
+    update_registration_state(registration, ServiceWorkerRegistrationSlot::Active, registration.waiting_worker);
+
+    // 4. Run the Update Registration State algorithm passing registration, "waiting" and null as the arguments.
+    update_registration_state(registration, ServiceWorkerRegistrationSlot::Waiting, {});
+    if (previous_active_worker.has_value())
+        forget_service_worker_if_unused(*previous_active_worker);
+
+    // 5. Run the Update Worker State algorithm passing registration's active worker and "activating" as the arguments.
+    // NOTE: Once an active worker is activating, neither a runtime script error nor a force termination of the active
+    //       worker prevents the active worker from getting activated.
+    auto& active_worker = **m_service_workers.get(*registration.active_worker);
+    update_worker_state(active_worker, ServiceWorkerState::Activating);
+
+    // 6. Let matchedClients be a list of service worker clients whose creation URL matches registration's storage key
+    //    and registration's scope url.
+    // 7. For each client of matchedClients, queue a task on client's responsible event loop, using the DOM manipulation
+    //    task source, to run the following substeps:
+    //    1. Let readyPromise be client's global object's ServiceWorkerContainer object's ready promise.
+    //    2. If readyPromise is null, then continue.
+    //    3. If readyPromise is pending, resolve readyPromise with the result of getting the service worker registration
+    //       object that represents registration in readyPromise's relevant settings object.
+    // NB: The clients whose ready promises are pending have asked for the registration to resolve them with.
+    m_ready_requests.remove_all_matching([&](ReadyRequest const& ready_request) {
+        if (match_service_worker_registration(ready_request.partition, ready_request.creation_url) != &registration)
+            return false;
+        ready_request.connection.visit_open_connection([&](auto& client) {
+            client.async_service_worker_ready(ready_request.request_id, snapshot_of(registration));
+        });
+        return true;
+    });
+
+    // 8. For each service worker client client who is using registration:
+    //    1. Set client's active worker to registration's active worker.
+    //    2. Invoke Notify Controller Change algorithm with client as the argument.
+    // NB: No service worker client uses a registration yet, as none is controlled.
+
+    // 9. Let activeWorker be registration's active worker.
+    // 10. If the result of running the Should Skip Event algorithm with activeWorker and "activate" is false, then:
+    if (!should_skip_event("activate"sv, active_worker.set_of_event_types_to_handle) && active_worker.process) {
+        // 1. If the result of running the Run Service Worker algorithm with activeWorker is not failure, then:
+        // 1. Queue a task task on activeWorker's event loop using the DOM manipulation task source to run the following
+        //    steps:
+        // 2. Wait for task to have executed or been discarded.
+        // 3. Wait for the step labeled WaitForAsynchronousExtensions to complete.
+        // NB: The worker's process runs the task, and reports to service_worker_did_finish_lifecycle_event() once the
+        //     step labeled WaitForAsynchronousExtensions completes.
+        dispatch_lifecycle_event(active_worker, ServiceWorkerLifecycleEvent::Activate);
+        return;
+    }
+
+    finish_activate(active_worker);
+}
+
+// https://w3c.github.io/ServiceWorker/#activation-algorithm
+void ServiceWorkerRegistry::finish_activate(ServiceWorkerRecord& worker)
+{
+    worker.awaited_step = AwaitedStep::None;
+
+    // 11. Run the Update Worker State algorithm passing registration's active worker and "activated" as the arguments.
+    update_worker_state(worker, ServiceWorkerState::Activated);
+}
+
+void ServiceWorkerRegistry::dispatch_lifecycle_event(ServiceWorkerRecord& worker, ServiceWorkerLifecycleEvent event)
+{
+    worker.awaited_step = event == ServiceWorkerLifecycleEvent::Install ? AwaitedStep::InstallEvent : AwaitedStep::ActivateEvent;
+    worker.process->async_dispatch_service_worker_lifecycle_event(event, lifecycle_event_deadline().to_milliseconds());
+
+    // NB: The worker's process ends the event at its deadline. One that does not report the event's end soon after is
+    //     terminated.
+    auto worker_id = worker.id;
+    worker.deadline_timer = Core::Timer::create_single_shot(lifecycle_event_deadline() + lifecycle_event_deadline_grace_period, [weak_this = make_weak_ptr(), worker_id] {
+        auto* registry = weak_this.ptr();
+        if (!registry)
+            return;
+        if (auto worker = registry->m_service_workers.get(worker_id); worker.has_value())
+            registry->terminate_service_worker(**worker);
+    });
+    worker.deadline_timer->start();
+}
+
+void ServiceWorkerRegistry::service_worker_did_finish_lifecycle_event(Web::HTML::WorkerAgentId agent_id, ServiceWorkerLifecycleEvent event, bool succeeded)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker)
+        return;
+    if (event == ServiceWorkerLifecycleEvent::Install && worker->awaited_step == AwaitedStep::InstallEvent) {
+        worker->deadline_timer->stop();
+        finish_install(*worker, !succeeded);
+    } else if (event == ServiceWorkerLifecycleEvent::Activate && worker->awaited_step == AwaitedStep::ActivateEvent) {
+        worker->deadline_timer->stop();
+        finish_activate(*worker);
+    }
+}
+
+// https://w3c.github.io/ServiceWorker/#dom-serviceworkerglobalscope-skipwaiting
+void ServiceWorkerRegistry::service_worker_did_call_skip_waiting(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker)
+        return;
+
+    // 2. Run the following substeps in parallel:
+    // 1. Set service worker's skip waiting flag.
+    worker->skip_waiting_flag = true;
+
+    // 2. Invoke Try Activate with service worker's containing service worker registration.
+    // NB: When service worker is the active worker and a waiting worker replaces it, Try Activate terminates service
+    //     worker and may forget its record, so worker is not used after this.
+    if (auto* registration = registration_by_id(worker->registration_id))
+        try_activate(*registration);
+
+    // 3. Queue a task on service worker's responsible event loop, to resolve promise with undefined.
+    // NB: The worker's process queues the task. A terminated worker has no agent, and its event loop runs no more
+    //     tasks.
+    if (auto* running_worker = service_worker_of_agent(agent_id))
+        running_worker->process->async_service_worker_skip_waiting_finished(request_id);
+}
+
+// https://w3c.github.io/ServiceWorker/#terminate-service-worker
+void ServiceWorkerRegistry::terminate_service_worker(ServiceWorkerRecord& worker)
+{
+    // 1. Run the following steps in parallel with serviceWorker's main loop:
+    // NB: The worker's process runs the steps as it closes.
+    if (worker.agent_id.has_value())
+        WorkerAgentManager::the().close_service_worker_agent(*worker.agent_id);
+    service_worker_stopped(worker);
+}
+
+void ServiceWorkerRegistry::service_worker_process_did_exit(Web::HTML::WorkerAgentId agent_id)
+{
+    if (auto* worker = service_worker_of_agent(agent_id))
+        service_worker_stopped(*worker);
+}
+
+void ServiceWorkerRegistry::service_worker_stopped(ServiceWorkerRecord& worker)
+{
+    worker.agent_id = {};
+    worker.process = nullptr;
+    if (worker.deadline_timer) {
+        worker.deadline_timer->stop();
+        // NB: The deadline timer may be what stops the worker, so it outlives its own handler.
+        Core::deferred_invoke([timer = move(worker.deadline_timer)] { });
+    }
+
+    switch (worker.awaited_step) {
+    case AwaitedStep::None:
+        break;
+    case AwaitedStep::Start:
+        fail_update(worker, ServiceWorkerJobError::TypeError);
+        break;
+    case AwaitedStep::InstallEvent:
+        finish_install(worker, true);
+        break;
+    case AwaitedStep::ActivateEvent:
+        finish_activate(worker);
+        break;
+    }
+}
+
+void ServiceWorkerRegistry::forget_service_worker_if_unused(ServiceWorkerId worker_id)
+{
+    auto worker = m_service_workers.get(worker_id);
+    if (!worker.has_value() || (*worker)->process || (*worker)->awaited_step != AwaitedStep::None)
+        return;
+    auto* registration = registration_by_id((*worker)->registration_id);
+    if (registration && first_is_one_of(Optional<ServiceWorkerId> { worker_id }, registration->installing_worker, registration->waiting_worker, registration->active_worker))
+        return;
+    m_service_workers.remove(worker_id);
+}
+
+// https://w3c.github.io/ServiceWorker/#unregister-algorithm
+void ServiceWorkerRegistry::unregister(RegistrationKey const& job_queue_key, Job& job)
+{
+    // 1. Let registration be the result of running Get Registration given job's storage key and job's scope url.
+    auto* registration = get_registration(job.partition, job.scope_url);
+
+    // 2. If registration is null, then:
+    if (!registration) {
+        // 1. Invoke Resolve Job Promise with job and false.
+        resolve_job_promise(job, false);
+
+        // 2. Invoke Finish Job with job and abort these steps.
+        finish_job(job_queue_key, job);
+        return;
+    }
+
+    // 3. Remove registration map[(registration's storage key, job's scope url)].
+    auto unregistered_registration = m_registration_map.take(registration->key).release_value();
+
+    // 4. Invoke Resolve Job Promise with job and true.
+    resolve_job_promise(job, true);
+
+    // 5. Invoke Try Clear Registration with registration.
+    // NOTE: If Try Clear Registration does not trigger Clear Registration here, Clear Registration is tried again when
+    //       the last client using the registration is unloaded or the extend lifetime promises for the registration's
+    //       service workers settle.
+    try_clear_registration(*unregistered_registration);
+
+    // 6. Invoke Finish Job with job.
+    finish_job(job_queue_key, job);
+}
+
+// https://w3c.github.io/ServiceWorker/#try-clear-registration-algorithm
+void ServiceWorkerRegistry::try_clear_registration(Registration& registration)
+{
+    // 1. Invoke Clear Registration with registration if no service worker client is using registration and all of the
+    //    following conditions are true:
+    //    - registration's installing worker is null or the result of running Service Worker Has No Pending Events with
+    //      registration's installing worker is true.
+    //    - registration's waiting worker is null or the result of running Service Worker Has No Pending Events with
+    //      registration's waiting worker is true.
+    //    - registration's active worker is null or the result of running Service Worker Has No Pending Events with
+    //      registration's active worker is true.
+    // NB: No service worker client uses a registration yet, as none is controlled.
+    if (service_worker_has_no_pending_events())
+        clear_registration(registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#clear-registration-algorithm
+void ServiceWorkerRegistry::clear_registration(Registration& registration)
+{
+    // NB: A job that waits for one of the registration's workers, which only the test-web reset clears during a job,
+    //     finishes once the registration is cleared. Terminating the worker does not finish the step it awaited.
+    Optional<JobInProgress> interrupted_job;
+
+    // 1. Run the following steps atomically.
+    auto clear_slot = [&](ServiceWorkerRegistrationSlot slot, Optional<ServiceWorkerId> worker_id) {
+        auto& worker = **m_service_workers.get(*worker_id);
+        if (worker.job_in_progress.has_value())
+            interrupted_job = worker.job_in_progress.release_value();
+        worker.awaited_step = AwaitedStep::None;
+
+        // 1. Terminate registration's installing worker.
+        terminate_service_worker(worker);
+
+        // 2. Run the Update Worker State algorithm passing registration's installing worker and "redundant" as the
+        //    arguments.
+        update_worker_state(worker, ServiceWorkerState::Redundant);
+
+        // 3. Run the Update Registration State algorithm passing registration, "installing" and null as the arguments.
+        update_registration_state(registration, slot, {});
+        forget_service_worker_if_unused(worker.id);
+    };
+
+    // 2. If registration's installing worker is not null, then:
+    if (registration.installing_worker.has_value())
+        clear_slot(ServiceWorkerRegistrationSlot::Installing, registration.installing_worker);
+
+    // 3. If registration's waiting worker is not null, then:
+    // NB: Its steps are those of step 2, for the waiting worker.
+    if (registration.waiting_worker.has_value())
+        clear_slot(ServiceWorkerRegistrationSlot::Waiting, registration.waiting_worker);
+
+    // 4. If registration's active worker is not null, then:
+    // NB: Its steps are those of step 2, for the active worker.
+    if (registration.active_worker.has_value())
+        clear_slot(ServiceWorkerRegistrationSlot::Active, registration.active_worker);
+
+    if (interrupted_job.has_value()) {
+        auto job_queue = m_scope_to_job_queue_map.get(interrupted_job->job_queue_key);
+        finish_job(interrupted_job->job_queue_key, *job_queue->first());
+    }
+}
+
+// https://w3c.github.io/ServiceWorker/#update-registration-state-algorithm
+void ServiceWorkerRegistry::update_registration_state(Registration& registration, ServiceWorkerRegistrationSlot target, Optional<ServiceWorkerId> source)
+{
+    // 1. Let registrationObjects be an array containing all the ServiceWorkerRegistration objects associated with
+    //    registration.
+    // NB: The processes that host environments in the registration's partition find their own objects of the
+    //     registration, and queue the tasks of the steps below.
+
+    switch (target) {
+    // 2. If target is "installing", then:
+    case ServiceWorkerRegistrationSlot::Installing:
+        // 1. Set registration's installing worker to source.
+        registration.installing_worker = source;
+
+        // 2. For each registrationObject in registrationObjects:
+        //    1. Queue a task to set the installing attribute of registrationObject to null if registration's installing
+        //       worker is null, or the result of getting the service worker object that represents registration's
+        //       installing worker in registrationObject's relevant settings object.
+        break;
+
+    // 3. Else if target is "waiting", then:
+    case ServiceWorkerRegistrationSlot::Waiting:
+        // 1. Set registration's waiting worker to source.
+        registration.waiting_worker = source;
+
+        // 2. For each registrationObject in registrationObjects:
+        //    1. Queue a task to set the waiting attribute of registrationObject to null if registration's waiting worker
+        //       is null, or the result of getting the service worker object that represents registration's waiting
+        //       worker in registrationObject's relevant settings object.
+        break;
+
+    // 4. Else if target is "active", then:
+    case ServiceWorkerRegistrationSlot::Active:
+        // 1. Set registration's active worker to source.
+        registration.active_worker = source;
+
+        // 2. For each registrationObject in registrationObjects:
+        //    1. Queue a task to set the active attribute of registrationObject to null if registration's active worker
+        //       is null, or the result of getting the service worker object that represents registration's active
+        //       worker in registrationObject's relevant settings object.
+        break;
+    }
+
+    auto descriptor = descriptor_of(source);
+    for_each_process_in_partition(registration.key.partition, [&](ServiceWorkerClientConnection const& connection) {
+        connection.visit_open_connection([&](auto& client) {
+            client.async_service_worker_registration_state_changed(registration.id, target, descriptor);
+        });
+    });
+}
+
+// https://w3c.github.io/ServiceWorker/#update-state-algorithm
+void ServiceWorkerRegistry::update_worker_state(ServiceWorkerRecord& worker, ServiceWorkerState state)
+{
+    // 1. Assert: state is not "parsed".
+    // NOTE: "parsed" is the initial state. A service worker is never updated to this state.
+    VERIFY(state != ServiceWorkerState::Parsed);
+
+    // 2. Set worker's state to state.
+    worker.state = state;
+
+    // 3. Let settingsObjects be all environment settings objects whose origin is worker's script url's origin.
+    // 4. For each settingsObject of settingsObjects, queue a task on settingsObject's responsible event loop in the DOM
+    //    manipulation task source to run the following steps:
+    // AD-HOC: Only the environments in the partition of the worker's registration can have objects of the worker, so
+    //         only the processes that host those are told. They queue the task's steps.
+    auto descriptor = ServiceWorkerDescriptor { .id = worker.id, .script_url = worker.script_url, .state = state };
+    for_each_process_in_partition(worker.partition, [&](ServiceWorkerClientConnection const& connection) {
+        connection.visit_open_connection([&](auto& client) { client.async_service_worker_state_changed(descriptor); });
+    });
+}
+
+void ServiceWorkerRegistry::for_each_process_in_partition(Partition const& partition, Function<void(ServiceWorkerClientConnection const&)> const& callback) const
+{
+    WebContentClient::for_each_client([&](WebContentClient& client) {
+        if (client.is_private() != m_is_private)
+            return IterationDecision::Continue;
+        bool hosts_an_environment_in_partition = false;
+        client.for_each_page([&](WebContentPage& page) {
+            page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                hosts_an_environment_in_partition = partition_of(settings, has_cross_site_ancestor) == partition;
+                return hosts_an_environment_in_partition ? IterationDecision::Break : IterationDecision::Continue;
+            });
+            return hosts_an_environment_in_partition ? IterationDecision::Break : IterationDecision::Continue;
+        });
+        if (hosts_an_environment_in_partition)
+            callback(ServiceWorkerClientConnection { client });
+        return IterationDecision::Continue;
+    });
+
+    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private) {
+        if (is_private == m_is_private && partition_of(settings, settings.has_cross_site_ancestor()) == partition)
+            callback(ServiceWorkerClientConnection { client });
+    });
 }
 
 // https://w3c.github.io/ServiceWorker/#set-registration-algorithm
@@ -672,6 +1266,15 @@ ServiceWorkerRegistry::Registration* ServiceWorkerRegistry::match_service_worker
     return *registration;
 }
 
+ServiceWorkerRegistry::Registration* ServiceWorkerRegistry::registration_by_id(ServiceWorkerRegistrationId registration_id)
+{
+    for (auto& [key, registration] : m_registration_map) {
+        if (registration->id == registration_id)
+            return registration.ptr();
+    }
+    return nullptr;
+}
+
 void ServiceWorkerRegistry::remove_registration(Registration& registration)
 {
     m_registration_map.remove(registration.key);
@@ -699,7 +1302,7 @@ Optional<ServiceWorkerDescriptor> ServiceWorkerRegistry::descriptor_of(Optional<
 {
     if (!worker_id.has_value())
         return {};
-    auto const& worker = m_service_workers.get(*worker_id).value();
+    auto const& worker = *m_service_workers.get(*worker_id).value();
     return ServiceWorkerDescriptor {
         .id = worker.id,
         .script_url = worker.script_url,
@@ -724,7 +1327,7 @@ void ServiceWorkerRegistry::get_registration(ServiceWorkerClientEnvironment cons
 {
     // NB: The client's process runs the other steps, and settles its promise with what step 8.1 finds here.
     // 2. Let storage key be the result of running obtain a storage key given client.
-    auto partition = partition_of(client);
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
 
     // 8. Run the following substeps in parallel:
     // 1. Let registration be the result of running Match Service Worker Registration given storage key and clientURL.
@@ -744,7 +1347,7 @@ void ServiceWorkerRegistry::get_registrations(ServiceWorkerClientEnvironment con
 {
     // NB: The client's process runs the other steps, and settles its promise with what step 4 finds here.
     // 2. Let client storage key be the result of running obtain a storage key given client.
-    auto partition = partition_of(client);
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
 
     // 4. Run the following steps in parallel:
     // 1. Let registrations be a new list.
@@ -770,6 +1373,70 @@ void ServiceWorkerRegistry::get_registrations(ServiceWorkerClientEnvironment con
     // 3. Queue a task on promise's relevant settings object's responsible event loop, using the DOM manipulation task
     //    source, to run the following steps:
     client.connection.service_worker_registration_lookup_finished(request_id, snapshots);
+}
+
+// https://w3c.github.io/ServiceWorker/#navigator-service-worker-ready
+void ServiceWorkerRegistry::get_ready_registration(ServiceWorkerClientEnvironment const& client, ServiceWorkerRequestId request_id, URL::URL creation_url)
+{
+    // NB: The client's process runs the other steps, and resolves its ready promise with what step 3.3 finds here. The
+    //     creation URL is the one the client's process names, which can only change which of its own origin's
+    //     registrations resolve the client's promise.
+    // 3. If readyPromise is pending, run the following substeps in parallel:
+    // 1. Let client by this's service worker client.
+    // 2. Let storage key be the result of running obtain a storage key given client.
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
+    if (!partition.has_value())
+        return;
+
+    // 3. Let registration be the result of running Match Service Worker Registration given storage key and client's
+    //    creation URL.
+    auto* registration = match_service_worker_registration(*partition, creation_url);
+
+    // 4. If registration is not null, and registration's active worker is not null, queue a task on readyPromise's
+    //    relevant settings object's responsible event loop, using the DOM manipulation task source, to resolve
+    //    readyPromise with the result of getting the service worker registration object that represents registration
+    //    in readyPromise's relevant settings object.
+    if (registration && registration->active_worker.has_value()) {
+        client.connection.visit_open_connection([&](auto& connection) {
+            connection.async_service_worker_ready(request_id, snapshot_of(*registration));
+        });
+        return;
+    }
+
+    // NOTE: The returned ready promise will never reject. If it does not resolve in this algorithm, it will eventually
+    //       resolve when a matching service worker registration is registered and its active worker is set. (See the
+    //       relevant Activate algorithm step.)
+    m_ready_requests.append(ReadyRequest {
+        .connection = client.connection,
+        .environment_id = client.settings.id(),
+        .request_id = request_id,
+        .partition = partition.release_value(),
+        .creation_url = move(creation_url),
+    });
+}
+
+void ServiceWorkerRegistry::clear_registrations_for_testing(URL::Origin const& top_level_origin)
+{
+    auto top_level_site = URL::Site::serialize_for_partitioning(top_level_origin);
+    auto is_of_test = [&](Partition const& partition) {
+        return partition.top_level_site == top_level_site || partition.storage_key.origin.is_same_origin(top_level_origin);
+    };
+
+    // NB: A job that waits behind the one that runs would make a registration after the test's are cleared.
+    for (auto& [key, job_queue] : m_scope_to_job_queue_map) {
+        if (is_of_test(key.partition) && job_queue.size() > 1)
+            job_queue.shrink(1);
+    }
+
+    Vector<RegistrationKey> registration_keys;
+    for (auto& [key, registration] : m_registration_map) {
+        if (is_of_test(key.partition))
+            registration_keys.append(key);
+    }
+    for (auto const& key : registration_keys) {
+        if (auto registration = m_registration_map.take(key); registration.has_value())
+            clear_registration(**registration);
+    }
 }
 
 }

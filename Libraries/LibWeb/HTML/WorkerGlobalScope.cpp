@@ -145,6 +145,9 @@ WebIDL::ExceptionOr<void> WorkerGlobalScope::import_scripts(Vector<Utf16String> 
     // 2. Let settings object be the current settings object.
     auto& settings_object = HTML::current_settings_object();
 
+    if (!perform_fetch)
+        perform_fetch = import_scripts_perform_the_fetch_hook();
+
     // 3. If urls is empty, return.
     if (urls.is_empty())
         return {};
@@ -265,6 +268,11 @@ void WorkerGlobalScope::initialize_policy_container(GC::Ref<Fetch::Infrastructur
         return owner.relevant_settings_object_policy_container;
     });
     m_policy_container->inherit_insecure_requests_policy(owner_serialized_policy_container.insecure_requests_policy, owner_serialized_policy_container.upgrade_insecure_navigations_set);
+}
+
+void WorkerGlobalScope::set_policy_container(NonnullRefPtr<PolicyContainer> policy_container)
+{
+    m_policy_container = move(policy_container);
 }
 
 // https://html.spec.whatwg.org/multipage/browsers.html#check-a-global-object's-embedder-policy

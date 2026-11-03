@@ -26,7 +26,7 @@ struct UpdateScriptFetch {
     bool force_bypass_cache { false };
 };
 
-using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, Optional<ServiceWorkerJobError>)>>;
+using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Optional<ServiceWorkerJobError>)>>;
 
 WEB_API void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_client, HTML::EnvironmentSettingsObject& settings_object, UpdateScriptFetch, OnUpdateScriptFetchComplete);
 

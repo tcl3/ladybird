@@ -86,12 +86,18 @@ public:
     virtual void did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest) override;
     virtual void did_request_service_worker_registration(Web::HTML::EnvironmentId, u64 request_id, URL::URL client_url) override;
     virtual void did_request_service_worker_registrations(Web::HTML::EnvironmentId, u64 request_id) override;
+    virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId, u64 request_id, URL::URL creation_url) override;
     virtual void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult) override;
+    virtual void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) override;
+    virtual void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded) override;
+    virtual void did_call_service_worker_skip_waiting(u64 request_id) override;
 
 private:
     virtual void did_misbehave(StringView message_name, StringView reason) override;
 
     virtual void die() override;
+
+    ServiceWorkerRegistry* service_worker_registry_of_this_service_worker(StringView message_name);
 
     IsPrivate m_is_private { IsPrivate::No };
     WeakPtr<BrowsingSession> m_session;

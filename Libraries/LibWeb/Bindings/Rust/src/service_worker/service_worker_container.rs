@@ -77,6 +77,10 @@ unsafe extern "C" {
         update_via_cache: u8,
     );
 
+    /// Has the UI process resolve the ready promise of the realm's settings object, which
+    /// web_rust_service_worker_ready() reports.
+    fn web_service_worker_request_ready(realm: *mut c_void, request_id: u64);
+
     /// Has the UI process look up the registration that matches the client URL, or every registration if the URL is
     /// empty, for the realm's settings object, which web_rust_service_worker_registration_lookup_finished() reports.
     fn web_service_worker_request_registrations(realm: *mut c_void, request_id: u64, client_url: ak::Span<'_, u8>);
@@ -165,6 +169,7 @@ enum ServiceWorkerRequestKind {
     Job,
     GetRegistration,
     GetRegistrations,
+    Ready,
 }
 
 // SAFETY: A kind of request holds no cells.
@@ -346,21 +351,19 @@ impl ServiceWorkerContainer {
             .iter()
             .find(|(promise_realm, _)| *promise_realm == realm)
             .map(|(_, promise)| *promise);
-        let ready_promise = existing_promise.unwrap_or_else(|| {
-            let promise = create_promise(vm, realm);
-            self.ready_promises.borrow_mut(vm).push((realm, promise));
-            promise
-        });
+        if let Some(ready_promise) = existing_promise {
+            // 4. Return readyPromise.
+            return Ok(ready_promise);
+        }
+        let ready_promise = create_promise(vm, realm);
+        self.ready_promises.borrow_mut(vm).push((realm, ready_promise));
 
-        // FIXME: 3. If readyPromise is pending, run the following substeps in parallel:
-        // FIXME:    1. Let client by this's service worker client.
-        // FIXME:    2. Let storage key be the result of running obtain a storage key given client.
-        // FIXME:    3. Let registration be the result of running Match Service Worker Registration given storage key
-        //              and client's creation URL.
-        // FIXME:    4. If registration is not null, and registration's active worker is not null, queue a task on
-        //              readyPromise's relevant settings object's responsible event loop, using the DOM manipulation
-        //              task source, to resolve readyPromise with the result of getting the service worker registration
-        //              object that represents registration in readyPromise's relevant settings object.
+        // 3. If readyPromise is pending, run the following substeps in parallel:
+        // NB: The UI process runs the substeps, and keeps the promise until it can resolve it. A promise that is no
+        //     longer new is pending only while the UI process holds it, so this asks only for a new one.
+        let request_id = add_pending_request(vm, ready_promise, ServiceWorkerRequestKind::Ready);
+        // SAFETY: The realm is live.
+        unsafe { web_service_worker_request_ready(self.realm.as_ptr().cast(), request_id) };
 
         // 4. Return readyPromise.
         // NOTE: The returned ready promise will never reject. If it does not resolve in this algorithm, it will
@@ -598,6 +601,39 @@ fn start_register(
     // 15. Invoke Schedule Job with job.
     // NB: The UI process creates and schedules the job, with the storage key and the referrer it knows the client by.
     //     The job promise settles once this process learns how the job settled.
+    schedule_job(
+        vm,
+        realm,
+        promise,
+        ServiceWorkerJobType::Register,
+        scope_url.serialize(ExcludeFragment::No),
+        Some(script_url.serialize(ExcludeFragment::No)),
+        worker_type,
+        update_via_cache,
+    );
+}
+
+/// In the order of Web::ServiceWorker::ServiceWorkerJobType, which C++ passes as its underlying value,
+/// https://w3c.github.io/ServiceWorker/#dfn-job-type
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum ServiceWorkerJobType {
+    Register = 0,
+    Unregister = 2,
+}
+
+/// Has the UI process create and schedule a job, whose promise settles once this process learns how the job settled.
+#[allow(clippy::too_many_arguments, reason = "a job has this many parts")]
+pub(crate) fn schedule_job(
+    vm: &Vm,
+    realm: Gc<Realm>,
+    promise: WebIdlPromise,
+    job_type: ServiceWorkerJobType,
+    scope_url: &str,
+    script_url: Option<&str>,
+    worker_type: WorkerType,
+    update_via_cache: ServiceWorkerUpdateViaCache,
+) {
     // AD-HOC: The job of a client whose document is not fully active is rejected with an "InvalidStateError"
     //         DOMException, matching other engines.
     if let Some(window) = window_from_global_object(realm.global_object())
@@ -615,16 +651,14 @@ fn start_register(
     }
 
     let request_id = add_pending_request(vm, promise, ServiceWorkerRequestKind::Job);
-    let scope_url = scope_url.serialize(ExcludeFragment::No);
-    let script_url = script_url.serialize(ExcludeFragment::No);
     // SAFETY: The realm is live, and the URLs are lent for the call.
     unsafe {
         web_service_worker_schedule_job(
             realm.as_ptr().cast(),
             request_id,
-            0,
+            job_type as u8,
             ak::Span::new(scope_url.as_bytes()),
-            ak::Span::new(script_url.as_bytes()),
+            ak::Span::new(script_url.unwrap_or_default().as_bytes()),
             worker_type as u8,
             update_via_cache as u8,
         );
@@ -750,4 +784,39 @@ fn resolve_registration_lookup(vm: &Vm, realm: Gc<Realm>, lookup: &RegistrationL
     let array = Array::create_from_list(vm, realm, &registration_objects);
     array.set_integrity_level(vm, IntegrityLevel::Frozen).must();
     resolve_promise(vm, lookup.promise, Value::from_object(array.upcast::<Object>()));
+}
+
+// https://w3c.github.io/ServiceWorker/#activation-algorithm
+pub(crate) fn service_worker_ready(vm: &Vm, request_id: u64, registration: ServiceWorkerRegistrationSnapshot) {
+    let Some((request, _root)) = take_pending_request(request_id, ServiceWorkerRequestKind::Ready) else {
+        return;
+    };
+    let promise = request.promise;
+    let lookup = REGISTRATION_LOOKUP_CLASS.allocate(vm, |_| RegistrationLookup {
+        promise,
+        kind: ServiceWorkerRequestKind::Ready,
+        registrations: vec![registration],
+    });
+
+    // 7. For each client of matchedClients, queue a task on client's responsible event loop, using the DOM manipulation
+    //    task source, to run the following substeps:
+    queue_a_global_task(
+        vm,
+        promise_realm(promise).global_object(),
+        TaskSource::DOMManipulation,
+        lookup,
+        |vm, lookup| {
+            let realm = promise_realm(lookup.promise);
+            with_temporary_execution_context_and_callbacks(realm, || {
+                // 1. Let readyPromise be client's global object's ServiceWorkerContainer object's ready promise.
+                // 2. If readyPromise is null, then continue.
+                // 3. If readyPromise is pending, resolve readyPromise with the result of getting the service worker
+                //    registration object that represents registration in readyPromise's relevant settings object.
+                let cx = CallContext::new(vm, realm);
+                let registration_object =
+                    get_the_service_worker_registration_object(vm, realm, &lookup.registrations[0]);
+                resolve_promise(vm, lookup.promise, Value::from_object(wrap(&cx, registration_object)));
+            });
+        },
+    );
 }

@@ -29,6 +29,7 @@ def global_mixin_header_is_provided_by_bindings(interface: Interface) -> bool:
     return interface.name in (
         "AudioWorkletGlobalScope",
         "DedicatedWorkerGlobalScope",
+        "ServiceWorkerGlobalScope",
         "SharedWorkerGlobalScope",
         "Window",
     )

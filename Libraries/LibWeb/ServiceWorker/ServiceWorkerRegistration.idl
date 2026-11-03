@@ -10,10 +10,10 @@ interface ServiceWorkerRegistration : EventTarget {
     readonly attribute ServiceWorkerUpdateViaCache updateViaCache;
 
     [FIXME, NewObject] Promise<ServiceWorkerRegistration> update();
-    [FIXME, NewObject] Promise<boolean> unregister();
+    [NewObject] Promise<boolean> unregister();
 
     // event
-    [FIXME] attribute EventHandler onupdatefound;
+    attribute EventHandler onupdatefound;
 };
 
 enum ServiceWorkerUpdateViaCache {

@@ -96,6 +96,7 @@ public:
     Optional<bool> hosted_environment_has_cross_site_ancestor(Web::HTML::EnvironmentId const& environment_id) const;
     Optional<bool> hosted_environment_is_cross_origin_isolated(Web::HTML::EnvironmentId const& environment_id) const;
     bool hosts_an_environment_with_storage_key(Web::StorageAPI::StorageKey const&) const;
+    void for_each_hosted_environment(Function<IterationDecision(CanonicalEnvironmentSettingsObject const&, bool has_cross_site_ancestor)> const&) const;
     void spoof_document_origin_for_testing(Web::HTML::EnvironmentId const& environment_id, URL::Origin);
     // Clears the bottle an environment of this page names, the way the browser's own clearing does: through the jar.
     void clear_storage_for_testing(Web::StorageAPI::StorageEndpointType, Web::HTML::EnvironmentId const&);
@@ -400,6 +401,7 @@ private:
     virtual void did_request_service_worker_registration(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL client_url) override;
     virtual void did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id) override;
     virtual void did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id) override;
+    virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url) override;
     Messages::WebContentClient::DidRequestCookieResponse did_request_cookie(Optional<Web::HTML::EnvironmentId> const&, URL::URL, HTTP::Cookie::Source);
     Messages::WebContentClient::DidRequestAllCookiesCookiestoreResponse did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId const&, URL::URL);
     Messages::WebContentClient::DidAddBlobUrlEntryResponse did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry);

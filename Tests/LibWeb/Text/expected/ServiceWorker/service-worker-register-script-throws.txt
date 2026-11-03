@@ -1,0 +1,5 @@
+Script that throws: TypeError
+Registration afterwards: undefined
+Script whose importScripts() fails: TypeError
+Registration afterwards: undefined
+Script whose importScripts() succeeds: resolved

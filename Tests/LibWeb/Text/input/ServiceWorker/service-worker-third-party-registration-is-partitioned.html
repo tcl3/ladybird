@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A frame of another site registers a service worker in a partition of its own, which a top-level document of that
+    // site does not see.
+    asyncTest(async done => {
+        const server = httpTestServer();
+        const otherSite = uniqueLocalhostHostname("service-worker-third-party");
+        const onOtherSite = url => {
+            const result = new URL(url);
+            result.hostname = otherSite;
+            return result.href;
+        };
+        const html = async (name, body) =>
+            onOtherSite(await server.createEcho("GET", `/third-party/${name}.html`, { status: 200, headers: { "Content-Type": "text/html" }, body: `<!DOCTYPE html>${body}` }));
+
+        const script = onOtherSite(await server.createEcho("GET", "/third-party/worker.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "" }));
+        const reporter = name => `<script>
+            const target = window.opener ?? window.parent;
+            window.addEventListener("message", async event => {
+                if (event.data === "register")
+                    await navigator.serviceWorker.register("${script}");
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                target.postMessage({ from: "${name}", registrations: registrations.length }, "*");
+            });
+            target.postMessage({ from: "${name}", loaded: true }, "*");
+        <\/script>`;
+        const frameURL = await html("frame", reporter("frame"));
+        const topLevelURL = await html("top-level", reporter("top-level"));
+
+        const nextMessage = (from, key) =>
+            new Promise(resolve => {
+                window.addEventListener("message", function listener(event) {
+                    if (event.data?.from !== from || event.data[key] === undefined)
+                        return;
+                    window.removeEventListener("message", listener);
+                    resolve(event.data[key]);
+                });
+            });
+
+        let message = nextMessage("frame", "loaded");
+        const frame = document.createElement("iframe");
+        frame.src = frameURL;
+        document.body.append(frame);
+        await message;
+
+        message = nextMessage("frame", "registrations");
+        frame.contentWindow.postMessage("register", "*");
+        println(`Registrations in the third-party frame: ${await message}`);
+
+        message = nextMessage("top-level", "loaded");
+        const popup = window.open(topLevelURL);
+        await message;
+        message = nextMessage("top-level", "registrations");
+        popup.postMessage("report", "*");
+        println(`Registrations at top level of the frame's site: ${await message}`);
+        popup.close();
+
+        println(`Registrations at top level of this site: ${(await navigator.serviceWorker.getRegistrations()).length}`);
+        done();
+    });
+</script>

@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibCore/Timer.h>
 #include <LibGC/Heap.h>
+#include <LibJS/HostClassBuilder.h>
 #include <LibJS/Runtime/ConsoleObject.h>
 #include <LibJS/Runtime/VM.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
@@ -13,6 +15,9 @@
 #include <LibWeb/FileAPI/BlobURLStore.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/MessagePort.h>
+#include <LibWeb/HTML/PolicyContainers.h>
+#include <LibWeb/HTML/Scripting/ClassicScript.h>
+#include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/RemoteEnvironmentSettings.h>
 #include <LibWeb/HTML/Scripting/WorkerEnvironmentSettingsObject.h>
 #include <LibWeb/HTML/WorkerDebugConsoleClient.h>
@@ -21,6 +26,11 @@
 #include <LibWeb/ServiceWorker/Update.h>
 #include <WebContent/Worker/PageHost.h>
 #include <WebContent/Worker/ServiceWorkerHost.h>
+
+extern "C" {
+void web_rust_service_worker_dispatch_lifecycle_event(JSVM*, void* realm, Web::DOM::EventTarget* global, u8 kind, void* ctx, void (*on_finished)(void*, bool failed));
+void web_rust_service_worker_time_out_lifecycle_event(JSVM*);
+}
 
 namespace WebWorker {
 
@@ -33,6 +43,7 @@ ServiceWorkerHost::~ServiceWorkerHost() = default;
 
 void ServiceWorkerHost::start(GC::Ref<Web::Page> page)
 {
+    m_page = page;
     set_up_service_worker_global_scope(page);
     fetch_script(page);
 }
@@ -74,7 +85,12 @@ void ServiceWorkerHost::run_closing_steps()
             Web::FileAPI::remove_entries_of_environment(*m_settings_object, *m_global_scope->page());
     }
 
+    if (m_lifecycle_event_deadline_timer)
+        m_lifecycle_event_deadline_timer->stop();
+    m_lifecycle_event_deadline_timer = nullptr;
+
     // NB: The roots have to go before the heap does.
+    m_page = nullptr;
     m_console = nullptr;
     m_global_scope = nullptr;
     m_settings_object = nullptr;
@@ -145,17 +161,33 @@ void ServiceWorkerHost::set_up_service_worker_global_scope(GC::Ref<Web::Page> pa
     m_console = GC::Heap::the().allocate<Web::HTML::WorkerDebugConsoleClient>(console_object.console());
     console_object.console().set_client(*m_console);
 
-    // FIXME: 5. Set workerGlobalScope's policy container to serviceWorker's script resource's policy container.
-    // FIXME: 6. Set workerGlobalScope's type to serviceWorker's type.
-    // FIXME: 7. Create a new WorkerLocation object and associate it with workerGlobalScope.
-    // FIXME: 8. If the run CSP initialization for a global object algorithm returns "Blocked" when executed upon
-    //           workerGlobalScope, set setupFailed to true and abort these steps.
+    m_global_scope->set_service_worker_state(m_request.worker.state);
+    m_global_scope->set_registration_update_via_cache(m_request.registration.update_via_cache);
 
-    // 9. Set globalObject to workerGlobalScope.
+    // NB: The rest of the steps run once the script resource is fetched.
+}
 
+// https://w3c.github.io/ServiceWorker/#setup-serviceworkerglobalscope
+bool ServiceWorkerHost::finish_setting_up_service_worker_global_scope(GC::Ref<Web::Fetch::Infrastructure::ResponseView> response)
+{
+    auto& worker_global_scope = *m_global_scope;
+
+    // 8.5. Set workerGlobalScope's policy container to serviceWorker's script resource's policy container.
+    worker_global_scope.set_policy_container(Web::HTML::create_a_policy_container_from_a_fetch_response(response, *m_settings_object));
+
+    // 8.6. Set workerGlobalScope's type to serviceWorker's type.
+    worker_global_scope.set_type(m_request.worker_type);
+
+    // 8.7. Create a new WorkerLocation object and associate it with workerGlobalScope.
+    worker_global_scope.set_location(GC::Heap::the().allocate<Web::HTML::WorkerLocation>(worker_global_scope));
+
+    // 8.8. If the run CSP initialization for a global object algorithm returns "Blocked" when executed upon
+    //      workerGlobalScope, set setupFailed to true and abort these steps.
+    // 8.9. Set globalObject to workerGlobalScope.
     // 9. Wait for globalObject is not null, or for setupFailed to be true.
     // 10. If setupFailed is true, then return null.
     // 11. Return globalObject.
+    return worker_global_scope.run_csp_initialization() != Web::ContentSecurityPolicy::Directives::Directive::Result::Blocked;
 }
 
 void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
@@ -168,12 +200,137 @@ void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
         .update_via_cache = m_request.registration.update_via_cache,
         .force_bypass_cache = m_request.script_fetch.force_bypass_cache,
     };
-    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(page), [](auto& page, GC::Ptr<Web::HTML::Script> script, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
-        Web::ServiceWorker::ServiceWorkerScriptFetchResult result;
-        if (!script)
-            result = rejection.value_or(Web::ServiceWorker::ServiceWorkerJobError::TypeError);
-        as<PageHost>(page->client()).did_fetch_service_worker_script(result);
+    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
+        if (!script || !response) {
+            as<PageHost>(page->client()).did_fetch_service_worker_script(rejection.value_or(Web::ServiceWorker::ServiceWorkerJobError::TypeError));
+            return;
+        }
+        host->run_service_worker(page, *script, *response);
     }));
+}
+
+// https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+void ServiceWorkerHost::run_service_worker(GC::Ref<Web::Page> page, GC::Ref<Web::HTML::Script> script, GC::Ref<Web::Fetch::Infrastructure::ResponseView> response)
+{
+    auto& host = as<PageHost>(page->client());
+
+    // 1. If serviceWorker is running, then return serviceWorker's start status.
+    // 2. If serviceWorker's state is "redundant", then return failure.
+    // 3. Assert: serviceWorker's start status is null.
+    // 4. Let script be serviceWorker's script resource.
+    // 5. Assert: script is not null.
+    // 6. Let startFailed be false.
+    // 7. Let workerGlobalScope be serviceWorker's global object.
+    // 8. If workerGlobalScope is null:
+    //    1. Set workerGlobalScope to be the result of running the Setup ServiceWorkerGlobalScope algorithm with
+    //       serviceWorker.
+    //    2. If workerGlobalScope is null, then return failure.
+    //    3. Set serviceWorker's global object to workerGlobalScope.
+    // NB: The worker's process sets the global object up when it starts, and finishes the setup once the worker's
+    //     script is fetched.
+    if (!finish_setting_up_service_worker_global_scope(response)) {
+        host.did_run_service_worker(false, {});
+        return;
+    }
+    auto& worker_global_scope = *m_global_scope;
+
+    // 9. Obtain agent for workerGlobalScope's realm execution context, and run the following steps in that context:
+    // FIXME: 1. Set workerGlobalScope's force bypass cache for import scripts flag if forceBypassCache is true.
+    // 2. If serviceWorker is an active worker, and there are any tasks queued in serviceWorker's containing service
+    //    worker registration's task queues, queue them to serviceWorker's event loop's task queues in the same order
+    //    using their original task sources.
+    // NB: A new worker is not an active worker.
+
+    // 3. Let evaluationStatus be null.
+    // 4. If script is a classic script, then:
+    //    1. Set evaluationStatus to the result of running the classic script script.
+    //    2. If evaluationStatus.[[Value]] is empty, this means the script was not evaluated. Set startFailed to true and
+    //       abort these steps.
+    // 5. Otherwise, if script is a module script, then:
+    // FIXME: Run module scripts.
+    auto* classic_script = as_if<Web::HTML::ClassicScript>(*script);
+    if (!classic_script) {
+        host.did_run_service_worker(false, {});
+        return;
+    }
+    m_settings_object->execution_ready = true;
+    auto evaluation_status = classic_script->run();
+
+    // 6. If the script was aborted by the Terminate Service Worker algorithm, set startFailed to true and abort these
+    //    steps.
+    // 7. Set serviceWorker's start status to evaluationStatus.
+    // NB: The UI process rejects the job of a worker whose start status is an abrupt completion.
+
+    // 8. If script's has ever been evaluated flag is unset, then:
+    //    1. For each eventType of settingsObject's global object's associated list of event listeners' event types:
+    //       1. Append eventType to workerGlobalScope's associated service worker's set of event types to handle.
+    //    2. Set script's has ever been evaluated flag.
+    //    3. Unset the serviceWorker's all fetch listeners are empty flag.
+    //    FIXME: 4. The user agent may, if the All Fetch Listeners Are Empty algorithm with workerGlobalScope returns
+    //              true, set serviceWorker's all fetch listeners are empty flag.
+    Vector<String> event_types_to_handle;
+    for (auto const& event_type : worker_global_scope.event_types_of_event_listeners())
+        event_types_to_handle.append(event_type.to_utf16_string().to_utf8());
+
+    // 9. Run the responsible event loop specified by settingsObject until it is destroyed.
+    m_settings_object->responsible_event_loop().schedule();
+
+    // FIXME: 10. Clear workerGlobalScope's map of active timers.
+
+    // 10. Wait for serviceWorker to be running, or for startFailed to be true.
+    // 11. If startFailed is true, then return failure.
+    // 12. Return serviceWorker's start status.
+    host.did_run_service_worker(!evaluation_status.is_abrupt(), move(event_types_to_handle));
+}
+
+void ServiceWorkerHost::service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor const& worker)
+{
+    if (worker.id == m_request.worker.id && m_global_scope)
+        m_global_scope->set_service_worker_state(worker.state);
+}
+
+void ServiceWorkerHost::dispatch_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, AK::Duration timeout)
+{
+    if (!m_global_scope || m_lifecycle_event_in_flight.has_value())
+        return;
+    m_lifecycle_event_in_flight = event;
+
+    // https://w3c.github.io/ServiceWorker/#installation-algorithm
+    // 11.3.1. Queue a task task on installingWorker's event loop using the DOM manipulation task source to run the
+    //         following steps:
+    // https://w3c.github.io/ServiceWorker/#activation-algorithm
+    // 10.1.1. Queue a task task on activeWorker's event loop using the DOM manipulation task source to run the following
+    //         steps:
+    Web::HTML::queue_global_task(Web::HTML::Task::Source::DOMManipulation, Web::HTML::relevant_global_object(*m_global_scope), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, event), [](auto& host, auto event) {
+        auto& realm = host->m_settings_object->realm();
+        web_rust_service_worker_dispatch_lifecycle_event(JS::HostABI::vm_to_abi(realm.vm()), &realm, host->m_global_scope.ptr(), to_underlying(event), host.ptr(), [](void* ctx, bool failed) {
+            static_cast<ServiceWorkerHost*>(ctx)->lifecycle_event_finished(failed);
+        });
+    }));
+
+    // NB: An extendable event's timed out flag "is set after an optional user agent imposed delay if the pending
+    //     promises count is greater than zero", which this is.
+    m_lifecycle_event_deadline_timer = Core::Timer::create_single_shot(timeout, [] {
+        web_rust_service_worker_time_out_lifecycle_event(JS::HostABI::vm_to_abi(JS::VM::the()));
+    });
+    m_lifecycle_event_deadline_timer->start();
+}
+
+void ServiceWorkerHost::lifecycle_event_finished(bool failed)
+{
+    auto event = m_lifecycle_event_in_flight.release_value();
+    if (m_lifecycle_event_deadline_timer)
+        m_lifecycle_event_deadline_timer->stop();
+
+    if (event == Web::ServiceWorker::ServiceWorkerLifecycleEvent::Install && !failed)
+        m_global_scope->prune_script_resource_map();
+    as<PageHost>(m_page->client()).did_finish_service_worker_lifecycle_event(event, !failed);
+}
+
+void ServiceWorkerHost::skip_waiting_finished(Web::ServiceWorker::ServiceWorkerRequestId request_id)
+{
+    if (m_global_scope)
+        m_global_scope->skip_waiting_finished(request_id);
 }
 
 }

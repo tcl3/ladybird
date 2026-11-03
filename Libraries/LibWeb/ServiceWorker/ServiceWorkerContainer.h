@@ -28,5 +28,9 @@ public:
 
 WEB_API void service_worker_job_settled(ServiceWorkerRequestId, ServiceWorkerJobResult);
 WEB_API void service_worker_registration_lookup_finished(ServiceWorkerRequestId, Vector<ServiceWorkerRegistrationSnapshot>);
+WEB_API void service_worker_registration_state_changed(ServiceWorkerRegistrationId, ServiceWorkerRegistrationSlot target, Optional<ServiceWorkerDescriptor> source);
+WEB_API void service_worker_state_changed(ServiceWorkerDescriptor);
+WEB_API void service_worker_update_found(ServiceWorkerRegistrationId);
+WEB_API void service_worker_ready(ServiceWorkerRequestId, ServiceWorkerRegistrationSnapshot);
 
 }

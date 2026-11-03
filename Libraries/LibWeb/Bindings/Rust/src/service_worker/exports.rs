@@ -11,12 +11,15 @@ use core::ffi::c_void;
 use libjs_rust::api::Vm;
 
 use crate::bindings::interface::{cell_into_abi, realm_arguments};
-use crate::service_worker::service_worker::ServiceWorkerState;
+use crate::service_worker::service_worker::{ServiceWorkerState, service_worker_state_changed};
 use crate::service_worker::service_worker_container::{
-    ServiceWorkerContainer, ServiceWorkerJobResult, service_worker_job_settled,
+    ServiceWorkerContainer, ServiceWorkerJobResult, service_worker_job_settled, service_worker_ready,
     service_worker_registration_lookup_finished,
 };
-use crate::service_worker::service_worker_registration::ServiceWorkerUpdateViaCache;
+use crate::service_worker::service_worker_registration::{
+    ServiceWorkerRegistrationSlot, ServiceWorkerUpdateViaCache, service_worker_registration_state_changed,
+    service_worker_update_found,
+};
 use crate::service_worker::{ServiceWorkerDescriptor, ServiceWorkerRegistrationSnapshot};
 
 /// A Web::ServiceWorker::ServiceWorkerDescriptor that C++ lends, if `exists` is true.
@@ -115,4 +118,65 @@ pub unsafe extern "C" fn web_rust_service_worker_registration_lookup_finished(
     let vm = unsafe { &*vm.cast::<Vm>() };
     let registrations = registrations.as_slice().iter().map(snapshot_from_abi).collect();
     service_worker_registration_lookup_finished(vm, request_id, registrations);
+}
+
+/// The UI process set a slot of a registration to the worker, if `worker` exists, or to null.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and the worker must be lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_registration_state_changed(
+    vm: *mut c_void,
+    registration_id: u64,
+    target: u8,
+    worker: *const FfiServiceWorkerDescriptor<'_>,
+) {
+    // SAFETY: The caller passes the live VM and lends the worker.
+    let (vm, worker) = unsafe { (&*vm.cast::<Vm>(), descriptor_from_abi(&*worker)) };
+    let target = ServiceWorkerRegistrationSlot::from_u8(target).expect("C++ passes a ServiceWorkerRegistrationSlot");
+    service_worker_registration_state_changed(vm, registration_id, target, worker);
+}
+
+/// The UI process set the state of a service worker.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and the worker must be lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_state_changed(
+    vm: *mut c_void,
+    worker: *const FfiServiceWorkerDescriptor<'_>,
+) {
+    // SAFETY: The caller passes the live VM and lends the worker.
+    let (vm, worker) = unsafe { (&*vm.cast::<Vm>(), descriptor_from_abi(&*worker)) };
+    service_worker_state_changed(vm, &worker.expect("C++ passes a worker"));
+}
+
+/// The UI process found an update of a registration, which it is installing.
+///
+/// # Safety
+///
+/// `vm` must be the live VM.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_update_found(vm: *mut c_void, registration_id: u64) {
+    // SAFETY: The caller passes the live VM.
+    let vm = unsafe { &*vm.cast::<Vm>() };
+    service_worker_update_found(vm, registration_id);
+}
+
+/// The UI process found the registration that resolves a ready promise of this process.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and the registration must be lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_ready(
+    vm: *mut c_void,
+    request_id: u64,
+    registration: *const FfiServiceWorkerRegistrationSnapshot<'_>,
+) {
+    // SAFETY: The caller passes the live VM and lends the registration.
+    let (vm, registration) = unsafe { (&*vm.cast::<Vm>(), snapshot_from_abi(&*registration)) };
+    service_worker_ready(vm, request_id, registration);
 }

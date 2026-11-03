@@ -1329,6 +1329,7 @@ static ErrorOr<int> run_tests(Core::AnonymousBuffer const& theme, Web::DevicePix
 
             // A test's ignored and learned words live in this process, so they outlive a crashed WebContent.
             view->reset_spell_checking();
+            view->reset_service_workers();
 
             // Don't try to reset state if WebContent crashed - it's gone
             if (test_result != TestResult::Crashed) {

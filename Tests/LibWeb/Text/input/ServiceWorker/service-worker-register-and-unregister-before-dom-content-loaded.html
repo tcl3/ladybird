@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A frame whose DOMContentLoaded has not fired schedules register() and then unregister() for an existing
+    // registration. The jobs wait for DOMContentLoaded and run in the order they were scheduled.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const token = `held-${uniqueID()}`;
+        const script = await server.createEcho("GET", "/worker.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "" });
+        const held = await server.createEcho("GET", "/held.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "", wait_for_unblock: token });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: `<!DOCTYPE html><script>
+                const events = [];
+                document.addEventListener("DOMContentLoaded", () => events.push("DOMContentLoaded"));
+                navigator.serviceWorker.getRegistration().then(registration => {
+                    const registered = navigator.serviceWorker.register("${script}").then(() => events.push("register() resolved"));
+                    const unregistered = registration.unregister().then(result => events.push("unregister() resolved with " + result));
+                    parent.postMessage("scheduled", "*");
+                    Promise.all([registered, unregistered]).then(async () => {
+                        events.push("registrations afterwards: " + (await navigator.serviceWorker.getRegistrations()).length);
+                        parent.postMessage(events, "*");
+                    });
+                });
+            <\/script><script src="${held}"><\/script>`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const nextMessage = () => new Promise(resolve => addEventListener("message", event => resolve(event.data), { once: true }));
+        let message = nextMessage();
+        const frame = document.createElement("iframe");
+        frame.src = frameURL;
+        document.body.append(frame);
+        await message;
+
+        message = nextMessage();
+        await fetch(`${server.baseURL}/unblock/${token}`);
+        println(`Events in the frame: ${(await message).join(", ")}`);
+    });
+</script>

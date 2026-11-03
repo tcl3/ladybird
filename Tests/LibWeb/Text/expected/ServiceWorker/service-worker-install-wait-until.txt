@@ -1,0 +1,6 @@
+Rejected waitUntil(): worker is redundant
+Registration afterwards: undefined
+Installing worker afterwards: null
+waitUntil() that never settles: worker is redundant
+Next job on the scope ran: true
+Next worker: activated

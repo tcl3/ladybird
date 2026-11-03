@@ -1,0 +1,1 @@
+Events in the frame: DOMContentLoaded, register() resolved, unregister() resolved with true, registrations afterwards: 0

@@ -36,6 +36,7 @@
 #include <LibWeb/Infra/SerializedURL.h>
 #include <LibWeb/MixedContent/AbstractOperations.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/StorageAPI/StorageManager.h>
 #include <LibWeb/WebLocks/LockManager.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
@@ -687,6 +688,11 @@ bool is_secure_context(Environment const& environment)
 
         // 2. If global is a WorkerGlobalScope, then:
         if (auto const* worker = Bindings::worker_global_scope_from_global_object(global)) {
+            // AD-HOC: A service worker has no owners. Its registration requires a secure context and a potentially
+            //         trustworthy script origin, so it is one.
+            if (is<ServiceWorker::ServiceWorkerGlobalScope>(*worker))
+                return true;
+
             // 1. If global's owner set[0]'s relevant settings object is a secure context, then return true.
             // NOTE: We only need to check the 0th item since they will necessarily all be consistent.
             if (worker->owner_set().at(0).visit([](auto const& owner) { return owner.relevant_settings_object_is_secure_context; }))

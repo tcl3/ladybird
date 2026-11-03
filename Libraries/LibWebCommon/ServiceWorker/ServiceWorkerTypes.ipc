@@ -28,7 +28,7 @@ struct Web::ServiceWorker::ServiceWorkerJobRequest {
     Web::ServiceWorker::ServiceWorkerJobType job_type;
     Web::HTML::SerializedEnvironmentSettingsObject client;
     URL::URL scope_url;
-    URL::URL script_url;
+    Optional<URL::URL> script_url;
     Web::HTML::WorkerType worker_type;
     Web::ServiceWorker::ServiceWorkerUpdateViaCache update_via_cache;
     bool client_has_dispatched_dom_content_loaded;

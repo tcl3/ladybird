@@ -10,6 +10,7 @@
 #include <AK/Types.h>
 #include <AK/Variant.h>
 #include <AK/Vector.h>
+#include <LibGC/Forward.h>
 #include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibWebCommon/Bindings/ServiceWorker.h>
@@ -40,6 +41,18 @@ enum class ServiceWorkerJobError : u8 {
     SecurityError,
 };
 
+// https://w3c.github.io/ServiceWorker/#update-registration-state-algorithm
+enum class ServiceWorkerRegistrationSlot : u8 {
+    Installing,
+    Waiting,
+    Active,
+};
+
+enum class ServiceWorkerLifecycleEvent : u8 {
+    Install,
+    Activate,
+};
+
 // https://w3c.github.io/ServiceWorker/#dfn-service-worker
 struct ServiceWorkerDescriptor {
     ServiceWorkerId id { 0 };
@@ -63,7 +76,7 @@ struct ServiceWorkerJobRequest {
     ServiceWorkerJobType job_type { ServiceWorkerJobType::Register };
     HTML::SerializedEnvironmentSettingsObject client;
     URL::URL scope_url;
-    URL::URL script_url;
+    Optional<URL::URL> script_url;
     HTML::WorkerType worker_type { HTML::WorkerType::Classic };
     ServiceWorkerUpdateViaCache update_via_cache { ServiceWorkerUpdateViaCache::Imports };
     bool client_has_dispatched_dom_content_loaded { false };
@@ -94,5 +107,8 @@ struct ServiceWorkerStartRequest {
 using ServiceWorkerScriptFetchResult = Optional<ServiceWorkerJobError>;
 
 }
+
+GC_UNTRACED_CAPTURE(Web::ServiceWorker::ServiceWorkerDescriptor);
+GC_UNTRACED_CAPTURE(Web::ServiceWorker::ServiceWorkerRegistrationSnapshot);
 
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypesCodecs.h>

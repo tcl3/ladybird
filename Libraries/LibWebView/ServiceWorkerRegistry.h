@@ -33,6 +33,15 @@ public:
     explicit ServiceWorkerClientConnection(WebContentClient&);
     explicit ServiceWorkerClientConnection(WebWorkerClient&);
 
+    template<typename Callback>
+    void visit_open_connection(Callback callback) const
+    {
+        m_connection.visit([&](auto const& connection) {
+            if (connection && connection->is_open())
+                callback(*connection);
+        });
+    }
+
     void service_worker_job_settled(Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerJobResult const&) const;
     void service_worker_registration_lookup_finished(Web::ServiceWorker::ServiceWorkerRequestId, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> const&) const;
 
@@ -62,11 +71,17 @@ public:
     void schedule_job(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerJobRequest);
     void get_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL client_url);
     void get_registrations(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId);
+    void get_ready_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL creation_url);
     void client_did_dispatch_dom_content_loaded(Web::HTML::EnvironmentId const&);
 
     bool is_service_worker_agent(Web::HTML::WorkerAgentId) const;
     void service_worker_did_fetch_script(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerScriptFetchResult);
+    void service_worker_did_run(Web::HTML::WorkerAgentId, bool succeeded, Vector<String> event_types_to_handle);
+    void service_worker_did_finish_lifecycle_event(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
+    void service_worker_did_call_skip_waiting(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
     void service_worker_process_did_exit(Web::HTML::WorkerAgentId);
+
+    void clear_registrations_for_testing(URL::Origin const& top_level_origin);
 
 private:
     // AD-HOC: Registrations are keyed by the network state partition of the clients that use them as well as by their
@@ -90,13 +105,38 @@ private:
         static unsigned hash(RegistrationKey const&);
     };
 
+    // The job that a worker's process continues, with what the job's algorithm knew when it waited for the process.
+    struct JobInProgress {
+        u64 job_id { 0 };
+        RegistrationKey job_queue_key;
+        Optional<Web::ServiceWorker::ServiceWorkerId> newest_worker;
+    };
+
+    enum class AwaitedStep : u8 {
+        None,
+        Start,
+        InstallEvent,
+        ActivateEvent,
+    };
+
     // https://w3c.github.io/ServiceWorker/#dfn-service-worker
     struct ServiceWorkerRecord {
+        AK_ALLOC_WITH_KMALLOC;
+
         Web::ServiceWorker::ServiceWorkerId id { 0 };
         Web::ServiceWorker::ServiceWorkerRegistrationId registration_id { 0 };
+        Partition partition;
         URL::URL script_url;
         Web::HTML::WorkerType type { Web::HTML::WorkerType::Classic };
         Web::ServiceWorker::ServiceWorkerState state { Web::ServiceWorker::ServiceWorkerState::Parsed };
+        Vector<String> set_of_event_types_to_handle;
+        bool skip_waiting_flag { false };
+
+        Optional<Web::HTML::WorkerAgentId> agent_id;
+        RefPtr<WebWorkerClient> process;
+        AwaitedStep awaited_step { AwaitedStep::None };
+        Optional<JobInProgress> job_in_progress;
+        RefPtr<Core::Timer> deadline_timer;
     };
 
     // https://w3c.github.io/ServiceWorker/#dfn-service-worker-registration
@@ -128,7 +168,7 @@ private:
         Web::ServiceWorker::ServiceWorkerJobType job_type { Web::ServiceWorker::ServiceWorkerJobType::Register };
         Partition partition;
         URL::URL scope_url;
-        URL::URL script_url;
+        Optional<URL::URL> script_url;
         Web::HTML::WorkerType worker_type { Web::HTML::WorkerType::Classic };
         Web::ServiceWorker::ServiceWorkerUpdateViaCache update_via_cache { Web::ServiceWorker::ServiceWorkerUpdateViaCache::Imports };
         Optional<JobClient> client;
@@ -143,49 +183,67 @@ private:
 
     using JobQueue = Vector<NonnullOwnPtr<Job>>;
 
-    struct UpdatingWorker {
-        ServiceWorkerRecord worker;
-        u64 job_id { 0 };
-        RegistrationKey job_queue_key;
-        Optional<Web::ServiceWorker::ServiceWorkerId> newest_worker;
-        Web::HTML::WorkerAgentId agent_id { 0 };
-        RefPtr<WebWorkerClient> process;
-        RefPtr<Core::Timer> start_deadline_timer;
+    // A ready promise of a client that waits for a registration with an active worker.
+    struct ReadyRequest {
+        ServiceWorkerClientConnection connection;
+        Web::HTML::EnvironmentId environment_id;
+        Web::ServiceWorker::ServiceWorkerRequestId request_id { 0 };
+        Partition partition;
+        URL::URL creation_url;
     };
 
     void run_job(RegistrationKey const& job_queue_key);
     void finish_job(RegistrationKey const& job_queue_key, Job&);
+    Job* job_in_progress_of(ServiceWorkerRecord const&);
     void resolve_job_promise(Job&, Web::ServiceWorker::ServiceWorkerJobResult const&);
     void reject_job_promise(Job&, Web::ServiceWorker::ServiceWorkerJobError);
     void settle_job_promise(Job&, Web::ServiceWorker::ServiceWorkerJobResult const&);
 
     void register_(RegistrationKey const& job_queue_key, Job&);
     void update(RegistrationKey const& job_queue_key, Job&);
-    void continue_update(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerScriptFetchResult);
-    void stop_updating_worker(UpdatingWorker&);
+    void fail_update(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerJobError);
+    void install(ServiceWorkerRecord&);
+    void finish_install(ServiceWorkerRecord&, bool install_failed);
+    void activate(Registration&);
+    void finish_activate(ServiceWorkerRecord&);
+    void try_activate(Registration&);
+    void unregister(RegistrationKey const& job_queue_key, Job&);
+    void try_clear_registration(Registration&);
+    void clear_registration(Registration&);
+    void update_registration_state(Registration&, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerId> source);
+    void update_worker_state(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerState);
+
+    void dispatch_lifecycle_event(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerLifecycleEvent);
+    void terminate_service_worker(ServiceWorkerRecord&);
+    void service_worker_stopped(ServiceWorkerRecord&);
+    void forget_service_worker_if_unused(Web::ServiceWorker::ServiceWorkerId);
+    ServiceWorkerRecord* service_worker_of_agent(Web::HTML::WorkerAgentId);
+    void for_each_process_in_partition(Partition const&, Function<void(ServiceWorkerClientConnection const&)> const&) const;
 
     Registration& set_registration(Job const&);
     Registration* get_registration(Partition const&, URL::URL const& scope_url);
+    Registration* registration_by_id(Web::ServiceWorker::ServiceWorkerRegistrationId);
     Registration* match_service_worker_registration(Partition const&, URL::URL const& client_url);
     void remove_registration(Registration&);
     Optional<Web::ServiceWorker::ServiceWorkerId> get_newest_worker(Registration const&) const;
     Web::ServiceWorker::ServiceWorkerRegistrationSnapshot snapshot_of(Registration const&) const;
     Optional<Web::ServiceWorker::ServiceWorkerDescriptor> descriptor_of(Optional<Web::ServiceWorker::ServiceWorkerId>) const;
 
-    static Optional<Partition> partition_of(ServiceWorkerClientEnvironment const&);
+    static Optional<Partition> partition_of(CanonicalEnvironmentSettingsObject const&, bool has_cross_site_ancestor);
     static RegistrationKey registration_key(Partition const&, URL::URL const& scope_url);
 
     IsPrivate m_is_private { IsPrivate::No };
 
     HashMap<RegistrationKey, NonnullOwnPtr<Registration>, RegistrationKeyTraits> m_registration_map;
-    HashMap<Web::ServiceWorker::ServiceWorkerId, ServiceWorkerRecord> m_service_workers;
+
+    HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 
     // https://w3c.github.io/ServiceWorker/#dfn-scope-to-job-queue-map
     // AD-HOC: The job queues are keyed as the registrations are, so that clients in one partition never wait for the
     //         jobs of another.
     HashMap<RegistrationKey, JobQueue, RegistrationKeyTraits> m_scope_to_job_queue_map;
 
-    Vector<UpdatingWorker> m_updating_workers;
+    Vector<ReadyRequest> m_ready_requests;
 
     Web::ServiceWorker::ServiceWorkerRegistrationId m_next_registration_id { 0 };
     Web::ServiceWorker::ServiceWorkerId m_next_service_worker_id { 0 };

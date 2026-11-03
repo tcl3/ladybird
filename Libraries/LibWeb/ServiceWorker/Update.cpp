@@ -60,7 +60,10 @@ GC_DEFINE_ALLOCATOR(ScriptFetchConsumeBody);
 
 class UpdateScriptFetchState : public RefCounted<UpdateScriptFetchState> {
 public:
-    GC_HOLDS_NO_CELL_EDGES;
+    void visit_edges(GC::Cell::Visitor& visitor) const
+    {
+        visitor.visit(m_response);
+    }
 
     void reject_job_promise(ServiceWorkerJobError error)
     {
@@ -70,8 +73,12 @@ public:
 
     Optional<ServiceWorkerJobError> rejection() const { return m_rejection; }
 
+    GC::Ptr<Fetch::Infrastructure::ResponseView> response() const { return m_response; }
+    void set_response(GC::Ref<Fetch::Infrastructure::ResponseView> response) { m_response = response; }
+
 private:
     Optional<ServiceWorkerJobError> m_rejection;
+    GC::Ptr<Fetch::Infrastructure::ResponseView> m_response;
 };
 
 // NB: The result of the processResponse steps of a job's top-level script fetch, which the perform the fetch hook
@@ -173,7 +180,8 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
             if (service_worker_allowed_bytes.has_value())
                 service_worker_allowed = TextCodec::isomorphic_decode_to_utf16(*service_worker_allowed_bytes);
 
-            // FIXME: 10. Set policyContainer to the result of creating a policy container from a fetch response given response.
+            // 10. Set policyContainer to the result of creating a policy container from a fetch response given response.
+            // NB: Setup ServiceWorkerGlobalScope creates the worker global scope's policy container from the response.
 
             // 11. Let scopeURL be registration's scope url.
             auto const& scope_url = job.scope_url;
@@ -232,6 +240,7 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
 
             // 17. Let url be request's url.
             // 18. Set updatedResourceMap[url] to response.
+            state->set_response(response);
             // FIXME: 19. If response's cache state is not "local", set registration's last update check time to the current time.
             // FIXME: 20. Set hasUpdatedResources to true if any of the following are true:
             //            - newestWorker is null.
@@ -269,7 +278,7 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
 
     // When the algorithm asynchronously completes, continue the rest of these steps, with script being the asynchronous completion value.
     HTML::OnFetchScriptComplete on_fetch_complete = GC::create_function(GC::Heap::the(), GC::captures(state, on_complete), [](auto& state, auto& on_complete, GC::Ptr<HTML::Script> script) -> void {
-        on_complete->function()(script, state->rejection());
+        on_complete->function()(script, state->response(), state->rejection());
     });
 
     // 7. Switching on job's worker type, run these substeps with the following options:

@@ -1,0 +1,4 @@
+While the first worker activates: first is activating, second is installed
+After the first worker calls skipWaiting(): first is redundant, second is activated
+Active worker is the second: true
+unregister(): true

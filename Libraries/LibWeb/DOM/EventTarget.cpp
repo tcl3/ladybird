@@ -1170,6 +1170,18 @@ bool EventTarget::has_event_listener(Utf16FlyString const& type) const
     return m_data && m_data->event_listener_list.contains([&type](auto listener) { return listener->type == type; });
 }
 
+Vector<Utf16FlyString> EventTarget::event_types_of_event_listeners() const
+{
+    Vector<Utf16FlyString> types;
+    if (!m_data)
+        return types;
+    for (auto const& listener : m_data->event_listener_list) {
+        if (!types.contains_slow(listener->type))
+            types.append(listener->type);
+    }
+    return types;
+}
+
 bool EventTarget::has_blocking_wheel_event_listener() const
 {
     return m_data && m_data->event_listener_list.contains(is_blocking_wheel_event_listener);

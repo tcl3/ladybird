@@ -1,0 +1,6 @@
+// https://w3c.github.io/ServiceWorker/#installevent-interface
+[Exposed=ServiceWorker, ImplementedIn=Rust]
+interface InstallEvent : ExtendableEvent {
+    constructor(DOMString type, optional ExtendableEventInit eventInitDict = {});
+    [FIXME] Promise<undefined> addRoutes((RouterRule or sequence<RouterRule>) rules);
+};

@@ -469,6 +469,8 @@ def write_dictionary_from_js(out: TextIO, context: GenerationContext, dictionary
         parent_field
         + [f"{rust_identifier(member.name)}: {rust_local_name(member.name)}" for member in dictionary.members]
     )
+    # NB: A dictionary without members of its own converts the value only to check that it can be a dictionary.
+    object_binding = "let object = " if dictionary.members else ""
     if holds_sequence_of_cells:
         # NB: The struct keeps the sequences of its members alive in MarkedVecs for as long as the reference to the VM
         #     lives, a lifetime that the result of FromJs::from_js() cannot have, so the conversions are its methods.
@@ -486,7 +488,7 @@ def write_dictionary_from_js(out: TextIO, context: GenerationContext, dictionary
     /// whose struct keeps the sequences of its members alive for as long as the reference to the VM lives.
     impl<'vm> {path}<'vm> {{
         pub(crate) fn from_js(vm: &'vm Vm, value: Value) -> ThrowCompletionOr<Self> {{
-{"".join(keys)}            let object = dictionary_object(vm, value, "{dictionary.name}")?;
+{"".join(keys)}            {object_binding}dictionary_object(vm, value, "{dictionary.name}")?;
 {parent_conversion}{"".join(conversions)}            Ok(Self {{ {fields} }})
         }}
 {empty}    }}
@@ -498,7 +500,7 @@ def write_dictionary_from_js(out: TextIO, context: GenerationContext, dictionary
     /// The conversion of a JS value to the dictionary {dictionary.name}, https://webidl.spec.whatwg.org/#js-dictionary
     impl FromJs for {path} {{
         fn from_js(vm: &Vm, value: Value) -> ThrowCompletionOr<Self> {{
-{"".join(keys)}            let object = dictionary_object(vm, value, "{dictionary.name}")?;
+{"".join(keys)}            {object_binding}dictionary_object(vm, value, "{dictionary.name}")?;
 {parent_conversion}{"".join(conversions)}            Ok(Self {{ {fields} }})
         }}
     }}

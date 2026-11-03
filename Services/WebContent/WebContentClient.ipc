@@ -218,6 +218,7 @@ endpoint WebContentClient routed by Web::PageId page_id
     did_request_service_worker_registration(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL client_url) =|
     did_request_service_worker_registrations(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, u64 request_id) =|
     did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::PageId page_id, Web::HTML::EnvironmentId environment_id) =|
+    did_request_service_worker_ready(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url) =|
 
     did_update_resource_count(Web::PageId page_id, i32 count_waiting) =|
     [NotRouted] did_request_new_web_view(Web::PageId page_id, Web::HTML::ActivateTab activate_tab, Web::HTML::WebViewHints hints, Web::HTML::CrossProcessId current_navigable_id, Utf16String name, bool no_opener, Optional<URL::URL> current_document_base_url) => (Optional<Web::PageId> new_page_id, Optional<Web::HTML::CrossProcessId> root_navigable_id, Optional<Web::HTML::SessionHistoryEntryDescriptor> initial_history_entry, Optional<Web::HTML::EnvironmentId> initial_environment_id, Optional<Web::HTML::CrossProcessId> initial_document_id, Optional<u64> browsing_context_group_id, Web::HTML::WindowType window_type, Web::HTML::VisibilityState system_visibility_state, String handle)

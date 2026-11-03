@@ -1,0 +1,4 @@
+Scope: true
+Active worker: activated
+Active worker's script URL: true
+Registrations: 1

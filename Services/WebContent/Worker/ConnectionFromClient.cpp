@@ -372,6 +372,40 @@ void ConnectionFromClient::service_worker_registration_lookup_finished(u64 reque
     Web::ServiceWorker::service_worker_registration_lookup_finished(request_id, move(registrations));
 }
 
+void ConnectionFromClient::service_worker_registration_state_changed(u64 registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> source)
+{
+    Web::ServiceWorker::service_worker_registration_state_changed(registration_id, target, move(source));
+}
+
+void ConnectionFromClient::service_worker_update_found(u64 registration_id)
+{
+    Web::ServiceWorker::service_worker_update_found(registration_id);
+}
+
+void ConnectionFromClient::service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration)
+{
+    Web::ServiceWorker::service_worker_ready(request_id, move(registration));
+}
+
+void ConnectionFromClient::service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker)
+{
+    if (m_service_worker_host)
+        m_service_worker_host->service_worker_state_changed(worker);
+    Web::ServiceWorker::service_worker_state_changed(move(worker));
+}
+
+void ConnectionFromClient::dispatch_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, u64 timeout_ms)
+{
+    if (m_service_worker_host)
+        m_service_worker_host->dispatch_lifecycle_event(event, AK::Duration::from_milliseconds(timeout_ms));
+}
+
+void ConnectionFromClient::service_worker_skip_waiting_finished(u64 request_id)
+{
+    if (m_service_worker_host)
+        m_service_worker_host->skip_waiting_finished(request_id);
+}
+
 void ConnectionFromClient::rtc_transform_init(u64 transform_id, Web::HTML::SerializedTransferRecord options_record)
 {
     if (!m_worker_host || !m_worker_host->script_has_run()) {

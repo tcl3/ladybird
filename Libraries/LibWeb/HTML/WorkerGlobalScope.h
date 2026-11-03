@@ -96,6 +96,7 @@ public:
     GC::Ref<WorkerLocation> location() const;
     GC::Ref<WorkerNavigator> navigator() const;
     WebIDL::ExceptionOr<void> import_scripts(Vector<Utf16String> const& urls, PerformTheFetchHook = nullptr);
+    virtual PerformTheFetchHook import_scripts_perform_the_fetch_hook() { return nullptr; }
 
 #undef __ENUMERATE
 #define __ENUMERATE(attribute_name, event_name)       \
@@ -138,6 +139,7 @@ public:
     void terminate_a_worker();
 
     void initialize_policy_container(GC::Ref<Fetch::Infrastructure::ResponseView const> response, GC::Ref<EnvironmentSettingsObject> environment);
+    void set_policy_container(NonnullRefPtr<PolicyContainer>);
     [[nodiscard]] bool check_embedder_policy(EmbedderPolicy const& owner_policy) const;
     [[nodiscard]] ContentSecurityPolicy::Directives::Directive::Result run_csp_initialization() const;
 

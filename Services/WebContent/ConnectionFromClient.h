@@ -360,6 +360,10 @@ private:
     virtual void broadcast_channel_message(Web::HTML::BroadcastChannelMessage message) override;
     virtual void service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result) override;
     virtual void service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations) override;
+    virtual void service_worker_registration_state_changed(u64 registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> source) override;
+    virtual void service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker) override;
+    virtual void service_worker_update_found(u64 registration_id) override;
+    virtual void service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration) override;
     virtual void did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) override;
     virtual void did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) override;
     virtual void did_worker_agent_close(Web::HTML::WorkerAgentOwnerToken owner_token) override;

@@ -287,6 +287,14 @@ bool WebContentPage::hosts_an_environment_with_storage_key(Web::StorageAPI::Stor
     return hosts_one;
 }
 
+void WebContentPage::for_each_hosted_environment(Function<IterationDecision(CanonicalEnvironmentSettingsObject const&, bool has_cross_site_ancestor)> const& callback) const
+{
+    for_each_hosted_document([&](CanonicalDocument& document) {
+        auto const& settings = document.relevant_global_object().relevant_settings_object();
+        return callback(settings, hosted_environment_has_cross_site_ancestor(settings.id()).value_or(true));
+    });
+}
+
 Optional<CanonicalEnvironmentSettingsObject const&> WebContentPage::hosted_environment(Web::HTML::EnvironmentId const& environment_id) const
 {
     auto document = document_with_hosted_environment(environment_id);
@@ -3470,6 +3478,19 @@ void WebContentPage::did_request_service_worker_registrations(Web::HTML::Environ
         .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
     };
     client().session().service_worker_registry->get_registrations(client_environment, request_id);
+}
+
+void WebContentPage::did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url)
+{
+    auto settings = hosted_environment(environment_id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
+    };
+    client().session().service_worker_registry->get_ready_registration(client_environment, request_id, move(creation_url));
 }
 
 void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)

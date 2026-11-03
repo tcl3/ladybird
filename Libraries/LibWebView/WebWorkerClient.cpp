@@ -301,19 +301,57 @@ void WebWorkerClient::did_request_service_worker_registrations(Web::HTML::Enviro
     session->service_worker_registry->get_registrations(client_environment, request_id);
 }
 
-void WebWorkerClient::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
+void WebWorkerClient::did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(environment_id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->get_ready_registration(client_environment, request_id, move(creation_url));
+}
+
+ServiceWorkerRegistry* WebWorkerClient::service_worker_registry_of_this_service_worker(StringView message_name)
 {
     auto session = m_session.strong_ref();
     if (!session)
-        return;
+        return nullptr;
     if (m_agent_type != Web::HTML::AgentType::ServiceWorker) {
-        did_misbehave("did_fetch_service_worker_script"sv, "thread runs no service worker that fetches its script"sv);
-        return;
+        did_misbehave(message_name, "thread runs no service worker"sv);
+        return nullptr;
     }
-    // NB: A worker that the registry has stopped may still have been finishing its fetch.
+    // NB: A worker that the registry has stopped may still have been finishing what it reports.
     if (!session->service_worker_registry->is_service_worker_agent(m_agent_id))
-        return;
-    session->service_worker_registry->service_worker_did_fetch_script(m_agent_id, result);
+        return nullptr;
+    return session->service_worker_registry.ptr();
+}
+
+void WebWorkerClient::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_fetch_service_worker_script"sv))
+        registry->service_worker_did_fetch_script(m_agent_id, result);
+}
+
+void WebWorkerClient::did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_run_service_worker"sv))
+        registry->service_worker_did_run(m_agent_id, succeeded, move(event_types_to_handle));
+}
+
+void WebWorkerClient::did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, bool succeeded)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_finish_service_worker_lifecycle_event"sv))
+        registry->service_worker_did_finish_lifecycle_event(m_agent_id, event, succeeded);
+}
+
+void WebWorkerClient::did_call_service_worker_skip_waiting(u64 request_id)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_call_service_worker_skip_waiting"sv))
+        registry->service_worker_did_call_skip_waiting(m_agent_id, request_id);
 }
 
 void WebWorkerClient::register_dedicated_worker(Web::HTML::WorkerAgentStartRequest request, IPC::TransportHandle worker_transport)

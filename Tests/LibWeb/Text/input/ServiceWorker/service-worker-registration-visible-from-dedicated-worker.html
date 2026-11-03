@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A dedicated worker runs in a process of its own, so it sees the page's registration only through the process
+    // that holds every registration.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/registered/worker.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "" });
+        const workerURL = await server.createEcho("GET", "/dedicated-worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `onmessage = async event => {
+                const registration = await navigator.serviceWorker.getRegistration(event.data);
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                postMessage({
+                    scope: registration?.scope,
+                    active: registration?.active?.state,
+                    scriptURL: registration?.active?.scriptURL,
+                    registrations: registrations.length,
+                });
+            };`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const dedicatedWorker = new Worker(workerURL);
+        const message = new Promise(resolve => (dedicatedWorker.onmessage = event => resolve(event.data)));
+        dedicatedWorker.postMessage(registration.scope);
+        const { scope, active, scriptURL, registrations } = await message;
+        println(`Scope: ${scope === registration.scope}`);
+        println(`Active worker: ${active}`);
+        println(`Active worker's script URL: ${scriptURL === script}`);
+        println(`Registrations: ${registrations}`);
+    });
+</script>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const redundant = worker => new Promise(resolve => worker.addEventListener("statechange", () => worker.state === "redundant" && resolve()));
+
+        const rejecting = await server.createEcho("GET", "/rejecting/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("install", event => event.waitUntil(Promise.reject(new Error("install failed"))));`,
+        });
+        let registration = await navigator.serviceWorker.register(rejecting);
+        let worker = registration.installing;
+        await redundant(worker);
+        println(`Rejected waitUntil(): worker is ${worker.state}`);
+        println(`Registration afterwards: ${await navigator.serviceWorker.getRegistration(registration.scope)}`);
+        println(`Installing worker afterwards: ${registration.installing}`);
+
+        // NB: test-web shortens the install event's deadline to a few seconds.
+        const neverSettling = await server.createEcho("GET", "/never-settling/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("install", event => event.waitUntil(new Promise(() => {})));`,
+        });
+        const next = await server.createEcho("GET", "/never-settling/next.js", { status: 200, headers: javascript, body: "" });
+        registration = await navigator.serviceWorker.register(neverSettling);
+        worker = registration.installing;
+        const nextRegistration = navigator.serviceWorker.register(next);
+        await redundant(worker);
+        println(`waitUntil() that never settles: worker is ${worker.state}`);
+        const nextWorker = (await nextRegistration).installing;
+        println(`Next job on the scope ran: ${nextWorker.scriptURL === next}`);
+        await waitForCondition(() => nextWorker.state === "activated");
+        println(`Next worker: ${nextWorker.state}`);
+    });
+</script>

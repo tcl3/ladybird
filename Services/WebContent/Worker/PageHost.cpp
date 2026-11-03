@@ -228,6 +228,26 @@ void PageHost::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorker
     m_client.async_did_fetch_service_worker_script(result);
 }
 
+void PageHost::did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle)
+{
+    m_client.async_did_run_service_worker(succeeded, event_types_to_handle);
+}
+
+void PageHost::did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, bool succeeded)
+{
+    m_client.async_did_finish_service_worker_lifecycle_event(event, succeeded);
+}
+
+void PageHost::page_did_request_service_worker_ready(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id, URL::URL const& creation_url)
+{
+    m_client.async_did_request_service_worker_ready(environment_id, request_id, creation_url);
+}
+
+void PageHost::page_did_call_service_worker_skip_waiting(Web::ServiceWorker::ServiceWorkerRequestId request_id)
+{
+    m_client.async_did_call_service_worker_skip_waiting(request_id);
+}
+
 PageHost::PageHost(ConnectionFromClient& client)
     : m_client(client)
     , m_page(Web::Page::create(*this))

@@ -1,0 +1,13 @@
+register() resolved, installing: installing, waiting: null, active: null
+scriptURL: true
+updatefound fired with the installing worker: true
+ready resolved with the registration: true
+ready registration's active worker: true
+unregister(): true
+unregister() again: false
+getRegistrations() afterwards: 0
+State changes:
+  installed (installing: null, waiting: installed, active: null)
+  activating (installing: null, waiting: null, active: activating)
+  activated (installing: null, waiting: null, active: activated)
+  redundant (installing: null, waiting: null, active: redundant)

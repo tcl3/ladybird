@@ -7,18 +7,18 @@
 
 //! ServiceWorker, https://w3c.github.io/ServiceWorker/#serviceworker-interface
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
-use libjs_rust::api::{Gc, Realm, Trace, Vm};
+use libjs_rust::api::{Gc, Realm, Trace, Visitor, Vm};
 
 use crate::bindings::conversions::UsvString;
-use crate::bindings::event_target::{CppEventTarget, GetTheParent};
+use crate::bindings::event_target::{CppEvent, CppEventTarget, GetTheParent};
 use crate::bindings::interface::{Ref, Wrappable, allocate};
 use crate::bindings::realm_data::realm_data;
 use crate::bindings::{CallContext, WebIdlResult};
-use crate::service_worker::ServiceWorkerDescriptor;
+use crate::service_worker::{LiveObjects, ServiceWorkerDescriptor};
 
 // https://w3c.github.io/ServiceWorker/#enumdef-serviceworkerstate
 /// In the order of Web::Bindings::ServiceWorkerState, which C++ passes as its underlying value.
@@ -31,6 +31,11 @@ pub(crate) enum ServiceWorkerState {
     Activating,
     Activated,
     Redundant,
+}
+
+// SAFETY: A state holds no cells.
+unsafe impl Trace for ServiceWorkerState {
+    fn trace(&self, _: &mut Visitor) {}
 }
 
 impl ServiceWorkerState {
@@ -81,6 +86,15 @@ impl GetTheParent for ServiceWorker {
     }
 }
 
+thread_local! {
+    static SERVICE_WORKER_OBJECTS: RefCell<LiveObjects<ServiceWorker>> = const { RefCell::new(LiveObjects::new()) };
+}
+
+/// Lets go of the objects of an agent that is going away, whose weak references would outlive its heap.
+pub(crate) fn forget_service_worker_objects_of_agent() {
+    SERVICE_WORKER_OBJECTS.with_borrow_mut(LiveObjects::clear);
+}
+
 impl ServiceWorker {
     // https://w3c.github.io/ServiceWorker/#dom-serviceworker-scripturl
     pub(crate) fn script_url(&self, _: &mut CallContext) -> WebIdlResult<UsvString> {
@@ -124,10 +138,33 @@ pub(crate) fn get_the_service_worker_object(
         state: Cell::new(service_worker.state),
     });
     service_worker_object.event_target.set_owner(service_worker_object);
+    SERVICE_WORKER_OBJECTS.with_borrow_mut(|objects| objects.add(vm, service_worker_object));
 
     // 3. Set objectMap[serviceWorker] to serviceWorkerObj.
     data.service_worker_objects.borrow_mut(vm).push(service_worker_object);
 
     // 3. Return objectMap[serviceWorker].
     service_worker_object
+}
+
+// https://w3c.github.io/ServiceWorker/#update-state-algorithm
+pub(crate) fn service_worker_state_changed(vm: &Vm, worker: &ServiceWorkerDescriptor) {
+    // 4. For each settingsObject of settingsObjects, queue a task on settingsObject's responsible event loop in the DOM
+    //    manipulation task source to run the following steps:
+    // NB: The task that runs these steps is the one of the message from the UI process, which runs them for each
+    //     realm of this process.
+    let objects = SERVICE_WORKER_OBJECTS.with_borrow(|objects| objects.matching(vm, |object| object.id == worker.id));
+
+    // 1. Let objectMap be settingsObject's service worker object map.
+    // 2. If objectMap[worker] does not exist, then abort these steps.
+    // 3. Let workerObj be objectMap[worker].
+    for worker_object in objects.values().iter() {
+        // 4. Set workerObj's state to state.
+        worker_object.state.set(worker.state);
+
+        // 5. Fire an event named statechange at workerObj.
+        let event = CppEvent::create(worker_object.realm, "statechange", false, false, false);
+        event.set_is_trusted(true);
+        worker_object.event_target.dispatch_event(&event);
+    }
 }

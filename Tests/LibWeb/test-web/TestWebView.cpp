@@ -14,6 +14,7 @@
 #include <LibWebView/NotificationManager.h>
 #include <LibWebView/PermissionManager.h>
 #include <LibWebView/RecordingNotificationBackend.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/WebContentPage.h>
 
 namespace TestWeb {
@@ -76,6 +77,14 @@ void TestWebView::reset_notifications()
     WebView::NotificationManager::the().reset_page_for_testing(page());
     if (auto* recording_backend = WebView::NotificationManager::the().backend().as_recording_backend())
         recording_backend->forget_page(page().id());
+}
+
+// Service worker registrations live in the UI process, and keep their workers running after the test that made them.
+// Each test has an origin of its own, and tests run concurrently, so only the registrations of this test's top-level
+// origin are cleared.
+void TestWebView::reset_service_workers()
+{
+    session().service_worker_registry->clear_registrations_for_testing(url().origin());
 }
 
 NonnullRefPtr<Core::Promise<Empty>> TestWebView::reset_state_for_next_test()

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const register = async scriptURL => {
+            try {
+                await navigator.serviceWorker.register(scriptURL);
+                return "resolved";
+            } catch (error) {
+                return error.name;
+            }
+        };
+
+        const throwing = await server.createEcho("GET", "/throws/worker.js", { status: 200, headers: javascript, body: `throw new Error("evaluation failed");` });
+        println(`Script that throws: ${await register(throwing)}`);
+        println(`Registration afterwards: ${await navigator.serviceWorker.getRegistration(new URL("./", throwing).href)}`);
+
+        const missingImport = await server.createEcho("GET", "/imports/missing.js", { status: 404, headers: javascript, body: "" });
+        const importing = await server.createEcho("GET", "/imports/worker.js", { status: 200, headers: javascript, body: `importScripts("${missingImport}");` });
+        println(`Script whose importScripts() fails: ${await register(importing)}`);
+        println(`Registration afterwards: ${await navigator.serviceWorker.getRegistration(new URL("./", importing).href)}`);
+
+        const imported = await server.createEcho("GET", "/imports-ok/imported.js", { status: 200, headers: javascript, body: `self.imported = true;` });
+        const importingOk = await server.createEcho("GET", "/imports-ok/worker.js", { status: 200, headers: javascript, body: `importScripts("${imported}"); if (!self.imported) throw new Error("not imported");` });
+        println(`Script whose importScripts() succeeds: ${await register(importingOk)}`);
+    });
+</script>

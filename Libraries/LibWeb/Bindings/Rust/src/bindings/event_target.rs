@@ -79,6 +79,7 @@ unsafe extern "C" {
     fn web_bindings_message_event_data(event: u64) -> u64;
     fn web_bindings_set_event_owner(event: *mut c_void, interface_name: u16, owner: *mut c_void);
     fn web_bindings_event_set_is_trusted(event: *mut c_void, is_trusted: bool);
+    fn web_bindings_event_is_trusted(event: *mut c_void) -> bool;
     fn web_bindings_dispatch_event(target: *mut c_void, event: *mut c_void) -> bool;
     fn web_bindings_dispatch_event_with_legacy_output_did_listeners_throw_flag(
         target: *mut c_void,
@@ -300,6 +301,12 @@ impl CppEvent {
     pub(crate) fn set_is_trusted(&self, is_trusted: bool) {
         // SAFETY: The event is live.
         unsafe { web_bindings_event_set_is_trusted(self.as_ptr(), is_trusted) };
+    }
+
+    /// https://dom.spec.whatwg.org/#dom-event-istrusted
+    pub(crate) fn is_trusted(&self) -> bool {
+        // SAFETY: The event is live.
+        unsafe { web_bindings_event_is_trusted(self.as_ptr()) }
     }
 
     /// https://dom.spec.whatwg.org/#canceled-flag

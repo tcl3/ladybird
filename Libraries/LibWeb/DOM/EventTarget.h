@@ -77,6 +77,7 @@ public:
     void set_event_handler_attribute(Utf16FlyString const& name, GC::Ptr<WebIDL::CallbackType>);
 
     bool has_event_listener(Utf16FlyString const& type) const;
+    Vector<Utf16FlyString> event_types_of_event_listeners() const;
     bool has_blocking_wheel_event_listener() const;
     bool has_blocking_keyboard_event_listener() const;
     bool has_event_listeners() const;

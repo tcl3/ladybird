@@ -106,6 +106,9 @@ public:
 
     void update_permission_snapshot(PermissionManager const&);
 
+    // Every live worker with its inside settings, whatever kind of worker it is and wherever it runs.
+    void for_each_agent_environment(Function<void(WebWorkerClient&, CanonicalWorkerEnvironmentSettingsObject const&, IsPrivate)> const&) const;
+
 private:
     friend class WebWorkerClient;
 

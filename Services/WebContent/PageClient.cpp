@@ -1756,6 +1756,11 @@ void PageClient::page_did_dispatch_dom_content_loaded_for_service_worker_jobs(We
     client().async_did_dispatch_dom_content_loaded_for_service_worker_jobs(m_id, environment_id);
 }
 
+void PageClient::page_did_request_service_worker_ready(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id, URL::URL const& creation_url)
+{
+    client().async_did_request_service_worker_ready(m_id, environment_id, request_id, creation_url);
+}
+
 // The UI process passes the violation on to the process hosting the navigation's source, while it still hosts it.
 void PageClient::page_did_report_navigation_violation_of_remote_client(Web::HTML::RemoteClientNavigation const& navigation, u64 policy_index, Web::ContentSecurityPolicy::RemoteViolationDirective directive, bool url_is_https)
 {

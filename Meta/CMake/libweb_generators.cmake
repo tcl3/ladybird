@@ -328,6 +328,7 @@ function (generate_js_bindings target)
         IntrinsicDefinitions.cpp IntrinsicDefinitions.h
         AudioWorkletExposedInterfaces.cpp AudioWorkletExposedInterfaces.h
         DedicatedWorkerExposedInterfaces.cpp DedicatedWorkerExposedInterfaces.h
+        ServiceWorkerExposedInterfaces.cpp ServiceWorkerExposedInterfaces.h
         SharedWorkerExposedInterfaces.cpp SharedWorkerExposedInterfaces.h
         WindowExposedInterfaces.cpp WindowExposedInterfaces.h
         WrapperFactory.cpp)
@@ -350,6 +351,7 @@ function (generate_js_bindings target)
 
     set(GLOBAL_MIXIN_HEADERS
         "${CMAKE_CURRENT_BINARY_DIR}/Bindings/DedicatedWorkerGlobalScopeGlobalMixin.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/Bindings/ServiceWorkerGlobalScopeGlobalMixin.h"
         "${CMAKE_CURRENT_BINARY_DIR}/Bindings/SharedWorkerGlobalScopeGlobalMixin.h"
         "${CMAKE_CURRENT_BINARY_DIR}/Bindings/WindowGlobalMixin.h")
     if (ENABLE_INSTALL_HEADERS)

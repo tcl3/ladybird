@@ -122,6 +122,7 @@ DOM::Event* web_bindings_create_message_event(void* realm, ReadonlyBytes type, J
 JSValue web_bindings_message_event_data(JSValue event);
 void web_bindings_set_event_owner(RustEvent*, u16 interface_name, RustInterfaceCell* owner);
 void web_bindings_event_set_is_trusted(DOM::Event*, bool is_trusted);
+bool web_bindings_event_is_trusted(DOM::Event*);
 bool web_bindings_dispatch_event(DOM::EventTarget*, DOM::Event*);
 bool web_bindings_dispatch_event_with_legacy_output_did_listeners_throw_flag(DOM::EventTarget*, DOM::Event*);
 bool web_bindings_event_canceled(DOM::Event*);
@@ -235,6 +236,11 @@ void web_bindings_set_event_owner(RustEvent* event, u16 interface_name, RustInte
 void web_bindings_event_set_is_trusted(DOM::Event* event, bool is_trusted)
 {
     event->set_is_trusted(is_trusted);
+}
+
+bool web_bindings_event_is_trusted(DOM::Event* event)
+{
+    return event->is_trusted();
 }
 
 bool web_bindings_dispatch_event(DOM::EventTarget* target, DOM::Event* event)

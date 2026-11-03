@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html class="test-wait">
+<script src="../../Text/input/include.js"></script>
+<script>
+    // The test ends while the worker's install event waits and another job waits behind it, so the test-web reset
+    // clears the registration during its register job.
+    window.addEventListener("load", async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("install", event => event.waitUntil(new Promise(() => {})));`,
+        });
+        const next = await server.createEcho("GET", "/next.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "" });
+        await navigator.serviceWorker.register(script);
+        navigator.serviceWorker.register(next).catch(() => {});
+        document.documentElement.classList.remove("test-wait");
+    });
+</script>
+</html>

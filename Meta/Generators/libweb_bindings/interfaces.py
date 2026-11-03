@@ -39,6 +39,7 @@ from Utils.webidl_parser import Interface
 GENERATED_GLOBAL_SCOPE_EXPOSURE_PREFIXES = {
     "AudioWorkletGlobalScope": "AudioWorklet",
     "DedicatedWorkerGlobalScope": "DedicatedWorker",
+    "ServiceWorkerGlobalScope": "ServiceWorker",
     "SharedWorkerGlobalScope": "SharedWorker",
 }
 
@@ -252,6 +253,7 @@ def write_implementation(
         add_exposed_interfaces_function = {
             "AudioWorklet": "add_audio_worklet_exposed_interfaces",
             "DedicatedWorker": "add_dedicated_worker_exposed_interfaces",
+            "ServiceWorker": "add_service_worker_exposed_interfaces",
             "SharedWorker": "add_shared_worker_exposed_interfaces",
         }[exposure_prefix]
         implementation_namespace = fully_qualified_name_for_interface(interface).rsplit("::", 1)[0]
