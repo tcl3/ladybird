@@ -36,6 +36,7 @@
 #include <LibWebView/PictureInPictureManager.h>
 #include <LibWebView/RecordingNotificationBackend.h>
 #include <LibWebView/RequestServerManager.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/StorageAreaRegistry.h>
 #include <LibWebView/StorageJar.h>
 #include <LibWebView/URL.h>
@@ -3430,6 +3431,52 @@ void WebContentPage::did_post_broadcast_channel_message(Web::HTML::PostedBroadca
 {
     if (auto settings = hosted_environment(message.environment_id); settings.has_value())
         WorkerAgentManager::the().post_broadcast_channel_message(move(message), *settings, client(), client().is_private());
+}
+
+void WebContentPage::did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest request)
+{
+    auto settings = hosted_environment(request.client.id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(request.client.id).value_or(true),
+    };
+    client().session().service_worker_registry->schedule_job(client_environment, move(request));
+}
+
+void WebContentPage::did_request_service_worker_registration(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL client_url)
+{
+    auto settings = hosted_environment(environment_id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
+    };
+    client().session().service_worker_registry->get_registration(client_environment, request_id, move(client_url));
+}
+
+void WebContentPage::did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id)
+{
+    auto settings = hosted_environment(environment_id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
+    };
+    client().session().service_worker_registry->get_registrations(client_environment, request_id);
+}
+
+void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)
+{
+    if (!hosted_environment(environment_id).has_value())
+        return;
+    client().session().service_worker_registry->client_did_dispatch_dom_content_loaded(environment_id);
 }
 
 void WebContentPage::did_finish_test(String text)

@@ -22,9 +22,9 @@
 #include <LibWeb/HTML/Scripting/EnvironmentSettingsObjectAddress.h>
 #include <LibWeb/HTML/Scripting/ModuleMap.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
-#include <LibWeb/ServiceWorker/Registration.h>
 #include <LibWebCommon/HTML/Scripting/EnvironmentId.h>
 #include <LibWebCommon/HTML/Scripting/SerializedEnvironmentSettingsObject.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 
 namespace Web::HTML {
 
@@ -60,7 +60,8 @@ public:
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-target-browsing-context
     GC::Weak<BrowsingContext> target_browsing_context;
 
-    // FIXME: An active service worker https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-active-service-worker
+    // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-active-service-worker
+    Optional<ServiceWorker::ServiceWorkerDescriptor> active_service_worker;
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-execution-ready-flag
     bool execution_ready { false };
@@ -145,12 +146,6 @@ public:
     GC::Ref<StorageAPI::StorageManager> storage_manager();
     GC::Ref<WebLocks::LockManager> lock_manager();
 
-    // https://w3c.github.io/ServiceWorker/#get-the-service-worker-registration-object
-    GC::Ref<ServiceWorker::ServiceWorkerRegistration> get_service_worker_registration_object(ServiceWorker::Registration const&);
-
-    // https://w3c.github.io/ServiceWorker/#get-the-service-worker-object
-    GC::Ref<ServiceWorker::ServiceWorker> get_service_worker_object(ServiceWorker::ServiceWorkerRecord*);
-
     [[nodiscard]] bool discarded() const { return m_discarded; }
     void set_discarded(bool b) { m_discarded = b; }
 
@@ -202,16 +197,6 @@ private:
     // https://w3c.github.io/web-locks/#navigator-mixins
     // Each environment settings object has a LockManager object.
     GC::Ptr<WebLocks::LockManager> m_lock_manager;
-
-    // https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-registration-object-map
-    // An environment settings object has a service worker registration object map,
-    // a map where the keys are service worker registrations and the values are ServiceWorkerRegistration objects.
-    HashMap<ServiceWorker::RegistrationKey, GC::Ref<ServiceWorker::ServiceWorkerRegistration>> m_service_worker_registration_object_map;
-
-    // https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-object-map
-    // An environment settings object has a service worker object map,
-    // a map where the keys are service workers and the values are ServiceWorker objects.
-    HashMap<ServiceWorker::ServiceWorkerRecord*, GC::Ref<ServiceWorker::ServiceWorker>> m_service_worker_object_map;
 
     // https://w3c.github.io/ServiceWorker/#service-worker-client-discarded-flag
     // A service worker client has an associated discarded flag. It is initially unset.

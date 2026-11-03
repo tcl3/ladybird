@@ -12,6 +12,7 @@
 pub(crate) mod canvas_path;
 pub(crate) mod color_stops;
 pub(crate) mod predefined_color_space;
+pub(crate) mod worker;
 
 // What follows runs on the JS runtime, which the tests of the crate do not link.
 #[cfg(not(test))]

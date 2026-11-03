@@ -78,10 +78,13 @@ private:
     virtual void set_navigator_compatibility_mode(Web::NavigatorCompatibilityMode mode) override;
     virtual void set_preferred_languages(Vector<String> preferred_languages) override;
     virtual void start_worker(URL::URL url, Web::HTML::WorkerType type, Web::HTML::RequestCredentials credentials, String name, Web::HTML::TransferDataEncoder, Web::HTML::SerializedEnvironmentSettingsObject, Web::HTML::AgentType, URL::Origin origin, Web::HTML::EnvironmentId environment_id, bool has_process_to_itself) override;
+    virtual void start_service_worker(Web::ServiceWorker::ServiceWorkerStartRequest) override;
     virtual void connect_shared_worker(Web::HTML::TransferDataEncoder, Web::HTML::SerializedEnvironmentSettingsObject) override;
     virtual void handle_file_return(i32 error, Optional<IPC::File> file, i32 request_id) override;
     virtual void blob_url_entry_removed(Utf16String url) override;
     virtual void broadcast_channel_message(Web::HTML::BroadcastChannelMessage message) override;
+    virtual void service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result) override;
+    virtual void service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations) override;
 
     GC::Root<PageHost> m_page_host;
 
@@ -105,6 +108,7 @@ private:
     void finish_shutdown();
 
     RefPtr<WorkerHost> m_worker_host;
+    RefPtr<ServiceWorkerHost> m_service_worker_host;
     Function<void()> m_request_server_died_callback_for_testing;
     bool m_shutdown_finished { false };
     bool m_was_told_to_close { false };

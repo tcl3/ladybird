@@ -1,0 +1,7 @@
+Script served as plain text: SecurityError
+Scope outside the script's directory: SecurityError
+Scope that Service-Worker-Allowed permits: TypeError
+Redirected script: SecurityError
+Script that fails to load: TypeError
+Registration afterwards: undefined
+Registrations afterwards: 0

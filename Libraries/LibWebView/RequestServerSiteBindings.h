@@ -49,6 +49,9 @@ public:
     // Binds the process to the sites of a document, before it is told to host it.
     void bind_sites_of(CanonicalDocument const&);
 
+    // Binds the process to the sites of an environment of the given origin, whose top-level origin is top_level_origin.
+    void bind_sites_of_environment(URL::Origin const& origin, URL::Origin const& top_level_origin);
+
     // Binds the process to every site that another process is bound to, as for a worker that process starts.
     void bind_sites_of(RequestServerSiteBindings const&);
 

@@ -12,11 +12,16 @@ use core::cell::Cell;
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
-use libjs_rust::api::{EmbedderCell, EmbedderClass, EmbedderValue, FunctionObject, Gc, Object, Realm, Trace, Vm};
+use libjs_rust::api::{
+    EmbedderCell, EmbedderClass, EmbedderValue, FunctionObject, Gc, GcRefCell, Object, Realm, Trace, Vm,
+};
 
 use crate::bindings::interface::Ref;
 
 use crate::bindings::services::web_bindings_wrapper_world;
+use crate::service_worker::service_worker::ServiceWorker;
+use crate::service_worker::service_worker_container::PendingRequestRef;
+use crate::service_worker::service_worker_registration::ServiceWorkerRegistration;
 use crate::web_assembly::tag::Tag;
 
 /// The wrapper world of a realm, Web::Bindings::WrapperWorld, which the realm keeps alive.
@@ -47,6 +52,13 @@ pub(crate) struct RealmData {
     pub(crate) webassembly_error_constructors: [Cell<Option<Gc<Object>>>; 3],
     /// The Tag object of the JavaScript exception tag, https://webassembly.github.io/spec/js-api/#javascript-exception-tag
     pub(crate) webassembly_js_tag: Cell<Option<Ref<Tag>>>,
+    /// https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-object-map
+    pub(crate) service_worker_objects: GcRefCell<Vec<Ref<ServiceWorker>>>,
+    /// https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-registration-object-map
+    pub(crate) service_worker_registration_objects: GcRefCell<Vec<Ref<ServiceWorkerRegistration>>>,
+    /// The requests to the UI process whose promises are of this realm, which it keeps alive while they wait for an
+    /// answer.
+    pub(crate) service_worker_pending_requests: GcRefCell<Vec<PendingRequestRef>>,
 }
 
 static REALM_DATA_CLASS: EmbedderClass<RealmData> = EmbedderClass::new("RealmData");

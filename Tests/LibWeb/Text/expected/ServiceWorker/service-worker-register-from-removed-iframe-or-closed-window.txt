@@ -1,0 +1,2 @@
+Removed iframe: InvalidStateError
+Closed window: TypeError

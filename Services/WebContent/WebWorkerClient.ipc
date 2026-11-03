@@ -8,6 +8,7 @@
 #include <LibWebCommon/HTML/WorkerAgentForward.h>
 #include <LibWebCommon/HTML/WorkerAgentTypes.h>
 #include <LibWebCommon/Permissions/Permissions.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 
 endpoint WebWorkerClient {
     did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry entry) => (URL::BlobURLEntry::Token token)
@@ -29,4 +30,8 @@ endpoint WebWorkerClient {
     did_release_image_decoder() =|
     did_post_broadcast_channel_message(Web::HTML::PostedBroadcastChannelMessage message) =|
     register_dedicated_worker(Web::HTML::WorkerAgentStartRequest request, IPC::TransportHandle worker_transport) =|
+    did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest request) =|
+    did_request_service_worker_registration(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL client_url) =|
+    did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id) =|
+    did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result) =|
 }

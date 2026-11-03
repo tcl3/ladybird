@@ -14,6 +14,7 @@
 #include <LibWebView/HelperProcess.h>
 #include <LibWebView/ImageDecoderManager.h>
 #include <LibWebView/PermissionManager.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/Utilities.h>
 #include <LibWebView/WebContentClient.h>
 #include <LibWebView/WebWorkerClient.h>
@@ -21,13 +22,14 @@
 
 namespace WebView {
 
-WebWorkerClient::WebWorkerClient(NonnullOwnPtr<IPC::Transport> transport, IsPrivate is_private, Web::HTML::WorkerAgentId agent_id)
+WebWorkerClient::WebWorkerClient(NonnullOwnPtr<IPC::Transport> transport, IsPrivate is_private, Web::HTML::WorkerAgentId agent_id, Web::HTML::AgentType agent_type)
     : IPC::ConnectionToServer<WebWorkerClientEndpoint, WebWorkerServerEndpoint>(*this, move(transport))
     , m_is_private(is_private)
     , m_request_server_site_bindings([this](RequestServerClientConnection& connection, Optional<Utf16String> const& top_level_site) {
         async_connect_to_request_server(move(connection.handle), connection.client_id, top_level_site);
     })
     , m_agent_id(agent_id)
+    , m_agent_type(agent_type)
     , m_audio_tab_id(allocate_audio_tab_id())
 {
     if (auto session = Application::existing_session(is_private))
@@ -59,6 +61,8 @@ void WebWorkerClient::did_misbehave(StringView message_name, StringView reason)
 void WebWorkerClient::die()
 {
     remove_blob_url_entries();
+    if (auto session = m_session.strong_ref())
+        session->service_worker_registry->service_worker_process_did_exit(m_agent_id);
     WorkerAgentManager::the().worker_did_die(m_agent_id);
 
     // NB: The process of a worker on a thread goes on, and so may its use of the decoder.
@@ -253,6 +257,63 @@ void WebWorkerClient::did_post_broadcast_channel_message(Web::HTML::PostedBroadc
 {
     if (auto settings = hosted_environment(message.environment_id); settings.has_value())
         WorkerAgentManager::the().post_broadcast_channel_message(move(message), *settings, *this, m_is_private);
+}
+
+void WebWorkerClient::did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest request)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(request.client.id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->schedule_job(client_environment, move(request));
+}
+
+void WebWorkerClient::did_request_service_worker_registration(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL client_url)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(environment_id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->get_registration(client_environment, request_id, move(client_url));
+}
+
+void WebWorkerClient::did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(environment_id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->get_registrations(client_environment, request_id);
+}
+
+void WebWorkerClient::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
+{
+    auto session = m_session.strong_ref();
+    if (!session)
+        return;
+    if (m_agent_type != Web::HTML::AgentType::ServiceWorker) {
+        did_misbehave("did_fetch_service_worker_script"sv, "thread runs no service worker that fetches its script"sv);
+        return;
+    }
+    // NB: A worker that the registry has stopped may still have been finishing its fetch.
+    if (!session->service_worker_registry->is_service_worker_agent(m_agent_id))
+        return;
+    session->service_worker_registry->service_worker_did_fetch_script(m_agent_id, result);
 }
 
 void WebWorkerClient::register_dedicated_worker(Web::HTML::WorkerAgentStartRequest request, IPC::TransportHandle worker_transport)

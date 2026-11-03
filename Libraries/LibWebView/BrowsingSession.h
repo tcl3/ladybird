@@ -38,6 +38,7 @@ public:
     OwnPtr<BlobURLStore> blob_url_store;
     OwnPtr<HSTSStore> hsts_store;
     OwnPtr<PermissionManager> permission_manager;
+    NonnullOwnPtr<ServiceWorkerRegistry> service_worker_registry;
 
 private:
     explicit BrowsingSession(IsPrivate);

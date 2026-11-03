@@ -12,6 +12,7 @@
 #include <LibWebCommon/Page/PageId.h>
 #include <LibWebCommon/Page/QueuedInputEvent.h>
 #include <LibWebCommon/PixelUnits.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <WebContent/Worker/Forward.h>
 
 namespace WebWorker {
@@ -46,6 +47,9 @@ public:
     virtual void page_did_report_violation_of_remote_client(u64 policy_index, String effective_directive, URL::URL resource) override;
     virtual void page_did_post_broadcast_channel_message(Web::HTML::PostedBroadcastChannelMessage const& message) override;
     virtual void page_did_close_shared_worker() override;
+    virtual void page_did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest const&) override;
+    virtual void page_did_request_service_worker_registration(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& client_url) override;
+    virtual void page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId) override;
     virtual void request_file(Web::FileRequest) override;
     virtual URL::BlobURLEntry::Token page_did_add_blob_url_entry(Web::HTML::EnvironmentSettingsObject const&, Utf16String const& url, Web::FileAPI::SerializedBlobURLEntry const&) override;
     virtual void page_did_remove_blob_url_entries(Web::HTML::EnvironmentSettingsObject const&, Vector<Utf16String> const& urls) override;
@@ -66,6 +70,7 @@ public:
     void set_maximum_frames_per_second(double maximum_frames_per_second) { m_maximum_frames_per_second = maximum_frames_per_second; }
     void did_finish_loading_worker_script(bool worker_is_secure_context);
     void did_fail_loading_worker_script();
+    void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult);
 
 private:
     explicit PageHost(ConnectionFromClient&);

@@ -34,11 +34,15 @@ class WEBVIEW_API WebWorkerClient final
     C_OBJECT_ABSTRACT(WebWorkerClient);
 
 public:
-    WebWorkerClient(NonnullOwnPtr<IPC::Transport>, IsPrivate, Web::HTML::WorkerAgentId agent_id);
+    WebWorkerClient(NonnullOwnPtr<IPC::Transport>, IsPrivate, Web::HTML::WorkerAgentId agent_id, Web::HTML::AgentType);
     ~WebWorkerClient();
 
     RefPtr<BrowsingSession> session() const { return m_session.strong_ref(); }
     IsPrivate is_private() const { return m_is_private; }
+
+    // NB: Every dedicated worker has the agent ID 0, as the Browser keeps no agent record of it.
+    Web::HTML::WorkerAgentId agent_id() const { return m_agent_id; }
+    Web::HTML::AgentType agent_type() const { return m_agent_type; }
 
     // The sites this worker asked for the permissions of: at most its top-level site.
     Vector<URL::Origin> const& permission_origins() const { return m_permission_origins; }
@@ -79,6 +83,10 @@ public:
     virtual Messages::WebWorkerClient::RequestCompositorConnectionResponse request_compositor_connection() override;
     virtual void did_post_broadcast_channel_message(Web::HTML::PostedBroadcastChannelMessage) override;
     virtual void register_dedicated_worker(Web::HTML::WorkerAgentStartRequest request, IPC::TransportHandle worker_transport) override;
+    virtual void did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest) override;
+    virtual void did_request_service_worker_registration(Web::HTML::EnvironmentId, u64 request_id, URL::URL client_url) override;
+    virtual void did_request_service_worker_registrations(Web::HTML::EnvironmentId, u64 request_id) override;
+    virtual void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult) override;
 
 private:
     virtual void did_misbehave(StringView message_name, StringView reason) override;
@@ -93,6 +101,7 @@ private:
     WeakPtr<WebContentClient> m_host;
     Optional<u64> m_image_decoder_client_generation;
     Web::HTML::WorkerAgentId m_agent_id { 0 };
+    Web::HTML::AgentType m_agent_type;
     Vector<URL::Origin> m_permission_origins;
 
     OwnPtr<CanonicalWorkerEnvironmentSettingsObject> m_inside_settings;

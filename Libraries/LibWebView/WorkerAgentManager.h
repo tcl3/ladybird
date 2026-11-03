@@ -63,6 +63,16 @@ public:
 
     void register_dedicated_worker(WebContentClient&, Web::PageId page_id, Optional<CanonicalEnvironmentSettingsObject const&> outside_settings, Web::HTML::WorkerAgentStartRequest, IPC::TransportHandle worker_transport);
     void register_dedicated_worker(WebWorkerClient&, Optional<CanonicalEnvironmentSettingsObject const&> outside_settings, Web::HTML::WorkerAgentStartRequest, IPC::TransportHandle worker_transport);
+
+    // A service worker runs on a thread of a WebContent process of its own, which has no pages: its clients can be in
+    // any process, and none of them owns it.
+    struct ServiceWorkerAgent {
+        Web::HTML::WorkerAgentId id { 0 };
+        NonnullRefPtr<WebWorkerClient> client;
+        Web::HTML::EnvironmentId environment_id;
+    };
+    ErrorOr<ServiceWorkerAgent> start_service_worker_agent(IsPrivate, URL::Origin, Optional<URL::Origin> top_level_origin, bool has_cross_site_ancestor);
+    void close_service_worker_agent(Web::HTML::WorkerAgentId);
     void update_site_compatibility_data(JsonValue const&);
     // A worker's navigator reports what its owner's page reports, so a changed spoofing choice or language list
     // reaches every live worker too.
@@ -87,6 +97,8 @@ public:
 
     // A process goes on without pages for as long as it runs a shared worker, as the worker's owners can be anywhere.
     bool hosts_shared_worker(WebContentClient const&) const;
+    // The same goes for a service worker, whose clients can be anywhere.
+    bool hosts_service_worker(WebContentClient const&) const;
 
     size_t client_count() const { return m_agents.size(); }
 
@@ -117,7 +129,8 @@ private:
     static bool owner_process_may_host_shared_worker(Owner const&, CanonicalEnvironmentSettingsObject const& outside_settings);
     static bool page_environment_has_cross_site_ancestor(WebContentClient&, Web::PageId, CanonicalEnvironmentSettingsObject const&);
     bool has_reached_worker_limit(IsPrivate, CanonicalEnvironmentSettingsObject const& outside_settings) const;
-    ErrorOr<NonnullRefPtr<WebWorkerClient>> create_worker_client(NonnullOwnPtr<IPC::Transport>, IsPrivate, Web::HTML::WorkerAgentId, WebContentClient& host, RequestServerSiteBindings const& owner_request_server_site_bindings);
+    bool has_reached_worker_limit(IsPrivate, Optional<URL::Origin> const& top_level_origin) const;
+    ErrorOr<NonnullRefPtr<WebWorkerClient>> create_worker_client(NonnullOwnPtr<IPC::Transport>, IsPrivate, Web::HTML::WorkerAgentId, Web::HTML::AgentType, WebContentClient& host, Function<void(RequestServerSiteBindings&)> const& bind_sites);
     static void start_worker(WebWorkerClient&, Web::HTML::WorkerAgentStartRequest, CanonicalEnvironmentSettingsObject const& outside_settings, bool has_cross_site_ancestor, bool owner_may_read_local_files, bool has_process_to_itself);
 
     void notify_worker_script_load_failure(Owner const&);

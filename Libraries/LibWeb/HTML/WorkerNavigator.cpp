@@ -56,7 +56,7 @@ GC::Ref<MediaCapabilitiesAPI::MediaCapabilities> WorkerNavigator::media_capabili
 GC::Ref<ServiceWorker::ServiceWorkerContainer> WorkerNavigator::service_worker()
 {
     if (!m_service_worker_container)
-        m_service_worker_container = ServiceWorker::ServiceWorkerContainer::create(relevant_settings_object(*m_global_scope));
+        m_service_worker_container = ServiceWorker::ServiceWorkerContainer::create(relevant_realm(*m_global_scope));
     return *m_service_worker_container;
 }
 

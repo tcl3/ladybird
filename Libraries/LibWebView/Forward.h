@@ -57,6 +57,7 @@ class ProcessManager;
 class RequestServerInstance;
 class RequestServerManager;
 class RequestServerSiteBindings;
+class ServiceWorkerRegistry;
 class PermissionManager;
 class Settings;
 class SettingsUI;

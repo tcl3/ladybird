@@ -358,6 +358,8 @@ private:
     virtual void set_document_cookie_version_index(Web::PageId page_id, i64 document_id, Core::SharedVersionIndex document_index) override;
     virtual void cookies_changed(Web::PageId page_id, Vector<HTTP::Cookie::Cookie>) override;
     virtual void broadcast_channel_message(Web::HTML::BroadcastChannelMessage message) override;
+    virtual void service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result) override;
+    virtual void service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations) override;
     virtual void did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) override;
     virtual void did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) override;
     virtual void did_worker_agent_close(Web::HTML::WorkerAgentOwnerToken owner_token) override;

@@ -36,8 +36,6 @@
 #include <LibWeb/Infra/SerializedURL.h>
 #include <LibWeb/MixedContent/AbstractOperations.h>
 #include <LibWeb/Page/Page.h>
-#include <LibWeb/ServiceWorker/ServiceWorker.h>
-#include <LibWeb/ServiceWorker/ServiceWorkerRegistration.h>
 #include <LibWeb/StorageAPI/StorageManager.h>
 #include <LibWeb/WebLocks/LockManager.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
@@ -94,8 +92,6 @@ void EnvironmentSettingsObject::visit_edges(Cell::Visitor& visitor)
     m_realm_execution_context->visit_edges(visitor);
     visitor.visit(m_storage_manager);
     visitor.visit(m_lock_manager);
-    visitor.visit(m_service_worker_registration_object_map);
-    visitor.visit(m_service_worker_object_map);
     visitor.visit(m_owned_worker_agents);
 
     // Keep the fetch records of the fetches that are still under way, since aborting the document or terminating its
@@ -785,65 +781,6 @@ GC::Ref<WebLocks::LockManager> EnvironmentSettingsObject::lock_manager()
     if (!m_lock_manager)
         m_lock_manager = WebLocks::LockManager::create(*this);
     return *m_lock_manager;
-}
-
-// https://w3c.github.io/ServiceWorker/#get-the-service-worker-registration-object
-GC::Ref<ServiceWorker::ServiceWorkerRegistration> EnvironmentSettingsObject::get_service_worker_registration_object(ServiceWorker::Registration const& registration)
-{
-    // 1. Let objectMap be environment’s service worker registration object map.
-    auto& object_map = this->m_service_worker_registration_object_map;
-
-    // FIXME: File spec issue asking if this should be keyed on the registration's scope url only or on the url and the storage key
-    auto const key = ServiceWorker::RegistrationKey { registration.storage_key(), registration.scope_url().serialize(URL::ExcludeFragment::Yes).to_byte_string() };
-
-    // 2. If objectMap[registration] does not exist, then:
-    if (!object_map.contains(key)) {
-        // 1. Let registrationObject be a new ServiceWorkerRegistration in environment’s Realm.
-        // 2. Set registrationObject’s service worker registration to registration.
-        // 3. Set registrationObject’s installing attribute to null.
-        // 4. Set registrationObject’s waiting attribute to null.
-        // 5. Set registrationObject’s active attribute to null.
-        auto registration_object = ServiceWorker::ServiceWorkerRegistration::create(registration);
-
-        // 6. If registration’s installing worker is not null, then set registrationObject’s installing attribute to the result of getting the service worker object that represents registration’s installing worker in environment.
-        if (registration.installing_worker())
-            registration_object->set_installing(get_service_worker_object(registration.installing_worker()));
-
-        // 7. If registration’s waiting worker is not null, then set registrationObject’s waiting attribute to the result of getting the service worker object that represents registration’s waiting worker in environment.
-        if (registration.waiting_worker())
-            registration_object->set_waiting(get_service_worker_object(registration.waiting_worker()));
-
-        // 8. If registration’s active worker is not null, then set registrationObject’s active attribute to the result of getting the service worker object that represents registration’s active worker in environment.
-        if (registration.active_worker())
-            registration_object->set_active(get_service_worker_object(registration.active_worker()));
-
-        // 9. Set objectMap[registration] to registrationObject.
-        object_map.set(key, registration_object);
-    }
-
-    // 3. Return objectMap[registration].
-    return *object_map.get(key);
-}
-
-GC::Ref<ServiceWorker::ServiceWorker> EnvironmentSettingsObject::get_service_worker_object(ServiceWorker::ServiceWorkerRecord* service_worker)
-{
-    // 1. Let objectMap be environment’s service worker object map.
-    auto& object_map = this->m_service_worker_object_map;
-
-    // 2. If objectMap[serviceWorker] does not exist, then:
-    if (!object_map.contains(service_worker)) {
-        // 1. Let serviceWorkerObj be a new ServiceWorker in environment’s Realm, and associate it with serviceWorker.
-        auto service_worker_obj = ServiceWorker::ServiceWorker::create(service_worker);
-
-        // 2. Set serviceWorkerObj’s state to serviceWorker’s state.
-        service_worker_obj->set_service_worker_state(service_worker->state);
-
-        // 3. Set objectMap[serviceWorker] to serviceWorkerObj.
-        object_map.set(service_worker, service_worker_obj);
-    }
-
-    // 3. Return objectMap[serviceWorker].
-    return *object_map.get(service_worker);
 }
 
 }

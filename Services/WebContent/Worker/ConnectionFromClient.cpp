@@ -35,12 +35,14 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/WebRTC/RTCEncodedAudioFrame.h>
 #include <LibWeb/WebRTC/RTCRtpScriptTransformer.h>
 #include <LibWeb/WebRTC/RTCTransformEvent.h>
 #include <WebContent/Worker/ConnectionFromClient.h>
 #include <WebContent/Worker/DedicatedWorkerThreadLink.h>
 #include <WebContent/Worker/PageHost.h>
+#include <WebContent/Worker/ServiceWorkerHost.h>
 #include <WebContent/Worker/WorkerHost.h>
 #include <WebContent/Worker/WorkerThread.h>
 
@@ -162,6 +164,10 @@ void ConnectionFromClient::begin_closing()
         m_worker_host->terminate();
         return;
     }
+    if (m_service_worker_host) {
+        m_service_worker_host->terminate();
+        return;
+    }
     JS::VM::the().request_interrupt();
     Web::HTML::current_event_loop().destroy_once_script_has_finished();
 }
@@ -226,6 +232,9 @@ void ConnectionFromClient::release_agent_state()
     if (m_worker_host)
         m_worker_host->run_closing_steps();
     m_worker_host = nullptr;
+    if (m_service_worker_host)
+        m_service_worker_host->run_closing_steps();
+    m_service_worker_host = nullptr;
 
     m_transformers.clear();
     m_pending_transform_inits.clear();
@@ -325,6 +334,12 @@ void ConnectionFromClient::start_worker(URL::URL url, Web::HTML::WorkerType type
     m_worker_host->run(page(), move(implicit_port), outside_settings, credentials, is_shared, move(origin), move(environment_id), has_process_to_itself);
 }
 
+void ConnectionFromClient::start_service_worker(Web::ServiceWorker::ServiceWorkerStartRequest request)
+{
+    m_service_worker_host = make_ref_counted<ServiceWorkerHost>(move(request));
+    m_service_worker_host->start(page());
+}
+
 void ConnectionFromClient::connect_shared_worker(Web::HTML::TransferDataEncoder message_port, Web::HTML::SerializedEnvironmentSettingsObject outside_settings)
 {
     if (!m_worker_host)
@@ -345,6 +360,16 @@ void ConnectionFromClient::handle_file_return(i32 error, Optional<IPC::File> fil
 void ConnectionFromClient::broadcast_channel_message(Web::HTML::BroadcastChannelMessage message)
 {
     Web::HTML::deliver_broadcast_channel_message_locally(move(message));
+}
+
+void ConnectionFromClient::service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result)
+{
+    Web::ServiceWorker::service_worker_job_settled(request_id, move(result));
+}
+
+void ConnectionFromClient::service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations)
+{
+    Web::ServiceWorker::service_worker_registration_lookup_finished(request_id, move(registrations));
 }
 
 void ConnectionFromClient::rtc_transform_init(u64 transform_id, Web::HTML::SerializedTransferRecord options_record)

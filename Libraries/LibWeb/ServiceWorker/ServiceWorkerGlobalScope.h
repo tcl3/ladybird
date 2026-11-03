@@ -6,12 +6,13 @@
 
 #pragma once
 
+#include <LibWeb/Export.h>
 #include <LibWeb/HTML/WorkerGlobalScope.h>
 
 namespace Web::ServiceWorker {
 
 // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope
-class ServiceWorkerGlobalScope : public HTML::WorkerGlobalScope {
+class WEB_API ServiceWorkerGlobalScope : public HTML::WorkerGlobalScope {
     WEB_WRAPPABLE(ServiceWorkerGlobalScope, HTML::WorkerGlobalScope);
     GC_DECLARE_ALLOCATOR(ServiceWorkerGlobalScope);
 

@@ -58,16 +58,18 @@ bool RequestServerSiteBindings::has_client(int client_id) const
 
 void RequestServerSiteBindings::bind_sites_of(CanonicalDocument const& document)
 {
-    auto top_level_origin = document.top_level_origin();
-    if (!top_level_origin.has_value())
-        return;
+    if (auto top_level_origin = document.top_level_origin(); top_level_origin.has_value())
+        bind_sites_of_environment(document.origin(), *top_level_origin);
+}
 
-    // NB: A document whose top-level document has an opaque origin makes its requests without a network isolation key.
-    auto top_level_site = URL::Site::serialize_for_partitioning(*top_level_origin);
+void RequestServerSiteBindings::bind_sites_of_environment(URL::Origin const& origin, URL::Origin const& top_level_origin)
+{
+    // NB: An environment whose top-level origin is opaque makes its requests without a network isolation key.
+    auto top_level_site = URL::Site::serialize_for_partitioning(top_level_origin);
     if (!top_level_site.has_value())
         return;
 
-    bind({ top_level_site.release_value(), URL::Site::serialize_for_partitioning(document.origin()) });
+    bind({ top_level_site.release_value(), URL::Site::serialize_for_partitioning(origin) });
 }
 
 void RequestServerSiteBindings::bind_sites_of(RequestServerSiteBindings const& other)

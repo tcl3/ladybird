@@ -764,14 +764,10 @@ set(SOURCES
     ServiceWorker/Cache.cpp
     ServiceWorker/CacheStorage.cpp
     ServiceWorker/EventNames.cpp
-    ServiceWorker/Job.cpp
     ServiceWorker/NameToCacheMap.cpp
-    ServiceWorker/Registration.cpp
-    ServiceWorker/ServiceWorker.cpp
-    ServiceWorker/ServiceWorkerContainer.cpp
+    ServiceWorker/RustIntegration.cpp
     ServiceWorker/ServiceWorkerGlobalScope.cpp
-    ServiceWorker/ServiceWorkerRecord.cpp
-    ServiceWorker/ServiceWorkerRegistration.cpp
+    ServiceWorker/Update.cpp
     Speech/SpeechGrammar.cpp
     Speech/SpeechGrammarList.cpp
     Speech/SpeechRecognition.cpp

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const plainText = await server.createEcho("GET", "/plain-text.js", { status: 200, headers: { "Content-Type": "text/plain" }, body: "" });
+        const workerURL = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `onmessage = async event => {
+                let result;
+                try {
+                    await navigator.serviceWorker.register(event.data);
+                    result = "resolved";
+                } catch (error) {
+                    result = error.name;
+                }
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                postMessage({ result, registrations: registrations.length });
+            };`,
+        });
+
+        const worker = new Worker(workerURL);
+        const message = new Promise(resolve => (worker.onmessage = event => resolve(event.data)));
+        worker.postMessage(plainText);
+        const { result, registrations } = await message;
+        println(`register() from a dedicated worker: ${result}`);
+        println(`Registrations afterwards: ${registrations}`);
+    });
+</script>

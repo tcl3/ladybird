@@ -8,8 +8,14 @@
 #include <LibWebView/CanonicalDocument.h>
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
 #include <LibWebView/CanonicalWindow.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 
 namespace WebView {
+
+CanonicalEnvironmentSettingsObject::~CanonicalEnvironmentSettingsObject()
+{
+    ServiceWorkerRegistry::environment_was_discarded(m_id);
+}
 
 bool CanonicalEnvironmentSettingsObject::may_use_cookies_of(URL::URL const& url) const
 {

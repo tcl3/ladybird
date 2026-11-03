@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const token = `held-${uniqueID()}`;
+        const plainText = await server.createEcho("GET", "/plain-text.js", { status: 200, headers: { "Content-Type": "text/plain" }, body: "" });
+        const held = await server.createEcho("GET", "/held.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: "", wait_for_unblock: token });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: `<!DOCTYPE html><script>
+                const events = [];
+                document.addEventListener("DOMContentLoaded", () => events.push("DOMContentLoaded"));
+                navigator.serviceWorker.register("${plainText}").catch(error => {
+                    events.push(error.name);
+                    parent.postMessage(events, "*");
+                });
+            <\/script><script src="${held}"><\/script>`,
+        });
+
+        const message = new Promise(resolve => addEventListener("message", event => resolve(event.data), { once: true }));
+        const frame = document.createElement("iframe");
+        frame.src = frameURL;
+        document.body.append(frame);
+        await server.waitForRequest(held);
+
+        try {
+            await navigator.serviceWorker.register(plainText, { scope: "./elsewhere/" });
+        } catch {}
+        await fetch(`${server.baseURL}/unblock/${token}`);
+        println(`Events in the frame: ${(await message).join(", ")}`);
+    });
+</script>

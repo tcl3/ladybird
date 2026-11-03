@@ -96,6 +96,7 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
 #include <LibWeb/Selection/Selection.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/UIEvents/InputTypes.h>
 #include <LibWebCommon/HTML/SelectedFile.h>
 #include <LibWebCommon/Infra/Strings.h>
@@ -3842,6 +3843,16 @@ void ConnectionFromClient::cookies_changed(Web::PageId page_id, Vector<HTTP::Coo
 void ConnectionFromClient::broadcast_channel_message(Web::HTML::BroadcastChannelMessage message)
 {
     Web::HTML::deliver_broadcast_channel_message_locally(move(message));
+}
+
+void ConnectionFromClient::service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result)
+{
+    Web::ServiceWorker::service_worker_job_settled(request_id, move(result));
+}
+
+void ConnectionFromClient::service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations)
+{
+    Web::ServiceWorker::service_worker_registration_lookup_finished(request_id, move(registrations));
 }
 
 void ConnectionFromClient::did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token)

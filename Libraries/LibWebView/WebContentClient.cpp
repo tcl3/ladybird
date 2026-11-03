@@ -343,7 +343,7 @@ void WebContentClient::close_page_of_closed_tab(Web::PageId page_id)
             page->set_detached_close_pending(false);
         // NB: The process can stay alive for other pages or for a shared worker, and the document must not go on in it.
         //     Its close steps run through the traversable that is going away, so it cannot close by itself.
-        if (!page->detached_close_pending() || WorkerAgentManager::the().hosts_shared_worker(*this))
+        if (!page->detached_close_pending() || WorkerAgentManager::the().hosts_shared_worker(*this) || WorkerAgentManager::the().hosts_service_worker(*this))
             page->async_discard_embedded_page();
         PictureInPictureManager::the().close_window_and_its_page(*page);
         // NB: Other tabs can keep the process alive, so its page has to go as well.
@@ -484,7 +484,7 @@ void WebContentClient::close_server_if_unused()
         any_detached_close_pending |= page.value->detached_close_pending();
     }
 
-    if (WorkerAgentManager::the().hosts_shared_worker(*this))
+    if (WorkerAgentManager::the().hosts_shared_worker(*this) || WorkerAgentManager::the().hosts_service_worker(*this))
         return;
 
     if (!any_detached_close_pending) {

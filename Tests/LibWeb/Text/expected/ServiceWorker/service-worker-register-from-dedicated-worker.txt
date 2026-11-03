@@ -1,0 +1,2 @@
+register() from a dedicated worker: SecurityError
+Registrations afterwards: 0

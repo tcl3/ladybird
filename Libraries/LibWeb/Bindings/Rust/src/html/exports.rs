@@ -465,6 +465,7 @@ pub unsafe extern "C" fn web_rust_shut_down_agent(vm: *mut c_void) {
     let vm = unsafe { &*vm.cast::<Vm>() };
     MessagePort::shut_down_ports_of_agent(vm);
     crate::html::broadcast_channel::forget_broadcast_channels_of_agent();
+    crate::service_worker::shut_down_service_workers_of_agent();
     crate::web_assembly::Agent::shut_down();
     crate::indexed_db::internal::storage::shut_down_storage();
 }

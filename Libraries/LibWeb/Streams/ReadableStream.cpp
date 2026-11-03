@@ -7,6 +7,7 @@
  */
 
 #include <LibJS/HostClassBuilder.h>
+#include <LibJS/Runtime/ArrayBuffer.h>
 #include <LibJS/Runtime/NativeFunction.h>
 #include <LibJS/Runtime/Realm.h>
 #include <LibJS/Runtime/VM.h>

@@ -1736,6 +1736,26 @@ void PageClient::page_did_post_broadcast_channel_message(Web::HTML::PostedBroadc
     client().async_did_post_broadcast_channel_message(m_id, message);
 }
 
+void PageClient::page_did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest const& request)
+{
+    client().async_did_schedule_service_worker_job(m_id, request);
+}
+
+void PageClient::page_did_request_service_worker_registration(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id, URL::URL const& client_url)
+{
+    client().async_did_request_service_worker_registration(m_id, environment_id, request_id, client_url);
+}
+
+void PageClient::page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id)
+{
+    client().async_did_request_service_worker_registrations(m_id, environment_id, request_id);
+}
+
+void PageClient::page_did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId const& environment_id)
+{
+    client().async_did_dispatch_dom_content_loaded_for_service_worker_jobs(m_id, environment_id);
+}
+
 // The UI process passes the violation on to the process hosting the navigation's source, while it still hosts it.
 void PageClient::page_did_report_navigation_violation_of_remote_client(Web::HTML::RemoteClientNavigation const& navigation, u64 policy_index, Web::ContentSecurityPolicy::RemoteViolationDirective directive, bool url_is_https)
 {

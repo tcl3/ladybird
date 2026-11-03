@@ -79,7 +79,10 @@ RUNTIME_UNION_TYPES = {"ArrayBufferView": "ArrayBufferView", "BufferSource": "Bu
 
 # The unions that no typedef names and more than one interface's IDL uses, whose enums the bindings runtime defines,
 # by their type name.
-SHARED_UNNAMED_UNIONS = {"DOMStringOrDOMStringSequence": "crate::bindings::conversions"}
+SHARED_UNNAMED_UNIONS = {
+    "DOMStringOrDOMStringSequence": "crate::bindings::conversions",
+    "TrustedScriptURLOrUSVString": "crate::bindings::conversions",
+}
 
 DECIMAL_LITERAL = re.compile(r"-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?")
 

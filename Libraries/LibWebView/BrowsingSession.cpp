@@ -9,12 +9,14 @@
 #include <LibWebView/CookieJar.h>
 #include <LibWebView/HSTSStore.h>
 #include <LibWebView/PermissionManager.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/StorageJar.h>
 
 namespace WebView {
 
 BrowsingSession::BrowsingSession(IsPrivate is_private)
-    : m_is_private(is_private)
+    : service_worker_registry(make<ServiceWorkerRegistry>(is_private))
+    , m_is_private(is_private)
 {
 }
 

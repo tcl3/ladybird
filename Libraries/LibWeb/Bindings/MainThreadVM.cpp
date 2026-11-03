@@ -79,9 +79,6 @@
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/ThreadPoolWork.h>
-#include <LibWeb/ServiceWorker/Job.h>
-#include <LibWeb/ServiceWorker/Registration.h>
-#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/TrustedTypes/TrustedScript.h>
 #include <LibWeb/WebAssembly/WebAssembly.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
@@ -798,12 +795,9 @@ void shut_down_agent()
     HTML::clear_message_event_ports_caches();
     PerformanceTimeline::clear_supported_entry_types_caches();
     Crypto::clear_crypto_key_caches();
-    ServiceWorker::clear_service_worker_container_ready_promise_caches();
     PermissionsAPI::PermissionStore::forget_statuses_of_this_agent();
     FileAPI::forget_blob_url_store_of_this_agent();
     Fetch::Fetching::clear_http_memory_cache();
-    ServiceWorker::forget_job_queues_of_this_agent();
-    ServiceWorker::Registration::forget_registrations_of_this_agent();
 
     // An event that is still queued can hold roots as well, and a stopped request only lets go of its roots in one. As
     // the task queues discard everything by now, no script runs from these. What a deferred invocation of LibWeb is for

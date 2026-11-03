@@ -15,6 +15,7 @@ set(SOURCES
     Worker/ConnectionFromClient.cpp
     Worker/DedicatedWorkerThreadLink.cpp
     Worker/PageHost.cpp
+    Worker/ServiceWorkerHost.cpp
     Worker/WebWorkerCompositorHost.cpp
     Worker/WorkerHost.cpp
     Worker/WorkerThread.cpp

@@ -53,6 +53,7 @@
 #include <LibWebCommon/Page/WritingSuggestion.h>
 #include <LibWebCommon/Page/ViewportIsFullscreen.h>
 #include <LibWebCommon/ReferrerPolicy/ReferrerPolicy.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <LibWebCommon/StorageAPI/StorageAreaId.h>
 #include <LibWebCommon/StorageAPI/StorageEndpoint.h>
 #include <LibWebCommon/WebDriver/BiDi.h>
@@ -334,6 +335,8 @@ endpoint WebContentServer routed by Web::PageId page_id
     set_document_cookie_version_index(Web::PageId page_id, i64 document_id, Core::SharedVersionIndex document_index) =|
     cookies_changed(Web::PageId page_id, Vector<HTTP::Cookie::Cookie> cookies) =|
     broadcast_channel_message(Web::HTML::BroadcastChannelMessage message) =|
+    service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result) =|
+    service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations) =|
 
     did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) =|
     did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) =|

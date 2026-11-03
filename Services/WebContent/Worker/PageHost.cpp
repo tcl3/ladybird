@@ -142,6 +142,21 @@ void PageHost::page_did_close_shared_worker()
     (void)m_client.send_sync_but_allow_failure<Messages::WebWorkerClient::DidCloseSharedWorker>();
 }
 
+void PageHost::page_did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest const& request)
+{
+    m_client.async_did_schedule_service_worker_job(request);
+}
+
+void PageHost::page_did_request_service_worker_registration(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id, URL::URL const& client_url)
+{
+    m_client.async_did_request_service_worker_registration(environment_id, request_id, client_url);
+}
+
+void PageHost::page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id)
+{
+    m_client.async_did_request_service_worker_registrations(environment_id, request_id);
+}
+
 void PageHost::request_file(Web::FileRequest request)
 {
     m_client.request_file(move(request));
@@ -206,6 +221,11 @@ void PageHost::did_fail_loading_worker_script()
         return;
     }
     m_client.async_did_fail_loading_worker_script();
+}
+
+void PageHost::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
+{
+    m_client.async_did_fetch_service_worker_script(result);
 }
 
 PageHost::PageHost(ConnectionFromClient& client)

@@ -868,6 +868,9 @@ public:
     GC::Ref<Document> appropriate_template_contents_owner_document();
 
     HTML::DocumentReadyState readiness() const { return m_readiness; }
+
+    bool has_service_worker_jobs_waiting_for_dom_content_loaded() const { return m_has_service_worker_jobs_waiting_for_dom_content_loaded; }
+    void set_has_service_worker_jobs_waiting_for_dom_content_loaded() { m_has_service_worker_jobs_waiting_for_dom_content_loaded = true; }
     void update_readiness(HTML::DocumentReadyState);
 
     Utf16String last_modified() const;
@@ -2147,6 +2150,8 @@ private:
     //            This default applies to other cases such as initial about:blank Documents or Documents without a
     //            browsing context.
     HTML::DocumentReadyState m_readiness { HTML::DocumentReadyState::Complete };
+
+    bool m_has_service_worker_jobs_waiting_for_dom_content_loaded { false };
     Utf16FlyString m_content_type { "application/xml"_utf16_fly_string };
     Optional<Utf16String> m_pragma_set_default_language;
     Optional<Utf16String> m_http_content_language;

@@ -105,6 +105,7 @@
 #include <LibWebCommon/Page/WritingSuggestion.h>
 #include <LibWebCommon/Permissions/Permissions.h>
 #include <LibWebCommon/PixelUnits.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 #include <LibWebCommon/StorageAPI/StorageEndpoint.h>
 #include <LibWebCommon/UIEvents/KeyCode.h>
 #include <LibWebCommon/WebView/StorageSetResult.h>
@@ -1028,6 +1029,10 @@ public:
     virtual void page_did_register_javascript_source([[maybe_unused]] DOM::Document&, [[maybe_unused]] HTML::ScriptRegistry::Description const&) { }
     virtual void page_did_post_broadcast_channel_message([[maybe_unused]] HTML::PostedBroadcastChannelMessage const& message) { }
     virtual void page_did_close_shared_worker() { }
+    virtual void page_did_schedule_service_worker_job([[maybe_unused]] ServiceWorker::ServiceWorkerJobRequest const& request) { }
+    virtual void page_did_request_service_worker_registration([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] URL::URL const& client_url) { }
+    virtual void page_did_request_service_worker_registrations([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }
+    virtual void page_did_dispatch_dom_content_loaded_for_service_worker_jobs([[maybe_unused]] HTML::EnvironmentId const& environment_id) { }
 
     struct StartedWorkerAgent {
         HTML::WorkerAgentId agent_id { 0 };

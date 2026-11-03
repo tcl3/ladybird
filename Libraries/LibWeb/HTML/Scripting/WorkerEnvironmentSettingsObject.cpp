@@ -82,6 +82,28 @@ GC::Ref<WorkerEnvironmentSettingsObject> WorkerEnvironmentSettingsObject::setup(
     return settings_object;
 }
 
+GC::Ref<WorkerEnvironmentSettingsObject> WorkerEnvironmentSettingsObject::create_for_service_worker(GC::Ref<Page> page, NonnullOwnPtr<JS::ExecutionContext> execution_context, URL::Origin origin, bool has_cross_site_ancestor, Optional<URL::Origin> top_level_origin, HighResolutionTime::DOMHighResTimeStamp unsafe_creation_time, EnvironmentId id)
+{
+    auto realm = execution_context->realm;
+    VERIFY(realm);
+    auto* worker = Bindings::worker_global_scope_from_global_object(realm->global_object());
+    VERIFY(worker);
+
+    auto settings_object = realm->create<WorkerEnvironmentSettingsObject>(move(execution_context), *worker, move(origin), has_cross_site_ancestor, unsafe_creation_time, get_random<u64>(), CrossOriginIsolationMode::None);
+    settings_object->id = move(id);
+    settings_object->creation_url = worker->url();
+    settings_object->top_level_creation_url = {};
+    settings_object->top_level_origin = move(top_level_origin);
+    settings_object->target_browsing_context = nullptr;
+
+    auto intrinsics = realm->create<Bindings::Intrinsics>(*realm);
+    realm->set_host_defined(Bindings::create_principal_host_defined(settings_object, intrinsics, page));
+    Bindings::cache_global_object_wrapper(*realm);
+    Bindings::initialize_worker_web_interfaces(*worker);
+
+    return settings_object;
+}
+
 // https://html.spec.whatwg.org/multipage/workers.html#script-settings-for-workers:api-base-url
 URL::URL WorkerEnvironmentSettingsObject::api_base_url() const
 {

@@ -142,7 +142,9 @@ WorkerAgentManager::StartedWorkerAgent WorkerAgentManager::start_worker_agent(We
         } else {
             thread_transport = move(transport.remote_handle);
         }
-        return create_worker_client(move(transport.local), is_private, agent_id, *host, owner_client.request_server_site_bindings());
+        return create_worker_client(move(transport.local), is_private, agent_id, request.agent_type, *host, [&](RequestServerSiteBindings& bindings) {
+            bindings.bind_sites_of(owner_client.request_server_site_bindings());
+        });
     }();
     // A worker the system cannot give a thread fails to load, as one whose script cannot be fetched does.
     if (client_or_error.is_error()) {
@@ -231,7 +233,9 @@ void WorkerAgentManager::register_dedicated_worker(DedicatedWorkerOwner const& o
             IPC::ScopedSharedIOThread shared_io_thread;
             return worker_transport.create_transport();
         }());
-        return create_worker_client(move(transport), owner.is_private, 0, owner.process, owner.request_server_site_bindings);
+        return create_worker_client(move(transport), owner.is_private, 0, Web::HTML::AgentType::DedicatedWorker, owner.process, [&](RequestServerSiteBindings& bindings) {
+            bindings.bind_sites_of(owner.request_server_site_bindings);
+        });
     }();
     if (client_or_error.is_error()) {
         dbgln("Unable to start a dedicated worker: {}", client_or_error.error());
@@ -253,7 +257,11 @@ bool WorkerAgentManager::page_environment_has_cross_site_ancestor(WebContentClie
 //     context has been discarded, leaving it no top-level origin, does not start.
 bool WorkerAgentManager::has_reached_worker_limit(IsPrivate is_private, CanonicalEnvironmentSettingsObject const& outside_settings) const
 {
-    auto top_level_origin = outside_settings.top_level_origin();
+    return has_reached_worker_limit(is_private, outside_settings.top_level_origin());
+}
+
+bool WorkerAgentManager::has_reached_worker_limit(IsPrivate is_private, Optional<URL::Origin> const& top_level_origin) const
+{
     if (!top_level_origin.has_value())
         return true;
     size_t worker_count_of_top_level_site = 0;
@@ -265,19 +273,20 @@ bool WorkerAgentManager::has_reached_worker_limit(IsPrivate is_private, Canonica
     return worker_count_of_top_level_site >= Web::HTML::maximum_worker_count;
 }
 
-ErrorOr<NonnullRefPtr<WebWorkerClient>> WorkerAgentManager::create_worker_client(NonnullOwnPtr<IPC::Transport> transport, IsPrivate is_private, Web::HTML::WorkerAgentId agent_id, WebContentClient& host, RequestServerSiteBindings const& owner_request_server_site_bindings)
+ErrorOr<NonnullRefPtr<WebWorkerClient>> WorkerAgentManager::create_worker_client(NonnullOwnPtr<IPC::Transport> transport, IsPrivate is_private, Web::HTML::WorkerAgentId agent_id, Web::HTML::AgentType agent_type, WebContentClient& host, Function<void(RequestServerSiteBindings&)> const& bind_sites)
 {
-    auto client = TRY(try_make_ref_counted<WebWorkerClient>(move(transport), is_private, agent_id));
+    auto client = TRY(try_make_ref_counted<WebWorkerClient>(move(transport), is_private, agent_id, agent_type));
     client->set_host(host);
 
     // The worker's RequestServer client uses the cookies of the session the worker itself belongs to.
     auto session = client->session();
     if (!session)
         session = Application::session_for_new_view(is_private);
-    // The worker makes its requests for the sites its owner makes them for.
-    client->request_server_site_bindings().bind_sites_of(owner_request_server_site_bindings);
+    // A worker makes its requests for the sites its owner makes them for, and a service worker for the partition of
+    // its registration.
+    bind_sites(client->request_server_site_bindings());
 
-    // The worker's requests go through the RequestServers of its owner's sites.
+    // The worker's requests go through the RequestServers of the sites it is bound to.
     TRY(client->request_server_site_bindings().connect(*session));
     client->async_set_site_compatibility_data(Application::the().site_compatibility_data());
     client->async_set_permission_snapshot(session->permission_manager->snapshot_for({}));
@@ -350,6 +359,84 @@ bool WorkerAgentManager::hosts_shared_worker(WebContentClient const& process) co
     return any_of(m_agents, [&](auto const& entry) {
         return entry.value.client->host() == &process;
     });
+}
+
+bool WorkerAgentManager::hosts_service_worker(WebContentClient const& process) const
+{
+    // NB: A service worker that is closing has no inside settings any more. Its thread may be stuck for a while, but it
+    //     does not keep the process.
+    return any_of(m_clients, [&](auto const& client) {
+        return client->agent_type() == Web::HTML::AgentType::ServiceWorker && client->inside_settings() && client->host() == &process;
+    });
+}
+
+// https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+// NB: The registry runs the algorithm, and this gives it the agent: a thread of a new WebContent process without pages.
+ErrorOr<WorkerAgentManager::ServiceWorkerAgent> WorkerAgentManager::start_service_worker_agent(IsPrivate is_private, URL::Origin origin, Optional<URL::Origin> top_level_origin, bool has_cross_site_ancestor)
+{
+    if (has_reached_worker_limit(is_private, top_level_origin))
+        return Error::from_string_literal("The top-level site runs too many workers");
+
+    auto agent_id = ++m_next_agent_id;
+    // NB: Only the transport of the worker goes on the shared IO thread. The others here have owners of their own.
+    auto transport = TRY([] {
+        IPC::ScopedSharedIOThread shared_io_thread;
+        return IPC::Transport::create_paired();
+    }());
+    auto host = TRY(Application::the().launch_web_content_process_without_page(is_private));
+    host->async_start_worker_thread(move(transport.remote_handle), Web::HTML::AgentType::ServiceWorker);
+
+    // A service worker makes its requests for the partition of its registration, whichever process needs it to run.
+    auto client_or_error = create_worker_client(move(transport.local), is_private, agent_id, Web::HTML::AgentType::ServiceWorker, *host, [&](RequestServerSiteBindings& bindings) {
+        bindings.bind_sites_of_environment(origin, *top_level_origin);
+    });
+    if (client_or_error.is_error()) {
+        host->close_server_if_unused();
+        return client_or_error.release_error();
+    }
+    auto client = client_or_error.release_value();
+
+    auto inside_settings = make<CanonicalWorkerEnvironmentSettingsObject>(origin, top_level_origin, has_cross_site_ancestor, Web::HTML::EnvironmentId::generate());
+    auto environment_id = inside_settings->id();
+    client->set_inside_settings(move(inside_settings), false);
+
+    // NB: The task manager lists a process with the site of its pages. This one has none, so it goes by the site of
+    //     the worker's origin.
+    if (auto process = Application::process_manager().find_child(client->child_id()); process.has_value()) {
+        if (!origin.is_opaque())
+            process->set_site_url(URL::Parser::basic_parse(origin.serialize()));
+    }
+
+    return ServiceWorkerAgent {
+        .id = agent_id,
+        .client = move(client),
+        .environment_id = move(environment_id),
+    };
+}
+
+// https://w3c.github.io/ServiceWorker/#terminate-service-worker
+void WorkerAgentManager::close_service_worker_agent(Web::HTML::WorkerAgentId agent_id)
+{
+    auto client_index = m_clients.find_first_index_if([&](auto const& client) {
+        return client->agent_id() == agent_id && client->agent_type() == Web::HTML::AgentType::ServiceWorker;
+    });
+    if (!client_index.has_value())
+        return;
+    auto client = m_clients[*client_index];
+    if (!client->inside_settings())
+        return;
+
+    // NB: A thread leaves as soon as it gets out of the builtin or the request it may be in, and nothing waits for it.
+    //     Until it is gone, it counts toward the workers of its top-level site, but it no longer keeps its process.
+    client->forget_inside_settings_of_closing_worker();
+    if (client->is_open())
+        client->async_close_worker();
+    if (auto host = client->host()) {
+        Core::deferred_invoke([host = host->make_weak_ptr<WebContentClient>()] {
+            if (auto process = host.strong_ref())
+                process->close_server_if_unused();
+        });
+    }
 }
 
 void WorkerAgentManager::for_each_client_with_inside_settings(Function<IterationDecision(WebWorkerClient&, CanonicalWorkerEnvironmentSettingsObject const&)> const& callback)

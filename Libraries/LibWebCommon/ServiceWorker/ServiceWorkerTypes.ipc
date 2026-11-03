@@ -1,0 +1,53 @@
+// Copyright (c) 2026-present, the Ladybird developers.
+
+// NB: The IPC compiler cannot check that each struct here lists every field of its C++ type. A field left out
+//     here does not cross IPC.
+
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerDescriptor {
+    u64 id;
+    URL::URL script_url;
+    Web::ServiceWorker::ServiceWorkerState state;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerRegistrationSnapshot {
+    u64 id;
+    URL::URL scope_url;
+    Web::ServiceWorker::ServiceWorkerUpdateViaCache update_via_cache;
+    Optional<Web::ServiceWorker::ServiceWorkerDescriptor> installing_worker;
+    Optional<Web::ServiceWorker::ServiceWorkerDescriptor> waiting_worker;
+    Optional<Web::ServiceWorker::ServiceWorkerDescriptor> active_worker;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerJobRequest {
+    u64 request_id;
+    Web::ServiceWorker::ServiceWorkerJobType job_type;
+    Web::HTML::SerializedEnvironmentSettingsObject client;
+    URL::URL scope_url;
+    URL::URL script_url;
+    Web::HTML::WorkerType worker_type;
+    Web::ServiceWorker::ServiceWorkerUpdateViaCache update_via_cache;
+    bool client_has_dispatched_dom_content_loaded;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerScriptFetchParameters {
+    Web::HTML::SerializedEnvironmentSettingsObject job_client;
+    bool force_bypass_cache;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerStartRequest {
+    Web::ServiceWorker::ServiceWorkerDescriptor worker;
+    Web::HTML::WorkerType worker_type;
+    Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration;
+    Web::HTML::EnvironmentId environment_id;
+    URL::Origin origin;
+    bool has_cross_site_ancestor;
+    Optional<URL::Origin> top_level_origin;
+    Web::ServiceWorker::ServiceWorkerScriptFetchParameters script_fetch;
+}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const missing = await server.createEcho("GET", "/missing.js", { status: 404, headers: { "Content-Type": "text/javascript" }, body: "" });
+        const settle = async promise => {
+            try {
+                await promise;
+                return "resolved";
+            } catch (error) {
+                return error.name;
+            }
+        };
+
+        const iframe = document.createElement("iframe");
+        document.body.appendChild(iframe);
+        const removedIframeContainer = iframe.contentWindow.navigator.serviceWorker;
+        iframe.remove();
+        println(`Removed iframe: ${await settle(removedIframeContainer.register(missing))}`);
+
+        const popup = window.open();
+        const closedWindowContainer = popup.navigator.serviceWorker;
+        popup.close();
+        println(`Closed window: ${await settle(closedWindowContainer.register(missing))}`);
+    });
+</script>

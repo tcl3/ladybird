@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const script = (path, options) => server.createEcho("GET", path, { status: 200, headers: javascript, body: "", ...options });
+        const register = async (scriptURL, options) => {
+            try {
+                await navigator.serviceWorker.register(scriptURL, options);
+                return "resolved";
+            } catch (error) {
+                return error.name;
+            }
+        };
+
+        const plainText = await script("/plain-text.js", { headers: { "Content-Type": "text/plain" } });
+        println(`Script served as plain text: ${await register(plainText)}`);
+
+        const outsideMaximumScope = await script("/directory/outside-maximum-scope.js");
+        println(`Scope outside the script's directory: ${await register(outsideMaximumScope, { scope: "./" })}`);
+
+        const allowed = await script("/directory/allowed.js", { headers: { ...javascript, "Service-Worker-Allowed": "/" } });
+        println(`Scope that Service-Worker-Allowed permits: ${await register(allowed, { scope: "./" })}`);
+
+        const redirectTarget = await script("/redirect-target.js");
+        const redirected = await server.createEcho("GET", "/redirected.js", { status: 302, headers: { Location: redirectTarget } });
+        println(`Redirected script: ${await register(redirected)}`);
+
+        const missing = await server.createEcho("GET", "/missing.js", { status: 404, headers: javascript, body: "" });
+        println(`Script that fails to load: ${await register(missing)}`);
+
+        println(`Registration afterwards: ${await navigator.serviceWorker.getRegistration(new URL("./", plainText).href)}`);
+        println(`Registrations afterwards: ${(await navigator.serviceWorker.getRegistrations()).length}`);
+    });
+</script>

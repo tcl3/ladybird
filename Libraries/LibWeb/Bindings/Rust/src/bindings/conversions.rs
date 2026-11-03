@@ -1176,6 +1176,12 @@ pub(crate) enum DOMStringOrDOMStringSequence {
     Sequence(Vec<Utf16String>),
 }
 
+/// (TrustedScriptURL or USVString), which more than one interface's IDL names without a typedef.
+pub(crate) enum TrustedScriptURLOrUSVString {
+    TrustedScriptURL(CppInterface),
+    USVString(UsvString),
+}
+
 /// An object of an interface that LibWeb implements in C++, as its wrapper. Only the C++ code knows the object
 /// behind the wrapper, so an implementation hands the wrapper to a service of LibWeb to have something done with it.
 #[derive(Clone, Copy, Trace)]

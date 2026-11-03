@@ -20,7 +20,7 @@ class WEBVIEW_API CanonicalEnvironmentSettingsObject {
 public:
     AK_ALLOC_WITH_KMALLOC;
 
-    virtual ~CanonicalEnvironmentSettingsObject() = default;
+    virtual ~CanonicalEnvironmentSettingsObject();
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-id
     Web::HTML::EnvironmentId const& id() const { return m_id; }

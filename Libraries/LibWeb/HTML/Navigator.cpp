@@ -142,7 +142,7 @@ WebIDL::Long Navigator::max_touch_points()
 GC::Ref<ServiceWorker::ServiceWorkerContainer> Navigator::service_worker()
 {
     if (!m_service_worker_container)
-        m_service_worker_container = ServiceWorker::ServiceWorkerContainer::create(relevant_settings_object(*m_window));
+        m_service_worker_container = ServiceWorker::ServiceWorkerContainer::create(relevant_realm(*m_window));
     return *m_service_worker_container;
 }
 
