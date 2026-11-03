@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A worker keeps running while a client in its partition remains, and stops once the last one goes away.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const site = uniqueLocalhostHostname("service-worker-lifetime");
+        const onSite = url => {
+            const result = new URL(url);
+            result.hostname = site;
+            return result.href;
+        };
+        // NB: A worker answers with a token of its global, which a worker that ran again has a new one of.
+        const script = onSite(await server.createEcho("GET", "/lifetime/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `const token = Math.random();
+            self.addEventListener("message", event => {
+                if (event.data === "hold")
+                    event.waitUntil(new Promise(() => {}));
+                event.source.postMessage(token);
+            });`,
+        }));
+        const frameURL = onSite(await server.createEcho("GET", "/lifetime/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: `<!DOCTYPE html><script>
+                const ask = async message => {
+                    const registration = await navigator.serviceWorker.getRegistration("${script}");
+                    const reply = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+                    registration.active.postMessage(message);
+                    return reply;
+                };
+                window.addEventListener("message", async event => {
+                    if (event.data === "register") {
+                        const registration = await navigator.serviceWorker.register("${script}");
+                        const worker = registration.installing;
+                        await new Promise(resolve => worker.addEventListener("statechange", () => worker.state === "activated" && resolve()));
+                        parent.postMessage("registered", "*");
+                        return;
+                    }
+                    parent.postMessage(await ask(event.data), "*");
+                });
+                parent.postMessage("loaded", "*");
+            <\/script>`,
+        }));
+
+        const nextMessage = () => new Promise(resolve => addEventListener("message", event => resolve(event.data), { once: true }));
+        const addFrame = async () => {
+            const loaded = nextMessage();
+            const frame = document.createElement("iframe");
+            frame.src = frameURL;
+            document.body.append(frame);
+            await loaded;
+            return frame;
+        };
+        const send = async (frame, message) => {
+            const reply = nextMessage();
+            frame.contentWindow.postMessage(message, "*");
+            return reply;
+        };
+
+        const first = await addFrame();
+        await send(first, "register");
+        const initialToken = await send(first, "token");
+
+        const second = await addFrame();
+        first.remove();
+        await timeout(1000);
+        println(`Kept running while a client remained: ${(await send(second, "token")) === initialToken}`);
+
+        second.remove();
+        await timeout(1000);
+        const third = await addFrame();
+        println(`Ran again after the last client went away: ${(await send(third, "token")) !== initialToken}`);
+        third.remove();
+    });
+</script>

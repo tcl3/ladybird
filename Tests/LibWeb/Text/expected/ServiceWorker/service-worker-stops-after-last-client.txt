@@ -1,0 +1,2 @@
+Kept running while a client remained: true
+Ran again after the last client went away: true

@@ -6,11 +6,13 @@
 
 #pragma once
 
+#include <AK/ByteBuffer.h>
 #include <AK/Optional.h>
 #include <AK/Types.h>
 #include <AK/Variant.h>
 #include <AK/Vector.h>
 #include <LibGC/Forward.h>
+#include <LibHTTP/Header.h>
 #include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibWebCommon/Bindings/Client.h>
@@ -109,6 +111,15 @@ struct ServiceWorkerScriptFetchParameters {
 };
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+// https://w3c.github.io/ServiceWorker/#dfn-script-resource-map
+// A script of a service worker's script resource map, which the UI process keeps to run an installed worker again.
+struct ServiceWorkerScriptResource {
+    URL::URL url;
+    u16 status { 200 };
+    Vector<HTTP::Header> header_list;
+    ByteBuffer body;
+};
+
 struct ServiceWorkerStartRequest {
     ServiceWorkerDescriptor worker;
     HTML::WorkerType worker_type { HTML::WorkerType::Classic };
@@ -121,6 +132,10 @@ struct ServiceWorkerStartRequest {
     Optional<URL::Origin> top_level_origin;
 
     ServiceWorkerScriptFetchParameters script_fetch;
+
+    // NB: An installed worker runs from the scripts that its process recorded when it was installed, which a new
+    //     worker fetches instead.
+    Vector<ServiceWorkerScriptResource> stored_scripts;
 };
 
 using ServiceWorkerScriptFetchResult = Optional<ServiceWorkerJobError>;

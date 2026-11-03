@@ -89,6 +89,7 @@ void web_rust_service_worker_message_to_client(JSVM*, void* realm, FfiServiceWor
 void web_rust_service_worker_enable_client_message_queue(JSVM*, void* realm);
 u64 web_rust_service_worker_dispatch_message_event(JSVM*, void* realm, DOM::EventTarget* global, FfiServiceWorkerClientSnapshot const*, FfiServiceWorkerDescriptor const*, ReadonlyBytes origin, HTML::SerializedTransferRecord* record, void* ctx, void (*on_pending_events_changed)(void*, bool));
 void web_rust_service_worker_time_out_extended_event(JSVM*, u64 event_id);
+u64 web_rust_service_worker_id(ServiceWorker const*);
 void* web_rust_service_worker_registration_object(JSVM*, void* realm, FfiServiceWorkerRegistrationSnapshot const*);
 void* web_rust_service_worker_service_worker_object(JSVM*, void* realm, FfiServiceWorkerDescriptor const*);
 }
@@ -435,6 +436,11 @@ u64 dispatch_message_event(ServiceWorkerGlobalScope& global, ServiceWorkerMessag
 void time_out_extended_event(u64 event_id)
 {
     web_rust_service_worker_time_out_extended_event(JS::HostABI::vm_to_abi(JS::VM::the()), event_id);
+}
+
+ServiceWorkerId service_worker_id(ServiceWorker const& worker)
+{
+    return web_rust_service_worker_id(&worker);
 }
 
 }

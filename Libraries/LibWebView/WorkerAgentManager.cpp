@@ -370,6 +370,24 @@ bool WorkerAgentManager::hosts_service_worker(WebContentClient const& process) c
     });
 }
 
+bool WorkerAgentManager::runs_alone_in_its_host(WebWorkerClient const& client) const
+{
+    auto* host = client.host();
+    if (!host || hosts_shared_worker(*host))
+        return false;
+    auto shares_host = any_of(m_clients, [&](auto const& other) {
+        return other.ptr() != &client && other->host() == host;
+    });
+    if (shares_host)
+        return false;
+    bool has_page = false;
+    host->for_each_page([&](WebContentPage&) {
+        has_page = true;
+        return IterationDecision::Break;
+    });
+    return !has_page;
+}
+
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
 // NB: The registry runs the algorithm, and this gives it the agent: a thread of a new WebContent process without pages.
 ErrorOr<WorkerAgentManager::ServiceWorkerAgent> WorkerAgentManager::start_service_worker_agent(IsPrivate is_private, URL::Origin origin, Optional<URL::Origin> top_level_origin, bool has_cross_site_ancestor)

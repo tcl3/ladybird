@@ -15,6 +15,10 @@
 
 namespace Web::ServiceWorker {
 
+// NB: The UI process keeps an installed worker's scripts as script resources, from which the worker runs again.
+WEB_API ServiceWorkerScriptResource script_resource_from_response(URL::URL, Fetch::Infrastructure::ResponseView const&, ReadonlyBytes body);
+WEB_API GC::Ref<Fetch::Infrastructure::ResponseView> response_from_script_resource(ServiceWorkerScriptResource const&);
+
 // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope
 class WEB_API ServiceWorkerGlobalScope : public HTML::WorkerGlobalScope {
     WEB_WRAPPABLE(ServiceWorkerGlobalScope, HTML::WorkerGlobalScope);
@@ -51,6 +55,8 @@ public:
     void service_worker_state_changed(ServiceWorkerDescriptor const&);
     void registration_state_changed(ServiceWorkerRegistrationSlot, Optional<ServiceWorkerDescriptor>);
     void prune_script_resource_map();
+    Vector<ServiceWorkerScriptResource> imported_script_resources() const;
+    void restore_imported_script_resources(Vector<ServiceWorkerScriptResource> const&);
 
     virtual HTML::PerformTheFetchHook import_scripts_perform_the_fetch_hook() override;
 

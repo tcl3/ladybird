@@ -3535,6 +3535,12 @@ void WebContentPage::did_receive_reference_test_metadata(JsonValue metadata)
         view().on_reference_test_metadata(metadata);
 }
 
+void WebContentPage::did_request_service_worker_termination_for_testing(u64 service_worker_id, bool kill_process)
+{
+    VERIFY(Application::web_content_options().is_test_mode == IsTestMode::Yes);
+    client().session().service_worker_registry->terminate_service_worker_for_testing(service_worker_id, kill_process);
+}
+
 void WebContentPage::did_simulate_worker_request_server_connection_loss()
 {
     VERIFY(Application::web_content_options().is_test_mode == IsTestMode::Yes);

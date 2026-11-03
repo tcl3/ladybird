@@ -263,6 +263,11 @@ void PageHost::did_change_service_worker_pending_events(bool has_pending_events)
     m_client.async_did_change_service_worker_pending_events(has_pending_events);
 }
 
+void PageHost::did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts)
+{
+    m_client.async_did_record_service_worker_scripts(move(scripts));
+}
+
 PageHost::PageHost(ConnectionFromClient& client)
     : m_client(client)
     , m_page(Web::Page::create(*this))

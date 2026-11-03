@@ -109,6 +109,10 @@ pub(crate) fn forget_service_worker_objects_of_agent() {
 }
 
 impl ServiceWorker {
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+
     // https://w3c.github.io/ServiceWorker/#dom-serviceworker-scripturl
     pub(crate) fn script_url(&self, _: &mut CallContext) -> WebIdlResult<UsvString> {
         // The scriptURL getter steps are to return the service worker's serialized script url.

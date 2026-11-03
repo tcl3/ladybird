@@ -185,6 +185,8 @@ public:
     bool set_disk_cache_enabled_for_navigations(bool enabled);
     void simulate_request_server_connection_loss();
     void simulate_worker_request_server_connection_loss();
+    void terminate_service_worker(GC::Ref<ServiceWorker::ServiceWorker>);
+    void kill_service_worker_process(GC::Ref<ServiceWorker::ServiceWorker>);
     WebIDL::ExceptionOr<void> send_bad_ipc_message_for_testing(Utf16String const& kind);
     WebIDL::ExceptionOr<void> set_content_blockers(Utf16String const& patterns);
     WebIDL::ExceptionOr<void> set_site_compatibility_data(Utf16String const& source);

@@ -46,7 +46,10 @@ void ServiceWorkerHost::start(GC::Ref<Web::Page> page)
 {
     m_page = page;
     set_up_service_worker_global_scope(page);
-    fetch_script(page);
+    if (m_request.stored_scripts.is_empty())
+        fetch_script(page);
+    else
+        run_stored_scripts(page);
 }
 
 // https://w3c.github.io/ServiceWorker/#terminate-service-worker
@@ -98,6 +101,8 @@ void ServiceWorkerHost::run_closing_steps()
     m_console = nullptr;
     m_global_scope = nullptr;
     m_settings_object = nullptr;
+    m_main_script_response = nullptr;
+    m_main_script_body = {};
 }
 
 // https://w3c.github.io/ServiceWorker/#setup-serviceworkerglobalscope
@@ -204,13 +209,44 @@ void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
         .update_via_cache = m_request.registration.update_via_cache,
         .force_bypass_cache = m_request.script_fetch.force_bypass_cache,
     };
-    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
+    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Core::ImmutableBytes body, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
         if (!script || !response) {
             as<PageHost>(page->client()).did_fetch_service_worker_script(rejection.value_or(Web::ServiceWorker::ServiceWorkerJobError::TypeError));
             return;
         }
+        host->m_main_script_response = response;
+        host->m_main_script_body = move(body);
         host->run_service_worker(page, *script, *response);
     }));
+}
+
+// https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+// NB: The script resource and script resource map of an installed worker are the scripts that its process recorded
+//     when the worker installed.
+void ServiceWorkerHost::run_stored_scripts(GC::Ref<Web::Page> page)
+{
+    Optional<Web::ServiceWorker::ServiceWorkerScriptResource> main_script;
+    Vector<Web::ServiceWorker::ServiceWorkerScriptResource> imported_scripts;
+    for (auto& resource : m_request.stored_scripts) {
+        if (!main_script.has_value() && resource.url == m_request.worker.script_url)
+            main_script = move(resource);
+        else
+            imported_scripts.append(move(resource));
+    }
+    m_request.stored_scripts.clear();
+    m_restarted_from_stored_scripts = true;
+    if (!main_script.has_value()) {
+        as<PageHost>(page->client()).did_run_service_worker(false, {});
+        return;
+    }
+
+    m_global_scope->restore_imported_script_resources(imported_scripts);
+    auto response = Web::ServiceWorker::response_from_script_resource(*main_script);
+    auto source_text = Utf16String::from_utf8_with_replacement_character(StringView { main_script->body.bytes() });
+    auto script = Web::HTML::ClassicScript::create(main_script->url.to_byte_string(), source_text, *m_settings_object, main_script->url);
+    m_main_script_response = response;
+    m_main_script_body = Core::ImmutableBytes::adopt(move(main_script->body));
+    run_service_worker(page, script, response);
 }
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
@@ -284,6 +320,10 @@ void ServiceWorkerHost::run_service_worker(GC::Ref<Web::Page> page, GC::Ref<Web:
     // 10. Wait for serviceWorker to be running, or for startFailed to be true.
     // 11. If startFailed is true, then return failure.
     // 12. Return serviceWorker's start status.
+    // NB: The UI process skips the install event of a worker with no listener for it, so a new worker records its
+    //     scripts once it has run. Scripts that the install event imports reach the UI process once it ends.
+    if (!evaluation_status.is_abrupt() && !m_restarted_from_stored_scripts)
+        record_scripts();
     host.did_run_service_worker(!evaluation_status.is_abrupt(), move(event_types_to_handle));
 }
 
@@ -367,9 +407,21 @@ void ServiceWorkerHost::lifecycle_event_finished(bool failed)
     if (m_lifecycle_event_deadline_timer)
         m_lifecycle_event_deadline_timer->stop();
 
-    if (event == Web::ServiceWorker::ServiceWorkerLifecycleEvent::Install && !failed)
+    auto& host = as<PageHost>(m_page->client());
+    if (event == Web::ServiceWorker::ServiceWorkerLifecycleEvent::Install && !failed) {
         m_global_scope->prune_script_resource_map();
-    as<PageHost>(m_page->client()).did_finish_service_worker_lifecycle_event(event, !failed);
+        record_scripts();
+    }
+    host.did_finish_service_worker_lifecycle_event(event, !failed);
+}
+
+// NB: The UI process keeps the scripts of an installed worker, to run the worker again once it stops.
+void ServiceWorkerHost::record_scripts()
+{
+    Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts;
+    scripts.append(Web::ServiceWorker::script_resource_from_response(m_request.worker.script_url, *m_main_script_response, m_main_script_body.bytes()));
+    scripts.extend(m_global_scope->imported_script_resources());
+    as<PageHost>(m_page->client()).did_record_service_worker_scripts(move(scripts));
 }
 
 void ServiceWorkerHost::skip_waiting_finished(Web::ServiceWorker::ServiceWorkerRequestId request_id)

@@ -408,6 +408,12 @@ void ConnectionFromClient::service_worker_skip_waiting_finished(u64 request_id)
         m_service_worker_host->skip_waiting_finished(request_id);
 }
 
+// NB: The answer shows the UI process that the worker's event loop runs.
+void ConnectionFromClient::service_worker_heartbeat(u64 heartbeat_id)
+{
+    async_did_respond_to_service_worker_heartbeat(heartbeat_id);
+}
+
 void ConnectionFromClient::dispatch_service_worker_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin origin, Web::HTML::SerializedTransferRecord message, u64 timeout_ms)
 {
     if (m_service_worker_host)

@@ -9,6 +9,7 @@
 #include <AK/HashMap.h>
 #include <AK/RefCounted.h>
 #include <LibCore/Forward.h>
+#include <LibCore/ImmutableBytes.h>
 #include <LibGC/Root.h>
 #include <LibWeb/Forward.h>
 #include <LibWebCommon/HTML/SerializationRecords.h>
@@ -40,10 +41,12 @@ public:
 private:
     void set_up_service_worker_global_scope(GC::Ref<Web::Page>);
     void fetch_script(GC::Ref<Web::Page>);
+    void run_stored_scripts(GC::Ref<Web::Page>);
     bool finish_setting_up_service_worker_global_scope(GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void run_service_worker(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void lifecycle_event_finished(bool failed);
     void pending_events_changed(bool has_pending_events);
+    void record_scripts();
 
     Web::ServiceWorker::ServiceWorkerStartRequest m_request;
 
@@ -51,6 +54,9 @@ private:
     GC::Root<Web::HTML::WorkerDebugConsoleClient> m_console;
     GC::Root<Web::ServiceWorker::ServiceWorkerGlobalScope> m_global_scope;
     GC::Root<Web::HTML::WorkerEnvironmentSettingsObject> m_settings_object;
+    GC::Root<Web::Fetch::Infrastructure::ResponseView> m_main_script_response;
+    Core::ImmutableBytes m_main_script_body;
+    bool m_restarted_from_stored_scripts { false };
 
     Optional<Web::ServiceWorker::ServiceWorkerLifecycleEvent> m_lifecycle_event_in_flight;
     RefPtr<Core::Timer> m_lifecycle_event_deadline_timer;

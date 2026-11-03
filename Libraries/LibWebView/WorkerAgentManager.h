@@ -99,6 +99,8 @@ public:
     bool hosts_shared_worker(WebContentClient const&) const;
     // The same goes for a service worker, whose clients can be anywhere.
     bool hosts_service_worker(WebContentClient const&) const;
+    // Whether the worker's process runs nothing but the worker, so that it can stand in for the worker.
+    bool runs_alone_in_its_host(WebWorkerClient const&) const;
 
     size_t client_count() const { return m_agents.size(); }
 

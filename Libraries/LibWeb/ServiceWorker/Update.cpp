@@ -76,9 +76,13 @@ public:
     GC::Ptr<Fetch::Infrastructure::ResponseView> response() const { return m_response; }
     void set_response(GC::Ref<Fetch::Infrastructure::ResponseView> response) { m_response = response; }
 
+    Core::ImmutableBytes const& body() const { return m_body; }
+    void set_body(Core::ImmutableBytes body) { m_body = move(body); }
+
 private:
     Optional<ServiceWorkerJobError> m_rejection;
     GC::Ptr<Fetch::Infrastructure::ResponseView> m_response;
+    Core::ImmutableBytes m_body;
 };
 
 // NB: The result of the processResponse steps of a job's top-level script fetch, which the perform the fetch hook
@@ -138,7 +142,11 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         request->set_service_workers_mode(Fetch::Infrastructure::Request::ServiceWorkersMode::None);
 
         Web::Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input { Web::Fetch::Engine::BodyIntent::ConsumeForCallback };
-        auto consume_body = ScriptFetchConsumeBody::create(process_custom_fetch_response);
+        auto consume_body = ScriptFetchConsumeBody::create(GC::create_function(GC::Heap::the(), GC::captures(state, top_level, process_custom_fetch_response), [](auto& state, auto top_level, auto& process_custom_fetch_response, GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) {
+            if (auto const* body = body_bytes.get_pointer<Core::ImmutableBytes>(); body && top_level == HTML::TopLevelModule::Yes)
+                state->set_body(*body);
+            process_custom_fetch_response->function()(response, move(body_bytes));
+        }));
 
         // 4. If the isTopLevel flag is unset, then return the result of fetching request.
         // FIXME: Needs spec issue, this wording is confusing and contradicts the way perform the fetch hook is used in `run a worker`
@@ -278,7 +286,7 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
 
     // When the algorithm asynchronously completes, continue the rest of these steps, with script being the asynchronous completion value.
     HTML::OnFetchScriptComplete on_fetch_complete = GC::create_function(GC::Heap::the(), GC::captures(state, on_complete), [](auto& state, auto& on_complete, GC::Ptr<HTML::Script> script) -> void {
-        on_complete->function()(script, state->response(), state->rejection());
+        on_complete->function()(script, state->response(), state->body(), state->rejection());
     });
 
     // 7. Switching on job's worker type, run these substeps with the following options:

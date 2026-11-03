@@ -311,6 +311,7 @@ private:
     virtual void page_did_delete_all_cookies(URL::URL const&, GC::Ref<Web::WebIDL::Promise>) override;
     virtual void page_did_lose_request_server_connection(Optional<Utf16String> const& top_level_site) override;
     virtual void page_did_simulate_worker_request_server_connection_loss() override;
+    virtual void page_did_request_service_worker_termination_for_testing(Web::ServiceWorker::ServiceWorkerId, bool kill_process) override;
     virtual void page_did_store_hsts_policy_for_testing(String const&, HTTP::HSTS::ParsedHSTSPolicy const&) override;
     virtual void page_did_request_clear_storage_for_testing(Web::StorageAPI::StorageEndpointType, Web::HTML::EnvironmentSettingsObject const&) override;
     virtual bool page_did_is_known_hsts_host(String const&) override;

@@ -81,6 +81,9 @@ public:
     void service_worker_did_finish_lifecycle_event(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
     void service_worker_did_call_skip_waiting(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
     void service_worker_did_change_pending_events(Web::HTML::WorkerAgentId, bool has_pending_events);
+    void service_worker_did_record_scripts(Web::HTML::WorkerAgentId, Vector<Web::ServiceWorker::ServiceWorkerScriptResource>);
+    void service_worker_did_respond_to_heartbeat(Web::HTML::WorkerAgentId, u64 heartbeat_id);
+    void terminate_service_worker_for_testing(Web::ServiceWorker::ServiceWorkerId, bool kill_process);
 
     void post_message_to_service_worker(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
     void service_worker_did_post_message_to_service_worker(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
@@ -121,8 +124,16 @@ private:
     enum class AwaitedStep : u8 {
         None,
         Start,
+        Restart,
         InstallEvent,
         ActivateEvent,
+    };
+
+    // A message for a worker that is not running, which the worker gets once it runs.
+    struct MessageWaitingForRun {
+        Web::ServiceWorker::ServiceWorkerMessageSource source;
+        URL::Origin origin;
+        Web::HTML::SerializedTransferRecord message;
     };
 
     // https://w3c.github.io/ServiceWorker/#dfn-service-worker
@@ -146,6 +157,21 @@ private:
         AwaitedStep awaited_step { AwaitedStep::None };
         Optional<JobInProgress> job_in_progress;
         RefPtr<Core::Timer> deadline_timer;
+
+        // NB: What the worker runs again with, once it has installed: the settings of the client whose job created it,
+        //     and the scripts its process recorded when it installed.
+        Web::HTML::SerializedEnvironmentSettingsObject registering_client;
+        Vector<Web::ServiceWorker::ServiceWorkerScriptResource> script_resources;
+        Vector<MessageWaitingForRun> messages_waiting_for_run;
+
+        RefPtr<Core::Timer> heartbeat_timer;
+        Optional<u64> unanswered_heartbeat;
+    };
+
+    // The timer that stops the running workers of a partition whose last client went away.
+    struct PartitionTermination {
+        Partition partition;
+        NonnullRefPtr<Core::Timer> timer;
     };
 
     // https://w3c.github.io/ServiceWorker/#dfn-service-worker-registration
@@ -224,6 +250,12 @@ private:
 
     void dispatch_lifecycle_event(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerLifecycleEvent);
     void dispatch_message_event(Partition const& sender_partition, Web::ServiceWorker::ServiceWorkerId, Web::ServiceWorker::ServiceWorkerMessageSource, URL::Origin const&, Web::HTML::SerializedTransferRecord);
+    bool run_service_worker(ServiceWorkerRecord&);
+    void start_heartbeat(ServiceWorkerRecord&);
+    void send_heartbeat(ServiceWorkerRecord&);
+    bool has_client_in_partition(Partition const&) const;
+    void stop_workers_of_partitions_without_clients();
+    void stop_idle_workers_of_partition(Partition const&);
     bool service_worker_has_no_pending_events(Optional<Web::ServiceWorker::ServiceWorkerId>) const;
     bool is_unregistered(Registration const&) const;
     void terminate_service_worker(ServiceWorkerRecord&);
@@ -250,6 +282,9 @@ private:
 
     // NB: The registrations that Unregister removed from the registration map, until Clear Registration clears them.
     Vector<NonnullOwnPtr<Registration>> m_unregistered_registrations;
+
+    Vector<PartitionTermination> m_partition_terminations;
+    u64 m_next_heartbeat_id { 0 };
 
     HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 

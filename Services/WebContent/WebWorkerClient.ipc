@@ -42,4 +42,6 @@ endpoint WebWorkerClient {
     did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) =|
     did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message) =|
     did_change_service_worker_pending_events(bool has_pending_events) =|
+    did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts) =|
+    did_respond_to_service_worker_heartbeat(u64 heartbeat_id) =|
 }

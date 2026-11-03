@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <LibCore/ImmutableBytes.h>
 #include <LibGC/Function.h>
 #include <LibURL/URL.h>
 #include <LibWeb/Export.h>
@@ -26,7 +27,8 @@ struct UpdateScriptFetch {
     bool force_bypass_cache { false };
 };
 
-using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Optional<ServiceWorkerJobError>)>>;
+// NB: The body is that of the main script's response, which the worker's process records once the worker installs.
+using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Core::ImmutableBytes body, Optional<ServiceWorkerJobError>)>>;
 
 WEB_API void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_client, HTML::EnvironmentSettingsObject& settings_object, UpdateScriptFetch, OnUpdateScriptFetchComplete);
 

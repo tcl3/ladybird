@@ -9,6 +9,7 @@
 #include <LibWeb/Fetch/Fetching/Fetching.h>
 #include <LibWeb/Fetch/Infrastructure/FetchAlgorithms.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/MIME.h>
+#include <LibWeb/Fetch/Infrastructure/HTTP/Responses.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/Page/Page.h>
@@ -191,6 +192,41 @@ void ServiceWorkerGlobalScope::prune_script_resource_map()
     m_script_resource_map.remove_all_matching([&](auto const& url, auto const&) {
         return !m_set_of_used_scripts.contains_slow(url);
     });
+}
+
+Vector<ServiceWorkerScriptResource> ServiceWorkerGlobalScope::imported_script_resources() const
+{
+    Vector<ServiceWorkerScriptResource> resources;
+    for (auto const& [url, resource] : m_script_resource_map)
+        resources.append(script_resource_from_response(url, resource.response, resource.body.bytes()));
+    return resources;
+}
+
+void ServiceWorkerGlobalScope::restore_imported_script_resources(Vector<ServiceWorkerScriptResource> const& resources)
+{
+    for (auto const& resource : resources) {
+        m_script_resource_map.set(resource.url, ScriptResource { .response = response_from_script_resource(resource), .body = MUST(Core::ImmutableBytes::copy(resource.body)) });
+        m_set_of_used_scripts.append(resource.url);
+    }
+}
+
+ServiceWorkerScriptResource script_resource_from_response(URL::URL url, Fetch::Infrastructure::ResponseView const& response, ReadonlyBytes body)
+{
+    return ServiceWorkerScriptResource {
+        .url = move(url),
+        .status = response.status(),
+        .header_list = response.header_list()->headers(),
+        .body = MUST(ByteBuffer::copy(body)),
+    };
+}
+
+GC::Ref<Fetch::Infrastructure::ResponseView> response_from_script_resource(ServiceWorkerScriptResource const& resource)
+{
+    auto response = Fetch::Infrastructure::Response::create();
+    response->set_url_list({ resource.url });
+    response->set_status(resource.status);
+    response->set_header_list(HTTP::HeaderList::create(resource.header_list));
+    return Fetch::Infrastructure::ResponseView::create(response, nullptr);
 }
 
 // https://w3c.github.io/ServiceWorker/#dfn-bad-import-script-response

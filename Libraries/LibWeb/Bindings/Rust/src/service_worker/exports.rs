@@ -10,13 +10,14 @@ use core::ffi::c_void;
 
 use libjs_rust::api::Vm;
 
-use crate::bindings::interface::{cell_into_abi, realm_arguments};
+use crate::bindings::interface::{Ref, cell_from_abi, cell_into_abi, realm_arguments};
 use crate::dom::document::DocumentVisibilityState;
 use crate::html::structured_serialize::cpp::OwnedSerializedTransferRecord;
 use crate::service_worker::client::{FrameType, ServiceWorkerClientSnapshot};
 use crate::service_worker::clients::ClientType;
-use crate::service_worker::service_worker::get_the_service_worker_object;
-use crate::service_worker::service_worker::{ServiceWorkerState, service_worker_state_changed};
+use crate::service_worker::service_worker::{
+    ServiceWorker, ServiceWorkerState, get_the_service_worker_object, service_worker_state_changed,
+};
 use crate::service_worker::service_worker_container::{
     ServiceWorkerContainer, ServiceWorkerJobResult, add_client_message, enable_client_message_queue,
     service_worker_job_settled, service_worker_ready, service_worker_registration_lookup_finished,
@@ -303,4 +304,16 @@ pub unsafe extern "C" fn web_rust_service_worker_service_worker_object(
         )
     };
     cell_into_abi(get_the_service_worker_object(vm, realm, &worker))
+}
+
+/// The id of the service worker that the ServiceWorker object represents.
+///
+/// # Safety
+///
+/// `service_worker` must be the live cell of a ServiceWorker object.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_id(service_worker: *mut c_void) -> u64 {
+    // SAFETY: The caller passes the cell of a ServiceWorker object.
+    let service_worker: Ref<ServiceWorker> = unsafe { cell_from_abi(service_worker) };
+    service_worker.id()
 }

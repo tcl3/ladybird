@@ -191,6 +191,8 @@ interface Internals {
     boolean setDiskCacheEnabledForNavigations(boolean enabled);
     undefined simulateRequestServerConnectionLoss();
     undefined simulateWorkerRequestServerConnectionLoss();
+    undefined terminateServiceWorker(ServiceWorker worker);
+    undefined killServiceWorkerProcess(ServiceWorker worker);
     undefined sendBadIpcMessageForTesting(DOMString kind);
     undefined setContentBlockers(DOMString patterns);
     undefined setSiteCompatibilityData(DOMString source);

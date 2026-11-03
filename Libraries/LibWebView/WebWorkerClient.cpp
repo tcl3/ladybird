@@ -347,6 +347,18 @@ void WebWorkerClient::did_post_message_to_service_worker_client(String client_id
         registry->service_worker_did_post_message_to_client(m_agent_id, client_id, move(message));
 }
 
+void WebWorkerClient::did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_record_service_worker_scripts"sv))
+        registry->service_worker_did_record_scripts(m_agent_id, move(scripts));
+}
+
+void WebWorkerClient::did_respond_to_service_worker_heartbeat(u64 heartbeat_id)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_respond_to_service_worker_heartbeat"sv))
+        registry->service_worker_did_respond_to_heartbeat(m_agent_id, heartbeat_id);
+}
+
 void WebWorkerClient::did_change_service_worker_pending_events(bool has_pending_events)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_change_service_worker_pending_events"sv))

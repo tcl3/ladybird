@@ -6,6 +6,7 @@
 
 #include <AK/QuickSort.h>
 #include <LibCore/EventLoop.h>
+#include <LibCore/System.h>
 #include <LibCore/Timer.h>
 #include <LibURL/Site.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
@@ -15,6 +16,7 @@
 #include <LibWebView/WebContentClient.h>
 #include <LibWebView/WebWorkerClient.h>
 #include <LibWebView/WorkerAgentManager.h>
+#include <signal.h>
 
 namespace WebView {
 
@@ -23,12 +25,36 @@ using namespace Web::ServiceWorker;
 static constexpr auto new_service_worker_start_deadline = AK::Duration::from_seconds(5 * 60);
 static constexpr auto lifecycle_event_deadline_grace_period = AK::Duration::from_seconds(10);
 
+static constexpr auto installed_service_worker_start_deadline = AK::Duration::from_seconds(60);
+
+static bool is_test_mode()
+{
+    return Application::web_content_options().is_test_mode == IsTestMode::Yes;
+}
+
 static AK::Duration lifecycle_event_deadline()
 {
     // NB: Tests of what happens at the deadline would otherwise take minutes.
-    if (Application::web_content_options().is_test_mode == IsTestMode::Yes)
+    if (is_test_mode())
         return AK::Duration::from_seconds(3);
     return AK::Duration::from_seconds(5 * 60);
+}
+
+// AD-HOC: The running workers of a partition stop this long after its last client goes away, as WebKit's
+//         defaultTerminationDelay has them do. Tests shorten the delay, as WebKit's tests do.
+static AK::Duration termination_delay()
+{
+    if (is_test_mode())
+        return AK::Duration::from_milliseconds(100);
+    return AK::Duration::from_seconds(10);
+}
+
+// NB: A worker that starts, installs, activates or handles an event answers a heartbeat before the next one, or stops.
+static AK::Duration heartbeat_interval()
+{
+    if (is_test_mode())
+        return AK::Duration::from_seconds(1);
+    return AK::Duration::from_seconds(60);
 }
 
 static Vector<ServiceWorkerRegistry*>& live_registries()
@@ -93,6 +119,18 @@ void ServiceWorkerRegistry::environment_was_discarded(Web::HTML::EnvironmentId c
         registry->client_did_dispatch_dom_content_loaded(environment_id);
         registry->m_ready_requests.remove_all_matching([&](ReadyRequest const& ready_request) {
             return ready_request.environment_id == environment_id;
+        });
+
+        // https://w3c.github.io/ServiceWorker/#on-client-unload-algorithm
+        // 1. Run the following steps atomically.
+        // 2. Let registration be the service worker registration used by client.
+        // 3. If registration is null, abort these steps.
+        // NB: No service worker client uses a registration yet, as none is controlled.
+
+        // NB: The environment's records are only now going away, so the clients that remain are counted after.
+        Core::deferred_invoke([weak_registry = registry->make_weak_ptr()] {
+            if (auto* registry = weak_registry.ptr())
+                registry->stop_workers_of_partitions_without_clients();
         });
     }
 }
@@ -493,6 +531,11 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
             .newest_worker = newest_worker,
         },
         .deadline_timer = {},
+        .registering_client = job.client->settings,
+        .script_resources = {},
+        .messages_waiting_for_run = {},
+        .heartbeat_timer = {},
+        .unanswered_heartbeat = {},
     });
 
     ServiceWorkerStartRequest start_request {
@@ -511,6 +554,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
             .job_client = job.client->settings,
             .force_bypass_cache = job.force_bypass_cache,
         },
+        .stored_scripts = {},
     };
     agent.value().client->async_start_service_worker(start_request);
 
@@ -522,6 +566,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
             registry->terminate_service_worker(**worker);
     });
     worker->deadline_timer->start();
+    start_heartbeat(*worker);
 
     m_service_workers.set(worker_id, move(worker));
 }
@@ -595,6 +640,24 @@ void ServiceWorkerRegistry::service_worker_did_fetch_script(Web::HTML::WorkerAge
 void ServiceWorkerRegistry::service_worker_did_run(Web::HTML::WorkerAgentId agent_id, bool succeeded, Vector<String> event_types_to_handle)
 {
     auto* worker = service_worker_of_agent(agent_id);
+    if (worker && worker->awaited_step == AwaitedStep::Restart) {
+        worker->deadline_timer->stop();
+
+        // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+        // 11. If startFailed is true, then return failure.
+        if (!succeeded) {
+            terminate_service_worker(*worker);
+            return;
+        }
+
+        // 12. Return serviceWorker's start status.
+        // NB: The messages that waited for the worker to run reach it now.
+        worker->awaited_step = AwaitedStep::None;
+        for (auto& waiting_message : exchange(worker->messages_waiting_for_run, {}))
+            worker->process->async_dispatch_service_worker_message_event(move(waiting_message.source), waiting_message.origin, move(waiting_message.message), lifecycle_event_deadline().to_milliseconds());
+        stop_workers_of_partitions_without_clients();
+        return;
+    }
     if (!worker || worker->awaited_step != AwaitedStep::Start)
         return;
     worker->deadline_timer->stop();
@@ -898,6 +961,7 @@ void ServiceWorkerRegistry::finish_activate(ServiceWorkerRecord& worker)
 
     // 11. Run the Update Worker State algorithm passing registration's active worker and "activated" as the arguments.
     update_worker_state(worker, ServiceWorkerState::Activated);
+    stop_workers_of_partitions_without_clients();
 }
 
 void ServiceWorkerRegistry::dispatch_lifecycle_event(ServiceWorkerRecord& worker, ServiceWorkerLifecycleEvent event)
@@ -964,6 +1028,7 @@ void ServiceWorkerRegistry::service_worker_did_change_pending_events(Web::HTML::
     worker->has_pending_events = has_pending_events;
     if (has_pending_events)
         return;
+    stop_workers_of_partitions_without_clients();
 
     // https://w3c.github.io/ServiceWorker/#extendableevent-add-lifetime-promise
     // 5.2. If event's pending promises count is 0, then:
@@ -1033,13 +1098,16 @@ void ServiceWorkerRegistry::dispatch_message_event(Partition const& sender_parti
 
     // 6. Run these substeps in parallel:
     //    1. If the result of running the Run Service Worker algorithm with serviceWorker is failure, then return.
-    // FIXME: Run a worker that is not running from its stored scripts.
-    if (!service_worker.process || !service_worker.process->is_open())
+    if (!run_service_worker(service_worker))
         return;
+    if (service_worker.awaited_step == AwaitedStep::Restart) {
+        service_worker.messages_waiting_for_run.append({ move(source), origin, move(message) });
+        return;
+    }
 
     //    2. Queue a task on the DOM manipulation task source to run the following steps:
-    // NB: The worker's process queues the task, and ends the event at its deadline.
-    // FIXME: Terminate a worker whose process does not end an extended message event soon after the deadline.
+    // NB: The worker's process queues the task, and ends the event at its deadline. The heartbeat stops a worker whose
+    //     event loop no longer runs, and so cannot end the event.
     service_worker.process->async_dispatch_service_worker_message_event(move(source), origin, move(message), lifecycle_event_deadline().to_milliseconds());
 }
 
@@ -1096,6 +1164,219 @@ void ServiceWorkerRegistry::service_worker_did_post_message_to_client(Web::HTML:
     });
 }
 
+// https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+// NB: Returns whether the worker runs, or starts to.
+bool ServiceWorkerRegistry::run_service_worker(ServiceWorkerRecord& worker)
+{
+    // 1. If serviceWorker is running, then return serviceWorker's start status.
+    if (worker.process)
+        return worker.process->is_open();
+
+    // 2. If serviceWorker's state is "redundant", then return failure.
+    if (worker.state == ServiceWorkerState::Redundant)
+        return false;
+
+    // 3. Assert: serviceWorker's start status is null.
+    // 4. Let script be serviceWorker's script resource.
+    // 5. Assert: script is not null.
+    // NB: Only a worker that installed has the scripts that its process recorded.
+    auto* registration = registration_by_id(worker.registration_id);
+    if (worker.script_resources.is_empty() || !registration)
+        return false;
+
+    // 6. Let startFailed be false.
+    // 7. Let workerGlobalScope be serviceWorker's global object.
+    // 8. If workerGlobalScope is null:
+    //    1. Set workerGlobalScope to be the result of running the Setup ServiceWorkerGlobalScope algorithm with
+    //       serviceWorker.
+    // NB: A new process sets the worker's global object up, and runs the worker from its scripts.
+    auto& client = worker.registering_client;
+    auto agent = WorkerAgentManager::the().start_service_worker_agent(m_is_private, client.origin, client.top_level_origin, client.has_cross_site_ancestor);
+    if (agent.is_error()) {
+        dbgln("Unable to start a service worker process: {}", agent.error());
+        return false;
+    }
+    worker.agent_id = agent.value().id;
+    worker.process = agent.value().client;
+    worker.awaited_step = AwaitedStep::Restart;
+    worker.process->async_start_service_worker(ServiceWorkerStartRequest {
+        .worker = ServiceWorkerDescriptor { .id = worker.id, .script_url = worker.script_url, .state = worker.state },
+        .worker_type = worker.type,
+        .registration = snapshot_of(*registration),
+        .environment_id = agent.value().environment_id,
+        .origin = client.origin,
+        .has_cross_site_ancestor = client.has_cross_site_ancestor,
+        .top_level_origin = client.top_level_origin,
+        .script_fetch = ServiceWorkerScriptFetchParameters { .job_client = client, .force_bypass_cache = false },
+        .stored_scripts = worker.script_resources,
+    });
+
+    // 10. Wait for serviceWorker to be running, or for startFailed to be true.
+    // NB: The worker's process reports whether the worker runs, to service_worker_did_run().
+    auto worker_id = worker.id;
+    worker.deadline_timer = Core::Timer::create_single_shot(installed_service_worker_start_deadline, [weak_this = make_weak_ptr(), worker_id] {
+        auto* registry = weak_this.ptr();
+        if (!registry)
+            return;
+        if (auto worker = registry->m_service_workers.get(worker_id); worker.has_value())
+            registry->terminate_service_worker(**worker);
+    });
+    worker.deadline_timer->start();
+    start_heartbeat(worker);
+    return true;
+}
+
+void ServiceWorkerRegistry::service_worker_did_record_scripts(Web::HTML::WorkerAgentId agent_id, Vector<ServiceWorkerScriptResource> scripts)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || !first_is_one_of(worker->awaited_step, AwaitedStep::Start, AwaitedStep::InstallEvent))
+        return;
+    worker->script_resources = move(scripts);
+}
+
+void ServiceWorkerRegistry::start_heartbeat(ServiceWorkerRecord& worker)
+{
+    auto worker_id = worker.id;
+    worker.heartbeat_timer = Core::Timer::create_repeating(heartbeat_interval(), [weak_this = make_weak_ptr(), worker_id] {
+        auto* registry = weak_this.ptr();
+        if (!registry)
+            return;
+        if (auto worker = registry->m_service_workers.get(worker_id); worker.has_value())
+            registry->send_heartbeat(**worker);
+    });
+    worker.heartbeat_timer->start();
+}
+
+void ServiceWorkerRegistry::send_heartbeat(ServiceWorkerRecord& worker)
+{
+    if (!worker.process)
+        return;
+    if (worker.awaited_step == AwaitedStep::None && !worker.has_pending_events) {
+        worker.unanswered_heartbeat = {};
+        return;
+    }
+
+    // NB: A worker whose event loop did not answer the last heartbeat is stuck, which fails what it was doing.
+    if (worker.unanswered_heartbeat.has_value()) {
+        dbgln("Service worker {} did not answer a heartbeat, stopping it", worker.script_url);
+        terminate_service_worker(worker);
+        return;
+    }
+    worker.unanswered_heartbeat = ++m_next_heartbeat_id;
+    worker.process->async_service_worker_heartbeat(*worker.unanswered_heartbeat);
+}
+
+void ServiceWorkerRegistry::service_worker_did_respond_to_heartbeat(Web::HTML::WorkerAgentId agent_id, u64 heartbeat_id)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (worker && worker->unanswered_heartbeat == heartbeat_id)
+        worker->unanswered_heartbeat = {};
+}
+
+void ServiceWorkerRegistry::terminate_service_worker_for_testing(ServiceWorkerId service_worker_id, bool kill_process)
+{
+    auto worker = m_service_workers.get(service_worker_id);
+    if (!worker.has_value() || !(*worker)->process)
+        return;
+    if (!kill_process) {
+        terminate_service_worker(**worker);
+        return;
+    }
+    // NB: The worker stops as it does when its process crashes, once its connection closes. A service worker has a
+    //     process of its own, which nothing else may share for this to stand in for a crash of the worker alone.
+    auto& process = *(*worker)->process;
+    if (!WorkerAgentManager::the().runs_alone_in_its_host(process)) {
+        dbgln("Not killing the process of a service worker that shares it");
+        return;
+    }
+    if (auto result = Core::System::kill(process.host()->pid(), SIGKILL); result.is_error())
+        dbgln("Unable to kill a service worker process: {}", result.error());
+}
+
+bool ServiceWorkerRegistry::has_client_in_partition(Partition const& partition) const
+{
+    bool has_client = false;
+    WebContentClient::for_each_client([&](WebContentClient& client) {
+        if (client.is_private() != m_is_private)
+            return IterationDecision::Continue;
+        client.for_each_page([&](WebContentPage& page) {
+            page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                has_client = partition_of(settings, has_cross_site_ancestor) == partition;
+                return has_client ? IterationDecision::Break : IterationDecision::Continue;
+            });
+            return has_client ? IterationDecision::Break : IterationDecision::Continue;
+        });
+        return has_client ? IterationDecision::Break : IterationDecision::Continue;
+    });
+    if (has_client)
+        return true;
+    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient&, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private, Web::HTML::AgentType agent_type) {
+        if (agent_type != Web::HTML::AgentType::ServiceWorker && is_private == m_is_private && partition_of(settings, settings.has_cross_site_ancestor()) == partition)
+            has_client = true;
+    });
+    return has_client;
+}
+
+// AD-HOC: A running worker keeps running while a client in its partition exists, and stops a while after the last one
+//         goes away, as WebKit's workers do. A worker that has pending events keeps running until they end.
+void ServiceWorkerRegistry::stop_workers_of_partitions_without_clients()
+{
+    Vector<Partition> partitions_with_running_workers;
+    for (auto const& [id, worker] : m_service_workers) {
+        if (worker->process && !partitions_with_running_workers.contains_slow(worker->partition))
+            partitions_with_running_workers.append(worker->partition);
+    }
+
+    for (auto const& partition : partitions_with_running_workers) {
+        auto termination = m_partition_terminations.find_if([&](auto const& termination) { return termination.partition == partition; });
+        if (has_client_in_partition(partition)) {
+            if (termination != m_partition_terminations.end())
+                m_partition_terminations.remove(termination.index());
+            continue;
+        }
+        if (termination != m_partition_terminations.end())
+            continue;
+        auto timer = Core::Timer::create_single_shot(termination_delay(), [weak_this = make_weak_ptr(), partition] {
+            if (auto* registry = weak_this.ptr())
+                registry->stop_idle_workers_of_partition(partition);
+        });
+        timer->start();
+        m_partition_terminations.append({ partition, move(timer) });
+    }
+}
+
+void ServiceWorkerRegistry::stop_idle_workers_of_partition(Partition const& partition)
+{
+    // NB: The timer that calls this outlives its own handler.
+    m_partition_terminations.remove_all_matching([&](auto& termination) {
+        if (termination.partition != partition)
+            return false;
+        Core::deferred_invoke([timer = termination.timer] { });
+        return true;
+    });
+    if (has_client_in_partition(partition))
+        return;
+
+    Vector<ServiceWorkerId> idle_workers;
+    bool has_busy_worker = false;
+    for (auto const& [id, worker] : m_service_workers) {
+        if (worker->partition != partition || !worker->process)
+            continue;
+        if (worker->awaited_step == AwaitedStep::None && !worker->has_pending_events)
+            idle_workers.append(id);
+        else
+            has_busy_worker = true;
+    }
+    for (auto id : idle_workers) {
+        if (auto worker = m_service_workers.get(id); worker.has_value())
+            terminate_service_worker(**worker);
+    }
+
+    // NB: A worker that was busy stops once it is idle, which the next timer checks.
+    if (has_busy_worker)
+        stop_workers_of_partitions_without_clients();
+}
+
 // https://w3c.github.io/ServiceWorker/#terminate-service-worker
 void ServiceWorkerRegistry::terminate_service_worker(ServiceWorkerRecord& worker)
 {
@@ -1116,10 +1397,16 @@ void ServiceWorkerRegistry::service_worker_stopped(ServiceWorkerRecord& worker)
 {
     worker.agent_id = {};
     worker.process = nullptr;
-    if (worker.deadline_timer) {
-        worker.deadline_timer->stop();
-        // NB: The deadline timer may be what stops the worker, so it outlives its own handler.
-        Core::deferred_invoke([timer = move(worker.deadline_timer)] { });
+    worker.has_pending_events = false;
+    worker.unanswered_heartbeat = {};
+    worker.messages_waiting_for_run.clear();
+
+    // NB: The deadline and heartbeat timers may be what stops the worker, so they outlive their own handlers.
+    for (auto* timer : { &worker.deadline_timer, &worker.heartbeat_timer }) {
+        if (!*timer)
+            continue;
+        (*timer)->stop();
+        Core::deferred_invoke([timer = move(*timer)] { });
     }
 
     switch (worker.awaited_step) {
@@ -1127,6 +1414,9 @@ void ServiceWorkerRegistry::service_worker_stopped(ServiceWorkerRecord& worker)
         break;
     case AwaitedStep::Start:
         fail_update(worker, ServiceWorkerJobError::TypeError);
+        break;
+    case AwaitedStep::Restart:
+        worker.awaited_step = AwaitedStep::None;
         break;
     case AwaitedStep::InstallEvent:
         finish_install(worker, true);

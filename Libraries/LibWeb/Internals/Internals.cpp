@@ -122,6 +122,8 @@
 #include <LibWeb/PermissionsAPI/PermissionStore.h>
 #include <LibWeb/PermissionsAPI/Permissions.h>
 #include <LibWeb/PictureInPicture/PictureInPictureController.h>
+#include <LibWeb/ServiceWorker/ServiceWorker.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/Streams/ReadableStream.h>
 #include <LibWeb/StyleValueRustFFI.h>
 #include <LibWeb/WebDriver/Actions.h>
@@ -1493,6 +1495,16 @@ void Internals::simulate_request_server_connection_loss()
 void Internals::simulate_worker_request_server_connection_loss()
 {
     page().client().page_did_simulate_worker_request_server_connection_loss();
+}
+
+void Internals::terminate_service_worker(GC::Ref<ServiceWorker::ServiceWorker> worker)
+{
+    page().client().page_did_request_service_worker_termination_for_testing(ServiceWorker::service_worker_id(worker), false);
+}
+
+void Internals::kill_service_worker_process(GC::Ref<ServiceWorker::ServiceWorker> worker)
+{
+    page().client().page_did_request_service_worker_termination_for_testing(ServiceWorker::service_worker_id(worker), true);
 }
 
 WebIDL::ExceptionOr<void> Internals::send_bad_ipc_message_for_testing(Utf16String const& kind)

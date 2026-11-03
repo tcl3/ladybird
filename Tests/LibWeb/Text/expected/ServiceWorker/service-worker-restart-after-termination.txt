@@ -1,0 +1,6 @@
+The worker ran again in a new global: true
+Scripts imported during evaluation after the restart: 1
+importScripts() of a stored script: no exception
+importScripts() of a new script: NetworkError
+State in the worker: activated
+State in the page: activated

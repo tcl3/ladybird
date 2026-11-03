@@ -884,6 +884,7 @@ public:
     virtual void page_did_delete_all_cookies(URL::URL const&, GC::Ref<WebIDL::Promise>) { }
     virtual void page_did_lose_request_server_connection([[maybe_unused]] Optional<Utf16String> const& top_level_site) { }
     virtual void page_did_simulate_worker_request_server_connection_loss() { }
+    virtual void page_did_request_service_worker_termination_for_testing([[maybe_unused]] ServiceWorker::ServiceWorkerId service_worker_id, [[maybe_unused]] bool kill_process) { }
     virtual void page_did_store_hsts_policy_for_testing(String const&, HTTP::HSTS::ParsedHSTSPolicy const&) { }
     virtual void page_did_request_clear_storage_for_testing(StorageAPI::StorageEndpointType, HTML::EnvironmentSettingsObject const&) { }
     virtual bool page_did_is_known_hsts_host(String const&) { return false; }

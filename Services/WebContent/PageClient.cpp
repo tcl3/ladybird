@@ -1672,6 +1672,19 @@ void PageClient::page_did_lose_request_server_connection(Optional<Utf16String> c
         client().on_request_server_connection(*handle, {}, top_level_site);
 }
 
+void PageClient::page_did_request_service_worker_termination_for_testing(Web::ServiceWorker::ServiceWorkerId service_worker_id, bool kill_process)
+{
+    auto* test_connection = client().test_connection();
+    if (!test_connection)
+        return;
+
+    auto response = test_connection->send_sync_but_allow_failure<Messages::WebContentTestClient::DidRequestServiceWorkerTerminationForTesting>(m_id, service_worker_id, kill_process);
+    if (!response) {
+        dbgln("WebContent client disconnected during DidRequestServiceWorkerTerminationForTesting. Exiting peacefully.");
+        Core::Process::terminate_immediately(0);
+    }
+}
+
 void PageClient::page_did_simulate_worker_request_server_connection_loss()
 {
     auto* test_connection = client().test_connection();

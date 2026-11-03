@@ -78,6 +78,7 @@ public:
     void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle);
     void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
     void did_change_service_worker_pending_events(bool has_pending_events);
+    void did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource>);
 
 private:
     explicit PageHost(ConnectionFromClient&);

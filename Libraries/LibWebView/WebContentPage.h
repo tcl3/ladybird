@@ -412,6 +412,7 @@ private:
     virtual void did_set_test_timeout(double milliseconds) override;
     virtual void did_receive_reference_test_metadata(JsonValue) override;
     virtual void did_simulate_worker_request_server_connection_loss() override;
+    virtual void did_request_service_worker_termination_for_testing(u64 service_worker_id, bool kill_process) override;
     Messages::WebContentTestClient::DidRequestUiProcessSessionHistoryForTestingResponse did_request_ui_process_session_history_for_testing();
     Messages::WebContentTestClient::DidRequestSiteIsolationProcessTreeForTestingResponse did_request_site_isolation_process_tree_for_testing();
     Messages::WebContentTestClient::DidRequestTabIsPlayingAudioForTestingResponse did_request_tab_is_playing_audio_for_testing();

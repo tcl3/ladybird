@@ -44,4 +44,6 @@ WEB_API GC::Ref<ServiceWorkerRegistration> service_worker_registration_object(JS
 WEB_API u64 dispatch_message_event(ServiceWorkerGlobalScope&, ServiceWorkerMessageSource const&, URL::Origin const&, HTML::SerializedTransferRecord, void* ctx, void (*on_pending_events_changed)(void*, bool has_pending_events));
 WEB_API void time_out_extended_event(u64 event_id);
 
+WEB_API ServiceWorkerId service_worker_id(ServiceWorker const&);
+
 }

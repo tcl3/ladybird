@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A stopped worker runs again from the scripts it installed with, when a message needs it.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const imported = await server.createEcho("GET", "/imported.js", { status: 200, headers: javascript, body: "self.importCount = (self.importCount ?? 0) + 1;" });
+        const notImported = await server.createEcho("GET", "/not-imported.js", { status: 200, headers: javascript, body: "" });
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `importScripts("${imported}");
+            const globalToken = Math.random();
+            self.addEventListener("message", event => {
+                const exceptionName = steps => { try { steps(); return "no exception"; } catch (error) { return error.name; } };
+                event.source.postMessage({
+                    globalToken,
+                    importCount: self.importCount,
+                    storedImport: exceptionName(() => importScripts("${imported}")),
+                    newImport: exceptionName(() => importScripts("${notImported}")),
+                    state: self.serviceWorker.state,
+                });
+            });`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        const ask = () => new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage("report");
+        });
+
+        const before = await ask();
+        internals.terminateServiceWorker(worker);
+        const after = await ask();
+        println(`The worker ran again in a new global: ${before.globalToken !== after.globalToken}`);
+        println(`Scripts imported during evaluation after the restart: ${after.importCount}`);
+        println(`importScripts() of a stored script: ${after.storedImport}`);
+        println(`importScripts() of a new script: ${after.newImport}`);
+        println(`State in the worker: ${after.state}`);
+        println(`State in the page: ${worker.state}`);
+    });
+</script>
