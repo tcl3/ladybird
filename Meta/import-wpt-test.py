@@ -8,6 +8,7 @@ from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
 from html.parser import HTMLParser
+from http.client import InvalidURL
 from pathlib import Path
 from posixpath import normpath
 from urllib.error import HTTPError
@@ -80,9 +81,14 @@ class LinkedResourceFinder(HTMLParser):
         self._match_fetch_import_path = re.compile(r"fetch\((\"|\')(?P<url>.*)(\"|\')\)")
         self._match_import_call = re.compile(r"import\(['\"](?P<url>.*?)['\"].*\)")
         self._match_import_statement = re.compile(r"import (.*? from )?['\"](?P<url>.*?)['\"]")
+        self._match_import_scripts = re.compile(r"importScripts\((?P<urls>[^)]*)\)")
+        self._match_quoted_string = re.compile(r"['\"](?P<url>[^'\"]*)['\"]")
         self._match_src_assignment = re.compile(r"\.src ?= ?['\"](?P<url>.*?)['\"]")
         self._match_worker_import_path = re.compile(r"Worker\(['\"](?P<url>.*)['\"]\)")
+        self._match_service_worker_registration = re.compile(r"serviceWorker\.register\(\s*['\"](?P<url>[^'\"]*)['\"]")
         self._resources = set()
+        self._module_resources = set()
+        self._worker_resources = set()
 
     @property
     def resources(self) -> set:
@@ -93,6 +99,14 @@ class LinkedResourceFinder(HTMLParser):
             for resource in self._resources
             if resource_file_path(resource) and not resource_file_path(resource).endswith("/")
         }
+
+    @property
+    def module_resources(self) -> set:
+        return self.resources & self._module_resources
+
+    @property
+    def worker_resources(self) -> set:
+        return self.resources & self._worker_resources
 
     def handle_starttag(self, tag, attrs):
         self._tag_stack_.append(tag)
@@ -134,30 +148,48 @@ class LinkedResourceFinder(HTMLParser):
             for match in import_iterator:
                 self._resources.add(match.group("url"))
         elif self._tag_stack_ and self._tag_stack_[-1] == "script":
-            # Look for uses of fetch()
-            fetch_iterator = self._match_fetch_import_path.finditer(data)
-            for match in fetch_iterator:
-                self._resources.add(match.group("url"))
+            self.find_script_resources(data)
 
-            # Look for uses of import()
-            import_call_iterator = self._match_import_call.finditer(data)
-            for match in import_call_iterator:
-                self._resources.add(match.group("url"))
+    def find_script_resources(self, script):
+        # Look for uses of fetch()
+        fetch_iterator = self._match_fetch_import_path.finditer(script)
+        for match in fetch_iterator:
+            self._resources.add(match.group("url"))
 
-            # Look for uses of import statements
-            import_statement_iterator = self._match_import_statement.finditer(data)
-            for match in import_statement_iterator:
-                self._resources.add(match.group("url"))
+        # Look for uses of import()
+        import_call_iterator = self._match_import_call.finditer(script)
+        for match in import_call_iterator:
+            self._resources.add(match.group("url"))
+            self._module_resources.add(match.group("url"))
 
-            # Look for uses of .src = "..."
-            src_assignment_iterator = self._match_src_assignment.finditer(data)
-            for match in src_assignment_iterator:
-                self._resources.add(match.group("url"))
+        # Look for uses of import statements
+        import_statement_iterator = self._match_import_statement.finditer(script)
+        for match in import_statement_iterator:
+            self._resources.add(match.group("url"))
+            self._module_resources.add(match.group("url"))
 
-            # Look for uses of Worker()
-            filepath_iterator = self._match_worker_import_path.finditer(data)
-            for match in filepath_iterator:
-                self._resources.add(match.group("url"))
+        # Look for uses of importScripts()
+        import_scripts_iterator = self._match_import_scripts.finditer(script)
+        for match in import_scripts_iterator:
+            for url_match in self._match_quoted_string.finditer(match.group("urls")):
+                self._resources.add(url_match.group("url"))
+
+        # Look for uses of .src = "..."
+        src_assignment_iterator = self._match_src_assignment.finditer(script)
+        for match in src_assignment_iterator:
+            self._resources.add(match.group("url"))
+
+        # Look for uses of Worker()
+        filepath_iterator = self._match_worker_import_path.finditer(script)
+        for match in filepath_iterator:
+            self._resources.add(match.group("url"))
+            self._worker_resources.add(match.group("url"))
+
+        # Look for uses of navigator.serviceWorker.register()
+        registration_iterator = self._match_service_worker_registration.finditer(script)
+        for match in registration_iterator:
+            self._resources.add(match.group("url"))
+            self._worker_resources.add(match.group("url"))
 
 
 class TestTypeIdentifier(HTMLParser):
@@ -278,7 +310,7 @@ def remove_repeated_url_slashes(url):
     return "/" + "/".join(segment for segment in parsed.path.split("/") if segment)
 
 
-def download_files(filepaths, wpt_base_url, skip_existing):
+def download_files(filepaths, wpt_base_url, skip_existing, required=True):
     downloaded_files = []
 
     for file in filepaths:
@@ -303,7 +335,13 @@ def download_files(filepaths, wpt_base_url, skip_existing):
 
         print(f"Downloading {source} to {destination}")
 
-        connection = urlopen(source)
+        try:
+            connection = urlopen(source)
+        except (HTTPError, InvalidURL, ValueError) as error:
+            if required:
+                raise
+            print(f"Failed to download {file.source}: {error}")
+            continue
         if connection.status != 200:
             print(f"Failed to download {file.source}")
             continue
@@ -349,6 +387,57 @@ def download_headers_files(filepaths, wpt_base_url, skip_existing):
         print(f"Downloaded headers file: {destination}")
 
 
+def import_resources(
+    resources: list[ResourceAndType],
+    module_resources: set,
+    worker_resources: set,
+    script_path: str,
+    base_path: str,
+    wpt_base_url: str,
+    skip_existing: bool,
+    required=True,
+) -> None:
+    downloaded_scripts = []
+    for resource in resources:
+        referrer_path = script_path if resource.resource in module_resources else base_path
+        paths = map_to_path([resource], wpt_base_url, True, referrer_path)
+        downloaded_files = download_files(paths, wpt_base_url, skip_existing, required)
+        download_headers_files(paths, wpt_base_url, skip_existing)
+
+        for path in paths:
+            file = Path(os.path.normpath(path.destination))
+            if file not in downloaded_files or file.suffix not in [".js", ".mjs"]:
+                continue
+            downloaded_script_path = normpath(remove_repeated_url_slashes(path.source)).lstrip("/")
+            downloaded_base_path = downloaded_script_path if resource.resource in worker_resources else base_path
+            downloaded_scripts.append((file, downloaded_script_path, downloaded_base_path, resource.type))
+
+    for file, downloaded_script_path, downloaded_base_path, resource_type in downloaded_scripts:
+        finder = LinkedResourceFinder()
+        with open(file, "rb") as f:
+            finder.find_script_resources(f.read().decode("utf-8", errors="replace"))
+
+        # URLs in a classic script resolve against the document or worker that runs it, not against the script, so only
+        # a worker's own script has them rewritten. Module imports always resolve against the script itself.
+        if downloaded_base_path == downloaded_script_path:
+            rewritten_resources = finder.resources
+        else:
+            rewritten_resources = finder.module_resources
+        if rewritten_resources:
+            modify_sources([file], [ResourceAndType(resource, resource_type) for resource in rewritten_resources])
+
+        import_resources(
+            [ResourceAndType(resource, resource_type) for resource in finder.resources],
+            finder.module_resources,
+            finder.worker_resources,
+            downloaded_script_path,
+            downloaded_base_path,
+            wpt_base_url,
+            skip_existing,
+            required=False,
+        )
+
+
 def create_expectation_files(files, skip_existing):
     # Ref tests don't have an expectation text file
     if test_type in [TestType.REF, TestType.CRASH]:
@@ -371,6 +460,15 @@ def main():
     parser = argparse.ArgumentParser(description="Import a WPT test into LibWeb")
     parser.add_argument("--force", action="store_true", help="Force download of files even if they already exist")
     parser.add_argument("--wpt-base-url", type=urlparse, default="https://wpt.live/")
+    parser.add_argument(
+        "--extra-resource",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Also import a file that the test loads through a URL the importer cannot find, such as a worker script "
+        "passed to a helper function. PATH is relative to the test, or to the WPT root if it starts with a slash. A "
+        "script given this way is scanned as a worker script. May be repeated",
+    )
     parser.add_argument("url", type=str, help="The URL of the WPT test to import")
     args = parser.parse_args()
 
@@ -439,11 +537,13 @@ def main():
             page = response.read().decode("utf-8", errors="replace")
             expected_parser.feed(page)
     additional_resources.extend(ResourceAndType(s, ResourceType.EXPECTED) for s in expected_parser.resources)
+    additional_resources.extend(ResourceAndType(s, ResourceType.INPUT) for s in args.extra_resource)
+    worker_resources = input_parser.worker_resources | expected_parser.worker_resources | set(args.extra_resource)
 
     modify_sources(files_to_modify, additional_resources)
-    script_paths = map_to_path(additional_resources, wpt_base_url, True, resource_path)
-    download_files(script_paths, wpt_base_url, skip_existing)
-    download_headers_files(script_paths, wpt_base_url, skip_existing)
+    import_resources(
+        additional_resources, set(), worker_resources, resource_path, resource_path, wpt_base_url, skip_existing
+    )
 
 
 if __name__ == "__main__":

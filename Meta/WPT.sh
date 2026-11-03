@@ -191,6 +191,8 @@ print_help() {
           Import the test from https://wpt.live/html/dom/aria-attribute-reflection.html into the Ladybird test suite.
       $NAME import --force html/dom/aria-attribute-reflection.html
           Import the test from https://wpt.live/html/dom/aria-attribute-reflection.html into the Ladybird test suite, redownloading any files that already exist.
+      $NAME import --extra-resource service-worker/resources/empty-worker.js service-workers/idlharness.https.any.html
+          Import the test from https://wpt.live/service-workers/idlharness.https.any.html, with a script it loads through a URL the importer cannot find.
       $NAME list-tests css/CSS2 dom
           Show a list of all tests in the 'css/CSS2' and 'dom' directories.
 EOF
@@ -811,13 +813,13 @@ if [[ "$CMD" =~ ^(update|clean|run|serve|bisect|compare|import|list-tests)$ ]]; 
           bisect_wpt "${@}"
           ;;
         import)
-            while [[ "$1" =~ ^--(force|wpt-base-url)$ ]]; do
-                if [ "$1" = "--wpt-base-url" ]; then
+            while [[ "$1" =~ ^--(force|wpt-base-url|extra-resource)$ ]]; do
+                if [ "$1" = "--wpt-base-url" ] || [ "$1" = "--extra-resource" ]; then
                     if [ -z "$2" ]; then
-                        echo "Missing argument for --wpt-base-url"
+                        echo "Missing argument for $1"
                         usage
                     fi
-                    IMPORT_ARGS+=( "--wpt-base-url=$2" )
+                    IMPORT_ARGS+=( "$1=$2" )
                     shift
                 else
                     IMPORT_ARGS+=( "$1" )
