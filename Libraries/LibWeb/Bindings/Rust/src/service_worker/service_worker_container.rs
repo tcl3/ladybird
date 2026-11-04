@@ -185,6 +185,7 @@ pub(crate) enum ServiceWorkerRequestKind {
     NavigationPreloadState,
     ClientsGet,
     ClientsMatchAll,
+    ClientsClaim,
 }
 
 // SAFETY: A kind of request holds no cells.
@@ -987,4 +988,26 @@ fn dispatch_client_message(vm: &Vm, realm: Gc<Realm>, message: ClientMessage) {
     );
     event.set_is_trusted(true);
     destination.event_target.dispatch_event(&event);
+}
+
+// https://w3c.github.io/ServiceWorker/#notify-controller-change-algorithm
+pub(crate) fn notify_controller_change(vm: &Vm, realm: Gc<Realm>) {
+    // 1. Assert: client is not null.
+    // 2. If client is an environment settings object, queue a task to fire an event named controllerchange at the
+    //    ServiceWorkerContainer object that client is associated with.
+    // The task must use client's responsible event loop and the DOM manipulation task source.
+    queue_a_global_task(
+        vm,
+        realm.global_object(),
+        TaskSource::DOMManipulation,
+        realm,
+        |_, realm| {
+            // SAFETY: The realm is live, and LibWeb returns the cell of its container.
+            let container: Ref<ServiceWorkerContainer> =
+                unsafe { cell_from_abi(web_service_worker_container_of_realm(realm.as_ptr().cast())) };
+            let event = CppEvent::create(realm, "controllerchange", false, false, false);
+            event.set_is_trusted(true);
+            container.event_target.dispatch_event(&event);
+        },
+    );
 }

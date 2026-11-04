@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A new worker of a registration that a client uses waits until no client uses it any more.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const firstScript = await server.createEcho("GET", "/first.js", { status: 200, headers: javascript, body: "" });
+        const secondScript = await server.createEcho("GET", "/second.js", { status: 200, headers: javascript, body: "" });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html><p>In scope</p>",
+        });
+        const scope = new URL("./", firstScript).href;
+
+        const registration = await navigator.serviceWorker.register(firstScript, { scope });
+        const firstWorker = registration.installing;
+        await waitForCondition(() => firstWorker.state === "activated");
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+        println(`The frame is controlled by the first worker: ${frame.contentWindow.navigator.serviceWorker.controller.scriptURL === firstScript}`);
+
+        await navigator.serviceWorker.register(secondScript, { scope });
+        const secondWorker = registration.installing;
+        await waitForCondition(() => secondWorker.state === "installed");
+        await new Promise(resolve => setTimeout(resolve, 200));
+        println(`While the frame uses the registration, the second worker is: ${secondWorker.state}`);
+        println(`The registration's waiting worker is the second one: ${registration.waiting === secondWorker}`);
+
+        frame.remove();
+        await waitForCondition(() => secondWorker.state === "activated");
+        println(`Once the frame is gone, the second worker is active: ${registration.active === secondWorker}`);
+        println(`The first worker is: ${firstWorker.state}`);
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

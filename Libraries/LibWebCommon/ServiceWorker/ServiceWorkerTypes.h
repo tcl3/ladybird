@@ -22,6 +22,7 @@
 #include <LibWebCommon/Bindings/ServiceWorker.h>
 #include <LibWebCommon/Bindings/ServiceWorkerRegistration.h>
 #include <LibWebCommon/Export.h>
+#include <LibWebCommon/HTML/CrossProcessId.h>
 #include <LibWebCommon/HTML/Scripting/EnvironmentId.h>
 #include <LibWebCommon/HTML/Scripting/SerializedEnvironmentSettingsObject.h>
 #include <LibWebCommon/HTML/WorkerTypes.h>
@@ -105,6 +106,31 @@ struct ServiceWorkerJobRequest {
 };
 
 using ServiceWorkerJobResult = Variant<ServiceWorkerRegistrationSnapshot, bool, ServiceWorkerJobError>;
+
+// https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+// The reserved client of a non-subresource request, for which the UI process runs Match Service Worker Registration.
+struct ServiceWorkerReservedClient {
+    HTML::EnvironmentId id;
+    URL::URL creation_url;
+
+    // The request's url, which Match Service Worker Registration is given.
+    URL::URL url;
+
+    // The navigable whose navigation the reserved client is for, or none for the reserved client of a worker, which is
+    // the worker's own environment settings object.
+    Optional<HTML::CrossProcessId> navigable_id;
+};
+
+// The registration that a reserved client's request matched, whose active worker becomes the reserved client's active
+// service worker.
+struct ServiceWorkerControllerMatch {
+    ServiceWorkerDescriptor active_worker;
+    ServiceWorkerRegistrationSnapshot registration;
+
+    // https://w3c.github.io/ServiceWorker/#dfn-set-of-event-types-to-handle
+    // Whether the active worker's set of event types to handle contains "fetch".
+    bool handles_fetch_events { false };
+};
 
 struct ServiceWorkerScriptFetchParameters {
     HTML::SerializedEnvironmentSettingsObject job_client;

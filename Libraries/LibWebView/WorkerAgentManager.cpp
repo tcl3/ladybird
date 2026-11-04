@@ -315,6 +315,7 @@ void WorkerAgentManager::start_worker(WebWorkerClient& client, Web::HTML::Worker
     // NB: As storage partitioning in other browsers does, a shared worker takes the top-level origin of the outside
     //     settings it is created for, too.
     auto inside_settings = make<CanonicalWorkerEnvironmentSettingsObject>(move(origin), outside_settings.top_level_origin(), has_cross_site_ancestor, Web::HTML::EnvironmentId::generate());
+    inside_settings->set_creation_url(request.url);
     auto environment_id = inside_settings->id();
     auto inside_origin = inside_settings->origin();
 

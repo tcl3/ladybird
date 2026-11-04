@@ -54,11 +54,11 @@ void WindowEnvironmentSettingsObject::setup(Page& page, URL::URL const& creation
 
     // 4. If reservedEnvironment is non-null, then:
     if (reserved_environment) {
-        // FIXME:    1. Set settings object's id to reservedEnvironment's id,
-        //              target browsing context to reservedEnvironment's target browsing context,
-        //              and active service worker to reservedEnvironment's active service worker.
+        // 1. Set settings object's id to reservedEnvironment's id, target browsing context to reservedEnvironment's
+        //    target browsing context, and active service worker to reservedEnvironment's active service worker.
         settings_object->id = reserved_environment->id;
         settings_object->target_browsing_context = reserved_environment->target_browsing_context;
+        settings_object->active_service_worker = reserved_environment->active_service_worker;
 
         // 2. Set reservedEnvironment's id to the empty string.
         reserved_environment->id = {};
@@ -69,7 +69,7 @@ void WindowEnvironmentSettingsObject::setup(Page& page, URL::URL const& creation
     else {
         settings_object->id = EnvironmentId::generate();
         settings_object->target_browsing_context = nullptr;
-        // FIXME: Set settings object's active service worker to null.
+        settings_object->active_service_worker = {};
     }
 
     // 6. Set settings object's creation URL to creationURL,

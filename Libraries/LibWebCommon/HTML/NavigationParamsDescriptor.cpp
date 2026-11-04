@@ -116,6 +116,7 @@ ErrorOr<void> encode(Encoder& encoder, Web::HTML::NavigationEnvironmentDescripto
     TRY(encoder.encode(environment.creation_url));
     TRY(encoder.encode(environment.top_level_creation_url));
     TRY(encoder.encode(environment.top_level_origin));
+    TRY(encoder.encode(environment.active_service_worker));
     return {};
 }
 
@@ -127,6 +128,7 @@ ErrorOr<Web::HTML::NavigationEnvironmentDescriptor> decode(Decoder& decoder)
         .creation_url = TRY(decoder.decode<URL::URL>()),
         .top_level_creation_url = TRY(decoder.decode<Optional<URL::URL>>()),
         .top_level_origin = TRY(decoder.decode<Optional<URL::Origin>>()),
+        .active_service_worker = TRY(decoder.decode<Optional<Web::ServiceWorker::ServiceWorkerDescriptor>>()),
     };
 }
 

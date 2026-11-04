@@ -54,6 +54,9 @@ endpoint WebWorkerServer {
     service_worker_clients_matched(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> clients) =|
     dispatch_service_worker_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin origin, Web::HTML::SerializedTransferRecord message, u64 timeout_ms) =|
     service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) =|
+    service_worker_match_finished(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerControllerMatch> match) =|
+    service_worker_controller_changed(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor controller) =|
+    service_worker_claim_finished(u64 request_id, bool succeeded) =|
 
     handle_file_return(i32 error, Optional<IPC::File> file, i32 request_id) =|
     blob_url_entry_removed(Utf16String url) =|

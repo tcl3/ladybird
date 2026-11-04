@@ -13,7 +13,9 @@
 #include <LibURL/URL.h>
 #include <LibWeb/Export.h>
 #include <LibWeb/Fetch/Infrastructure/KeepaliveQuotaAccountant.h>
+#include <LibWeb/HTML/Scripting/EnvironmentSettingsObjectAddress.h>
 #include <LibWebCommon/HTML/CrossProcessId.h>
+#include <LibWebCommon/HTML/Scripting/EnvironmentId.h>
 #include <LibWebCommon/HTML/Scripting/SerializedEnvironmentSettingsObject.h>
 #include <LibWebCommon/MixedContent/ProhibitsMixedSecurityContexts.h>
 
@@ -105,13 +107,20 @@ struct ReservedClientContext {
     struct Environment {
         TargetBrowsingContext target_browsing_context { TargetBrowsingContext::None };
         Optional<Parent> parent;
+
+        // The navigable of the target browsing context's active document, if this process hosts it.
+        Optional<HTML::CrossProcessId> navigable_id;
     };
 
     // A reserved client that is a settings object.
     struct SettingsObject {
         URL::Origin origin;
         HasCrossSiteAncestor has_cross_site_ancestor { HasCrossSiteAncestor::No };
+        HTML::EnvironmentSettingsObjectAddress address;
     };
+
+    // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-id
+    HTML::EnvironmentId id;
 
     URL::URL creation_url;
     Optional<URL::URL> top_level_creation_url;

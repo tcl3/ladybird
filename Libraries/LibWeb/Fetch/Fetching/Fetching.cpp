@@ -77,6 +77,7 @@
 #include <LibWeb/ResourceTiming/PerformanceResourceTiming.h>
 #include <LibWeb/SRI/IntegrityPolicy.h>
 #include <LibWeb/SRI/SRI.h>
+#include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/Streams/ReadableStream.h>
 #include <LibWeb/Streams/ReadableStreamDefaultReader.h>
 #include <LibWeb/Streams/TransformStream.h>
@@ -1644,6 +1645,8 @@ GC::Ref<PendingResponse> scheme_fetch(JS::Realm& realm, Infrastructure::FetchPar
     return PendingResponse::create(fetch_params, Infrastructure::Response::network_error(move(message)));
 }
 
+static GC::Ref<PendingResponse> http_fetch_after_handle_fetch(JS::Realm&, Infrastructure::FetchParams const&, MakeCORSPreflight, RefPtr<Infrastructure::Response> response, RefPtr<Infrastructure::Response> internal_response);
+
 // https://fetch.spec.whatwg.org/#concept-http-fetch
 GC::Ref<PendingResponse> http_fetch(JS::Realm& realm, Infrastructure::FetchParams const& fetch_params, MakeCORSPreflight make_cors_preflight)
 {
@@ -1654,8 +1657,7 @@ GC::Ref<PendingResponse> http_fetch(JS::Realm& realm, Infrastructure::FetchParam
     auto request = fetch_params.request();
 
     // 2. Let response and internalResponse be null.
-    RefPtr<Infrastructure::Response> response;
-    RefPtr<Infrastructure::Response> internal_response;
+    // NB: http_fetch_after_handle_fetch() takes them, as handle fetch set them.
 
     // 3. If request’s service-workers mode is "all", then:
     if (request->service_workers_mode() == Infrastructure::Request::ServiceWorkersMode::All) {
@@ -1677,42 +1679,65 @@ GC::Ref<PendingResponse> http_fetch(JS::Realm& realm, Infrastructure::FetchParam
         //    capability.
         auto service_worker_start_time = HighResolutionTime::coarsened_shared_current_time(fetch_params.cross_origin_isolated_capability());
 
-        // FIXME: 4. Set response to the result of invoking handle fetch for requestForServiceWorker, with fetchParams’s
-        //           controller and fetchParams’s cross-origin isolated capability.
+        // 4. Set response to the result of invoking handle fetch for requestForServiceWorker, with fetchParams’s
+        //    controller and fetchParams’s cross-origin isolated capability.
+        // NB: Handle fetch finishes asynchronously, once the UI process or the service worker answers. The steps after
+        //     it run in http_fetch_after_handle_fetch().
+        auto returned_pending_response = PendingResponse::create(fetch_params);
+        auto use_high_res_performance_timers = fetch_params.cross_origin_isolated_capability() == HTML::CanUseCrossOriginIsolatedAPIs::Yes;
+        ServiceWorker::handle_fetch(Bindings::principal_host_defined_page(realm), request_for_service_worker, fetch_params.controller(), use_high_res_performance_timers, GC::create_function(realm.heap(), GC::captures(GC::Ref { realm }, NonnullRefPtr { fetch_params }, make_cors_preflight, request, service_worker_start_time, returned_pending_response), [](auto& realm, auto& fetch_params, auto& make_cors_preflight, auto& request, auto& service_worker_start_time, auto& returned_pending_response, RefPtr<Infrastructure::Response> response) {
+            RefPtr<Infrastructure::Response> internal_response;
 
-        // 5. If response is non-null, then:
-        if (response) {
-            // 1. Set fetchParams’s timing info’s final service worker start time to serviceWorkerStartTime.
-            fetch_params.timing_info()->set_final_service_worker_start_time(service_worker_start_time);
+            // 5. If response is non-null, then:
+            if (response) {
+                // 1. Set fetchParams’s timing info’s final service worker start time to serviceWorkerStartTime.
+                fetch_params->timing_info()->set_final_service_worker_start_time(service_worker_start_time);
 
-            // 2. If request’s body is non-null, then cancel request’s body with undefined.
-            if (!request->body().has<Empty>()) {
-                // FIXME: Implement cancelling streams
+                // 2. If request’s body is non-null, then cancel request’s body with undefined.
+                if (!request->body().template has<Empty>()) {
+                    // FIXME: Implement cancelling streams
+                }
+
+                // 3. Set internalResponse to response, if response is not a filtered response; otherwise to
+                //    response’s internal response.
+                internal_response = !is<Infrastructure::FilteredResponse>(*response)
+                    ? NonnullRefPtr { *response }
+                    : static_cast<Infrastructure::FilteredResponse&>(*response).internal_response();
+
+                // 4. If one of the following is true
+                if (
+                    // - response’s type is "error"
+                    response->type() == Infrastructure::Response::Type::Error
+                    // - request’s mode is "same-origin" and response’s type is "cors"
+                    || (request->mode() == Infrastructure::Request::Mode::SameOrigin && response->type() == Infrastructure::Response::Type::CORS)
+                    // - request’s mode is not "no-cors" and response’s type is "opaque"
+                    || (request->mode() != Infrastructure::Request::Mode::NoCORS && response->type() == Infrastructure::Response::Type::Opaque)
+                    // - request’s redirect mode is not "manual" and response’s type is "opaqueredirect"
+                    || (request->redirect_mode() != Infrastructure::Request::RedirectMode::Manual && response->type() == Infrastructure::Response::Type::OpaqueRedirect)
+                    // - request’s redirect mode is not "follow" and response’s URL list has more than one item.
+                    || (request->redirect_mode() != Infrastructure::Request::RedirectMode::Follow && response->url_list().size() > 1)) {
+                    // then return a network error.
+                    returned_pending_response->resolve(Infrastructure::Response::network_error("Invalid request/response state combination"_string));
+                    return;
+                }
             }
 
-            // 3. Set internalResponse to response, if response is not a filtered response; otherwise to response’s
-            //    internal response.
-            internal_response = !is<Infrastructure::FilteredResponse>(*response)
-                ? NonnullRefPtr { *response }
-                : static_cast<Infrastructure::FilteredResponse&>(*response).internal_response();
-
-            // 4. If one of the following is true
-            if (
-                // - response’s type is "error"
-                response->type() == Infrastructure::Response::Type::Error
-                // - request’s mode is "same-origin" and response’s type is "cors"
-                || (request->mode() == Infrastructure::Request::Mode::SameOrigin && response->type() == Infrastructure::Response::Type::CORS)
-                // - request’s mode is not "no-cors" and response’s type is "opaque"
-                || (request->mode() != Infrastructure::Request::Mode::NoCORS && response->type() == Infrastructure::Response::Type::Opaque)
-                // - request’s redirect mode is not "manual" and response’s type is "opaqueredirect"
-                || (request->redirect_mode() != Infrastructure::Request::RedirectMode::Manual && response->type() == Infrastructure::Response::Type::OpaqueRedirect)
-                // - request’s redirect mode is not "follow" and response’s URL list has more than one item.
-                || (request->redirect_mode() != Infrastructure::Request::RedirectMode::Follow && response->url_list().size() > 1)) {
-                // then return a network error.
-                return PendingResponse::create(fetch_params, Infrastructure::Response::network_error("Invalid request/response state combination"_string));
-            }
-        }
+            auto pending_response = http_fetch_after_handle_fetch(*realm, *fetch_params, make_cors_preflight, move(response), move(internal_response));
+            pending_response->when_loaded(GC::create_function(realm->heap(), GC::captures(returned_pending_response), [](auto& returned_pending_response, NonnullRefPtr<Infrastructure::Response> response) {
+                returned_pending_response->resolve(response);
+            }));
+        }));
+        return returned_pending_response;
     }
+
+    return http_fetch_after_handle_fetch(realm, fetch_params, make_cors_preflight, nullptr, nullptr);
+}
+
+// https://fetch.spec.whatwg.org/#concept-http-fetch
+// NB: The steps of HTTP fetch from step 4 on.
+static GC::Ref<PendingResponse> http_fetch_after_handle_fetch(JS::Realm& realm, Infrastructure::FetchParams const& fetch_params, MakeCORSPreflight make_cors_preflight, RefPtr<Infrastructure::Response> response, RefPtr<Infrastructure::Response> internal_response)
+{
+    auto request = fetch_params.request();
 
     GC::Ptr<PendingResponse> pending_actual_response;
 

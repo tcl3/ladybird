@@ -3523,6 +3523,31 @@ void WebContentPage::did_request_navigation_preload(Web::HTML::EnvironmentId env
     client().session().service_worker_registry->navigation_preload(client_environment, request_id, registration_id, operation, move(header_value));
 }
 
+void WebContentPage::did_request_service_worker_match(u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client)
+{
+    auto reply_with_no_match = [&] {
+        client().async_service_worker_match_finished(request_id, {});
+    };
+
+    // NB: A page matches a registration for the reserved client of a navigation whose population steps it runs. The
+    //     navigation can have ended in the meantime.
+    if (!reserved_client.navigable_id.has_value()) {
+        client().did_misbehave("did_request_service_worker_match"sv, "a page named a reserved client of no navigable"sv);
+        return;
+    }
+    auto navigable = population_worker_navigable(*reserved_client.navigable_id);
+    if (!navigable.has_value()) {
+        reply_with_no_match();
+        return;
+    }
+    auto navigation = navigable->uncommitted_navigation();
+    if (!navigation || !navigation->state.has<CanonicalNavigation::CreatingNavigationParams>() || navigation->worker().ptr() != this) {
+        reply_with_no_match();
+        return;
+    }
+    client().session().service_worker_registry->match_reserved_client_of_navigation(ServiceWorkerClientConnection { client() }, *navigable, *navigation->loader(), request_id, reserved_client);
+}
+
 void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)
 {
     if (!hosted_environment(environment_id).has_value())

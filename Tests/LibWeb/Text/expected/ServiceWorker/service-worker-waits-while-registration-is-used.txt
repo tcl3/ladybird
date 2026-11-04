@@ -1,0 +1,6 @@
+The frame is controlled by the first worker: true
+While the frame uses the registration, the second worker is: installed
+The registration's waiting worker is the second one: true
+Once the frame is gone, the second worker is active: true
+The first worker is: redundant
+unregister(): true

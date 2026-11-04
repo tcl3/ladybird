@@ -148,6 +148,7 @@ static NavigationParamsDescriptor create_navigation_params_descriptor(Navigation
             .creation_url = params.reserved_environment->creation_url,
             .top_level_creation_url = params.reserved_environment->top_level_creation_url,
             .top_level_origin = params.reserved_environment->top_level_origin,
+            .active_service_worker = {},
         };
     }
 
@@ -334,6 +335,7 @@ ErrorOr<NavigationParamsVariant> create_navigation_params_from_descriptor(JS::Re
             move(params.reserved_environment->top_level_creation_url),
             move(params.reserved_environment->top_level_origin),
             navigable.active_browsing_context());
+        reserved_environment->active_service_worker = move(params.reserved_environment->active_service_worker);
     }
 
     auto navigation_params = realm.heap().allocate<NavigationParams>(

@@ -37,6 +37,7 @@
 #include <LibWebCommon/HTML/UserNavigationInvolvement.h>
 #include <LibWebCommon/PermissionsPolicy/PermissionsPolicy.h>
 #include <LibWebCommon/ReferrerPolicy/ReferrerPolicy.h>
+#include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 
 namespace Web::HTML {
 
@@ -118,6 +119,10 @@ struct NavigationEnvironmentDescriptor {
     URL::URL creation_url;
     Optional<URL::URL> top_level_creation_url;
     Optional<URL::Origin> top_level_origin;
+
+    // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-active-service-worker
+    // NB: The UI process sets this from its own record of the environment.
+    Optional<ServiceWorker::ServiceWorkerDescriptor> active_service_worker;
 };
 
 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#navigation-params

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // An active worker that calls clients.claim() becomes the controller of the clients in its scope, which fire
+    // controllerchange. A worker that is not active cannot claim.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `const outcome = promise => promise.then(() => "resolved", error => error.name);
+            self.addEventListener("install", event => {
+                event.waitUntil(outcome(self.clients.claim()).then(result => { self.claimDuringInstall = result; }));
+            });
+            self.addEventListener("activate", event => {
+                event.waitUntil(outcome(self.clients.claim()).then(result => { self.claimDuringActivate = result; }));
+            });
+            self.addEventListener("message", event => {
+                event.source.postMessage({ install: self.claimDuringInstall, activate: self.claimDuringActivate });
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html><p>In scope</p>",
+        });
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+        const frameContainer = frame.contentWindow.navigator.serviceWorker;
+        println(`The frame's controller before the worker claims: ${frameContainer.controller}`);
+
+        const controllerChanged = new Promise(resolve => frameContainer.addEventListener("controllerchange", resolve, { once: true }));
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await controllerChanged;
+        const controller = frameContainer.controller;
+        println(`controllerchange fired, and the frame's controller is the worker: ${controller.scriptURL === script}`);
+        println(`The page outside the scope stays uncontrolled: ${navigator.serviceWorker.controller}`);
+
+        await waitForCondition(() => worker.state === "activated");
+        const reply = await new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage("report");
+        });
+        println(`claim() during install: ${reply.install}`);
+        println(`claim() during activate: ${reply.activate}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

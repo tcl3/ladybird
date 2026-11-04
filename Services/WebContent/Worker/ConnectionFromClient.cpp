@@ -35,6 +35,7 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
+#include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/WebRTC/RTCEncodedAudioFrame.h>
 #include <LibWeb/WebRTC/RTCRtpScriptTransformer.h>
@@ -438,6 +439,21 @@ void ConnectionFromClient::dispatch_service_worker_message_event(Web::ServiceWor
 void ConnectionFromClient::service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message)
 {
     Web::ServiceWorker::service_worker_message_to_client(client_id, move(source), origin, move(message));
+}
+
+void ConnectionFromClient::service_worker_match_finished(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerControllerMatch> match)
+{
+    Web::ServiceWorker::service_worker_match_finished(request_id, move(match));
+}
+
+void ConnectionFromClient::service_worker_controller_changed(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor controller)
+{
+    Web::ServiceWorker::service_worker_controller_changed(client_id, move(controller));
+}
+
+void ConnectionFromClient::service_worker_claim_finished(u64 request_id, bool succeeded)
+{
+    Web::ServiceWorker::service_worker_claim_finished(request_id, succeeded);
 }
 
 void ConnectionFromClient::rtc_transform_init(u64 transform_id, Web::HTML::SerializedTransferRecord options_record)

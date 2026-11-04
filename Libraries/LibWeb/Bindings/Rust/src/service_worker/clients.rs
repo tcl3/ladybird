@@ -16,9 +16,10 @@ use libjs_rust::api::{
 
 use crate::bindings::interface::{Ref, Wrappable, allocate, with_temporary_execution_context_and_callbacks, wrap};
 use crate::bindings::promise::{
-    TaskSource, WebIdlPromise, create_promise, promise_realm, queue_a_global_task, resolve_promise,
+    TaskSource, WebIdlPromise, create_promise, create_rejected_promise_from_exception, promise_realm,
+    queue_a_global_task, reject_promise_with_exception, resolve_promise,
 };
-use crate::bindings::{CallContext, WebIdlResult};
+use crate::bindings::{CallContext, Exception, WebIdlResult};
 use crate::service_worker::client::{AnyClient, Client, ServiceWorkerClientSnapshot};
 use crate::service_worker::service_worker_container::{
     ServiceWorkerRequestKind, add_pending_request, take_pending_request,
@@ -36,6 +37,10 @@ unsafe extern "C" {
         include_uncontrolled: bool,
         client_type: u8,
     );
+
+    /// Asks the UI process to claim the service worker clients for the service worker of the realm's global object,
+    /// unless the service worker is not an active worker, which this returns false for.
+    fn web_service_worker_claim(realm: *mut c_void, request_id: u64) -> bool;
 }
 
 // https://w3c.github.io/ServiceWorker/#enumdef-clienttype
@@ -144,6 +149,89 @@ impl Clients {
         // 3. Return promise.
         Ok(self.request(cx.vm(), ServiceWorkerRequestKind::ClientsMatchAll, "", options))
     }
+
+    // https://w3c.github.io/ServiceWorker/#clients-claim
+    pub(crate) fn claim(&self, cx: &mut CallContext) -> WebIdlResult<WebIdlPromise> {
+        let vm = cx.vm();
+
+        // 2. Let promise be a new promise.
+        let promise = create_promise(vm, self.realm);
+        let request_id = add_pending_request(vm, promise, ServiceWorkerRequestKind::ClientsClaim);
+
+        // 1. If the service worker is not an active worker, return a promise rejected with an "InvalidStateError"
+        //    DOMException.
+        // 3. Run the following substeps in parallel:
+        // NB: The UI process runs the substeps, and service_worker_claim_finished() resolves the promise.
+        // SAFETY: The realm is live.
+        let is_active_worker = unsafe { web_service_worker_claim(self.realm.as_ptr().cast(), request_id) };
+        if !is_active_worker {
+            take_pending_request(request_id, ServiceWorkerRequestKind::ClientsClaim);
+            return Ok(create_rejected_promise_from_exception(
+                vm,
+                self.realm,
+                Exception::Dom(
+                    "InvalidStateError",
+                    Utf16String::from_utf8("The service worker is not an active worker"),
+                ),
+            ));
+        }
+
+        // 4. Return promise.
+        Ok(promise)
+    }
+}
+
+/// How the UI process answered a request of claim().
+#[derive(Trace)]
+#[gc(crate = libjs_rust)]
+struct ClaimAnswer {
+    promise: WebIdlPromise,
+    #[gc(untraced)]
+    succeeded: bool,
+}
+
+static CLAIM_ANSWER_CLASS: EmbedderClass<ClaimAnswer> = EmbedderClass::new("ServiceWorkerClaimAnswer");
+
+impl EmbedderValue for ClaimAnswer {
+    const CLASS: &'static EmbedderClass<Self> = &CLAIM_ANSWER_CLASS;
+}
+
+pub(crate) fn service_worker_claim_finished(vm: &Vm, request_id: u64, succeeded: bool) {
+    let Some((request, _root)) = take_pending_request(request_id, ServiceWorkerRequestKind::ClientsClaim) else {
+        return;
+    };
+    let answer = CLAIM_ANSWER_CLASS.allocate(vm, |_| ClaimAnswer {
+        promise: request.promise,
+        succeeded,
+    });
+
+    // https://w3c.github.io/ServiceWorker/#clients-claim
+    // 3.2. Queue a task on promise's relevant settings object's responsible event loop using the DOM manipulation task
+    //      source to resolve promise with undefined.
+    // NB: The UI process rejects a claim of a worker that stopped being an active worker before it ran the substeps.
+    queue_a_global_task(
+        vm,
+        promise_realm(answer.promise).global_object(),
+        TaskSource::DOMManipulation,
+        answer,
+        |vm, answer: Gc<EmbedderCell<ClaimAnswer>>| {
+            let realm = promise_realm(answer.promise);
+            with_temporary_execution_context_and_callbacks(realm, || {
+                if answer.succeeded {
+                    resolve_promise(vm, answer.promise, Value::UNDEFINED);
+                } else {
+                    reject_promise_with_exception(
+                        vm,
+                        answer.promise,
+                        Exception::Dom(
+                            "InvalidStateError",
+                            Utf16String::from_utf8("The service worker is not an active worker"),
+                        ),
+                    );
+                }
+            });
+        },
+    );
 }
 
 /// The clients that the UI process found for a request of a Clients object.

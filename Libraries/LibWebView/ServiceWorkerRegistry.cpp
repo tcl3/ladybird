@@ -11,7 +11,9 @@
 #include <LibURL/Site.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
 #include <LibWebView/Application.h>
+#include <LibWebView/CanonicalDocument.h>
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
+#include <LibWebView/CanonicalNavigable.h>
 #include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/WebContentClient.h>
 #include <LibWebView/WebWorkerClient.h>
@@ -127,10 +129,10 @@ void ServiceWorkerRegistry::environment_was_discarded(Web::HTML::EnvironmentId c
         });
 
         // https://w3c.github.io/ServiceWorker/#on-client-unload-algorithm
-        // 1. Run the following steps atomically.
-        // 2. Let registration be the service worker registration used by client.
-        // 3. If registration is null, abort these steps.
-        // NB: No service worker client uses a registration yet, as none is controlled.
+        // The user agent must run these steps as part of when a service worker client unloads via unloading document
+        // cleanup steps or termination.
+        // NB: The canonical record of a client goes away once its document unloads or its worker terminates.
+        registry->handle_service_worker_client_unload(environment_id);
 
         // NB: The environment's records are only now going away, so the clients that remain are counted after.
         Core::deferred_invoke([weak_registry = registry->make_weak_ptr()] {
@@ -138,6 +140,259 @@ void ServiceWorkerRegistry::environment_was_discarded(Web::HTML::EnvironmentId c
                 registry->stop_workers_of_partitions_without_clients();
         });
     }
+}
+
+// https://w3c.github.io/ServiceWorker/#on-client-unload-algorithm
+void ServiceWorkerRegistry::handle_service_worker_client_unload(Web::HTML::EnvironmentId const& client)
+{
+    // 1. Run the following steps atomically.
+    // 2. Let registration be the service worker registration used by client.
+    auto index = m_controlled_clients.find_first_index_if([&](ControlledClient const& controlled_client) { return controlled_client.id == client; });
+
+    // 3. If registration is null, abort these steps.
+    if (!index.has_value())
+        return;
+    auto unloaded_client = m_controlled_clients.take(*index);
+    auto worker = m_service_workers.get(unloaded_client.active_service_worker);
+    auto* registration = worker.has_value() ? registration_by_id((*worker)->registration_id) : nullptr;
+    forget_service_worker_if_unused(unloaded_client.active_service_worker);
+    if (!registration)
+        return;
+
+    // 4. If any other service worker client is using registration, abort these steps.
+    if (any_service_worker_client_is_using(*registration))
+        return;
+
+    // 5. If registration is unregistered, invoke Try Clear Registration with registration.
+    if (is_unregistered(*registration)) {
+        auto registration_id = registration->id;
+        try_clear_registration(*registration);
+
+        // NB: Nothing refers to a registration that Try Clear Registration cleared.
+        registration = registration_by_id(registration_id);
+        if (!registration)
+            return;
+    }
+
+    // 6. Invoke Try Activate with registration.
+    try_activate(*registration);
+}
+
+// https://w3c.github.io/ServiceWorker/#dfn-use
+bool ServiceWorkerRegistry::is_using(ControlledClient const& client, Registration const& registration) const
+{
+    // When a service worker client is controlled by a service worker, it is said that the service worker client is using
+    // the service worker's containing service worker registration.
+    auto worker = m_service_workers.get(client.active_service_worker);
+    return worker.has_value() && (*worker)->registration_id == registration.id;
+}
+
+bool ServiceWorkerRegistry::any_service_worker_client_is_using(Registration const& registration) const
+{
+    return any_of(m_controlled_clients, [&](ControlledClient const& client) { return is_using(client, registration); });
+}
+
+void ServiceWorkerRegistry::for_each_hosted_client(Function<IterationDecision(HostedClient const&)> const& callback) const
+{
+    auto decision = IterationDecision::Continue;
+    WebContentClient::for_each_client([&](WebContentClient& client) {
+        if (client.is_private() != m_is_private)
+            return IterationDecision::Continue;
+        client.for_each_page([&](WebContentPage& page) {
+            page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                decision = callback(HostedClient {
+                    .connection = ServiceWorkerClientConnection { client },
+                    .settings = settings,
+                    .has_cross_site_ancestor = has_cross_site_ancestor,
+                    .is_window = true,
+                    .agent_type = {},
+                });
+                return decision;
+            });
+            return decision;
+        });
+        return decision;
+    });
+    if (decision == IterationDecision::Break)
+        return;
+
+    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private, Web::HTML::AgentType agent_type) {
+        if (decision == IterationDecision::Break || agent_type == Web::HTML::AgentType::ServiceWorker || is_private != m_is_private)
+            return;
+        decision = callback(HostedClient {
+            .connection = ServiceWorkerClientConnection { client },
+            .settings = settings,
+            .has_cross_site_ancestor = settings.has_cross_site_ancestor(),
+            .is_window = false,
+            .agent_type = agent_type,
+        });
+    });
+}
+
+Optional<ServiceWorkerClientConnection> ServiceWorkerRegistry::connection_of_client(Web::HTML::EnvironmentId const& client_id) const
+{
+    Optional<ServiceWorkerClientConnection> connection;
+    for_each_hosted_client([&](HostedClient const& client) {
+        if (client.settings.id() != client_id)
+            return IterationDecision::Continue;
+        connection = client.connection;
+        return IterationDecision::Break;
+    });
+    return connection;
+}
+
+// https://w3c.github.io/ServiceWorker/#notify-controller-change-algorithm
+void ServiceWorkerRegistry::notify_controller_change(Web::HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& controller)
+{
+    // 1. Assert: client is not null.
+    // 2. If client is an environment settings object, queue a task to fire an event named controllerchange at the
+    //    ServiceWorkerContainer object that client is associated with.
+    // NB: Only an environment settings object has a canonical record. The process that hosts it queues the task.
+    auto connection = connection_of_client(client);
+    if (!connection.has_value())
+        return;
+    connection->visit_open_connection([&](auto& process) { process.async_service_worker_controller_changed(client, controller); });
+}
+
+void ServiceWorkerRegistry::match_reserved_client_of_navigation(ServiceWorkerClientConnection const& connection, CanonicalNavigable const& navigable, NavigationLoader const& navigation, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client)
+{
+    // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+    // 9.5. Let storage key be the result of running obtain a storage key given reservedClient.
+    // NB: The partition is that of the reserved client that "attempt to populate the history entry's document" creates
+    //     for the navigable: its top-level origin is the parent's, and it has a cross-site ancestor if the parent's
+    //     active document has one or is of another site.
+    Optional<Partition> partition;
+    auto origin = reserved_client.creation_url.origin();
+    if (auto storage_key = Web::StorageAPI::obtain_a_storage_key(origin); storage_key.has_value()) {
+        Optional<URL::Origin> top_level_origin = origin;
+        bool has_cross_site_ancestor = false;
+        if (!navigable.is_top_level_traversable()) {
+            auto const* parent = navigable.parent();
+            top_level_origin = parent ? parent->active_document().top_level_origin() : Optional<URL::Origin> {};
+            has_cross_site_ancestor = !parent || parent->active_document_has_cross_site_ancestor() || !parent->active_document().origin().is_same_site(origin);
+        }
+        partition = Partition {
+            .storage_key = storage_key.release_value(),
+            .top_level_site = top_level_origin.has_value() ? URL::Site::serialize_for_partitioning(*top_level_origin) : Optional<Utf16String> {},
+            .has_cross_site_ancestor = has_cross_site_ancestor,
+        };
+    }
+
+    // NB: A navigation's reserved client is a new environment, whose id no environment has.
+    bool names_an_environment = false;
+    for_each_hosted_client([&](HostedClient const& client) {
+        names_an_environment = client.settings.id() == reserved_client.id;
+        return names_an_environment ? IterationDecision::Break : IterationDecision::Continue;
+    });
+    if (names_an_environment)
+        partition = {};
+
+    match_reserved_client(connection, partition, request_id, reserved_client, &navigation);
+}
+
+void ServiceWorkerRegistry::match_reserved_client_of_worker(ServiceWorkerClientEnvironment const& client, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client)
+{
+    // NB: A worker's reserved client is the worker's own environment settings object.
+    match_reserved_client(client.connection, partition_of(client.settings, client.has_cross_site_ancestor), request_id, reserved_client, nullptr);
+}
+
+// https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection const& connection, Optional<Partition> const& partition, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client, NavigationLoader const* reserving_navigation)
+{
+    auto reply = [&](Optional<ServiceWorkerControllerMatch> const& match) {
+        connection.visit_open_connection([&](auto& client) { client.async_service_worker_match_finished(request_id, match); });
+    };
+
+    // AD-HOC: Obtaining a storage key can fail, which Handle Fetch does not expect. A request is of its reserved
+    //         client's origin, as a navigation discards a reserved client of another origin.
+    if (!partition.has_value() || !reserved_client.url.origin().is_same_origin(partition->storage_key.origin)) {
+        reply({});
+        return;
+    }
+
+    // 9.6. Set registration to the result of running Match Service Worker Registration given storage key and request's
+    //      url.
+    auto* registration = match_service_worker_registration(*partition, reserved_client.url);
+
+    // 9.7. If registration is null or registration's active worker is null, return null.
+    if (!registration || !registration->active_worker.has_value()) {
+        reply({});
+        return;
+    }
+    auto& active_worker = **m_service_workers.get(*registration->active_worker);
+
+    // 9.8. If request's destination is not "report", set reservedClient's active service worker to registration's
+    //      active worker.
+    // NB: Nothing fetches with the "report" destination.
+    auto existing_client = m_controlled_clients.find_if([&](ControlledClient const& client) { return client.id == reserved_client.id; });
+    if (existing_client != m_controlled_clients.end()) {
+        // NB: A reserved client is the reserved client of one request only.
+        if (existing_client->reserving_navigation != reserving_navigation) {
+            reply({});
+            return;
+        }
+        existing_client->active_service_worker = active_worker.id;
+    } else {
+        m_controlled_clients.append(ControlledClient {
+            .id = reserved_client.id,
+            .active_service_worker = active_worker.id,
+            .reserving_navigation = reserving_navigation,
+        });
+    }
+
+    // NOTE: From this point, the service worker client starts to use its active service worker's containing service
+    //       worker registration.
+    reply(ServiceWorkerControllerMatch {
+        .active_worker = *descriptor_of(active_worker.id),
+        .registration = snapshot_of(*registration),
+        .handles_fetch_events = active_worker.set_of_event_types_to_handle.contains_slow("fetch"sv),
+    });
+}
+
+bool ServiceWorkerRegistry::has_reserved_client_of_navigation(NavigationLoader const& navigation, Web::HTML::EnvironmentId const& reserved_client_id)
+{
+    return any_of(live_registries(), [&](ServiceWorkerRegistry* registry) {
+        return any_of(registry->m_controlled_clients, [&](ControlledClient const& client) {
+            return client.id == reserved_client_id && client.reserving_navigation == &navigation;
+        });
+    });
+}
+
+Optional<ServiceWorkerDescriptor> ServiceWorkerRegistry::reserved_client_became_window(NavigationLoader const& navigation, Web::HTML::EnvironmentId const& reserved_client_id, Web::HTML::EnvironmentId const& window_id)
+{
+    for (auto* registry : live_registries()) {
+        for (auto& client : registry->m_controlled_clients) {
+            if (client.id != reserved_client_id || client.reserving_navigation != &navigation)
+                continue;
+
+            // https://html.spec.whatwg.org/multipage/nav-history-apis.html#set-up-a-window-environment-settings-object
+            // 4.1. Set settings object's id to reservedEnvironment's id, target browsing context to reservedEnvironment's
+            //      target browsing context, and active service worker to reservedEnvironment's active service worker.
+            // NB: A navigation that reuses the initial about:blank document's window keeps that window's id.
+            client.id = window_id;
+            client.reserving_navigation = nullptr;
+            return registry->descriptor_of(client.active_service_worker);
+        }
+    }
+    return {};
+}
+
+void ServiceWorkerRegistry::navigation_loader_will_be_destroyed(NavigationLoader const& navigation)
+{
+    for (auto* registry : live_registries())
+        registry->forget_reserved_clients_of(navigation);
+}
+
+// NB: A reserved client that no window took over is discarded with its navigation.
+void ServiceWorkerRegistry::forget_reserved_clients_of(NavigationLoader const& navigation)
+{
+    Vector<Web::HTML::EnvironmentId> reserved_clients;
+    for (auto const& client : m_controlled_clients) {
+        if (client.reserving_navigation == &navigation)
+            reserved_clients.append(client.id);
+    }
+    for (auto const& reserved_client : reserved_clients)
+        handle_service_worker_client_unload(reserved_client);
 }
 
 Optional<ServiceWorkerRegistry::Partition> ServiceWorkerRegistry::partition_of(CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor)
@@ -879,8 +1134,9 @@ void ServiceWorkerRegistry::try_activate(Registration& registration)
     //    - registration's active worker is null.
     //    - The result of running Service Worker Has No Pending Events with registration's active worker is true, and
     //      no service worker client is using registration or registration's waiting worker's skip waiting flag is set.
-    // NB: No service worker client uses a registration yet, as none is controlled.
-    if (!registration.active_worker.has_value() || service_worker_has_no_pending_events(registration.active_worker))
+    auto const& waiting_worker = **m_service_workers.get(*registration.waiting_worker);
+    if (!registration.active_worker.has_value()
+        || (service_worker_has_no_pending_events(registration.active_worker) && (!any_service_worker_client_is_using(registration) || waiting_worker.skip_waiting_flag)))
         activate(registration);
 }
 
@@ -910,8 +1166,6 @@ void ServiceWorkerRegistry::activate(Registration& registration)
 
     // 4. Run the Update Registration State algorithm passing registration, "waiting" and null as the arguments.
     update_registration_state(registration, ServiceWorkerRegistrationSlot::Waiting, {});
-    if (previous_active_worker.has_value())
-        forget_service_worker_if_unused(*previous_active_worker);
 
     // 5. Run the Update Worker State algorithm passing registration's active worker and "activating" as the arguments.
     // NOTE: Once an active worker is activating, neither a runtime script error nor a force termination of the active
@@ -938,9 +1192,19 @@ void ServiceWorkerRegistry::activate(Registration& registration)
     });
 
     // 8. For each service worker client client who is using registration:
-    //    1. Set client's active worker to registration's active worker.
-    //    2. Invoke Notify Controller Change algorithm with client as the argument.
-    // NB: No service worker client uses a registration yet, as none is controlled.
+    auto active_worker_descriptor = *descriptor_of(active_worker.id);
+    for (auto& client : m_controlled_clients) {
+        if (!is_using(client, registration))
+            continue;
+
+        // 1. Set client's active worker to registration's active worker.
+        client.active_service_worker = active_worker.id;
+
+        // 2. Invoke Notify Controller Change algorithm with client as the argument.
+        notify_controller_change(client.id, active_worker_descriptor);
+    }
+    if (previous_active_worker.has_value())
+        forget_service_worker_if_unused(*previous_active_worker);
 
     // 9. Let activeWorker be registration's active worker.
     // 10. If the result of running the Should Skip Event algorithm with activeWorker and "activate" is false, then:
@@ -1431,6 +1695,84 @@ void ServiceWorkerRegistry::navigation_preload(ServiceWorkerClientEnvironment co
 }
 
 // https://w3c.github.io/ServiceWorker/#clients-matchall
+// https://w3c.github.io/ServiceWorker/#clients-claim
+void ServiceWorkerRegistry::service_worker_did_request_claim(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker)
+        return;
+    auto worker_id = worker->id;
+    auto* registration = registration_by_id(worker->registration_id);
+
+    // 1. If the service worker is not an active worker, return a promise rejected with an "InvalidStateError"
+    //    DOMException.
+    // NB: The worker's process checks this before it asks, and the worker may have stopped being one since.
+    if (!registration || registration->active_worker != worker_id) {
+        worker->process->async_service_worker_claim_finished(request_id, false);
+        return;
+    }
+
+    // 3. Run the following substeps in parallel:
+    //    1. For each service worker client client where the result of running obtain a storage key given client equals
+    //       the service worker's containing service worker registration's storage key:
+    // AD-HOC: Only the clients in the partition of the worker's registration are clients of the worker.
+    Vector<Web::HTML::EnvironmentId> clients_to_claim;
+    for_each_hosted_client([&](HostedClient const& client) {
+        if (partition_of(client.settings, client.has_cross_site_ancestor) != worker->partition)
+            return IterationDecision::Continue;
+
+        // 1. If client's execution ready flag is unset or client's discarded flag is set, continue.
+        // NB: A client has a canonical record once it is execution ready, and until it is discarded.
+
+        // 2. If client is not a secure context, continue.
+        // FIXME: Check whether the client is a secure context, rather than whether its origin is potentially trustworthy.
+        if (Web::SecureContexts::is_origin_potentially_trustworthy(client.settings.origin()) != Web::SecureContexts::Trustworthiness::PotentiallyTrustworthy)
+            return IterationDecision::Continue;
+
+        // 3. Let storage key be the result of running obtain a storage key given client.
+        // 4. Let registration be the result of running Match Service Worker Registration given storage key and client's
+        //    creation URL.
+        auto creation_url = client.settings.creation_url();
+        if (!creation_url.has_value())
+            return IterationDecision::Continue;
+        auto* matched_registration = match_service_worker_registration(worker->partition, *creation_url);
+
+        // 5. If registration is not the service worker's containing service worker registration, continue.
+        // NOTE: registration will be null if the service worker's containing service worker registration is
+        //       unregistered.
+        if (matched_registration != registration)
+            return IterationDecision::Continue;
+
+        // 6. If client's active service worker is not the service worker, then:
+        auto controlled_client = m_controlled_clients.find_if([&](ControlledClient const& controlled_client) { return controlled_client.id == client.settings.id(); });
+        if (controlled_client == m_controlled_clients.end() || controlled_client->active_service_worker != worker_id)
+            clients_to_claim.append(client.settings.id());
+        return IterationDecision::Continue;
+    });
+
+    auto descriptor = *descriptor_of(worker_id);
+    for (auto const& client : clients_to_claim) {
+        // 1. Invoke Handle Service Worker Client Unload with client as the argument.
+        handle_service_worker_client_unload(client);
+
+        // 2. Set client's active service worker to service worker.
+        m_controlled_clients.append(ControlledClient {
+            .id = client,
+            .active_service_worker = worker_id,
+            .reserving_navigation = nullptr,
+        });
+
+        // 3. Invoke Notify Controller Change algorithm with client as the argument.
+        notify_controller_change(client, descriptor);
+    }
+
+    //    2. Queue a task on promise's relevant settings object's responsible event loop using the DOM manipulation task
+    //       source to resolve promise with undefined.
+    // NB: The worker's process queues the task.
+    if (auto worker_record = m_service_workers.get(worker_id); worker_record.has_value() && (*worker_record)->process)
+        (*worker_record)->process->async_service_worker_claim_finished(request_id, true);
+}
+
 void ServiceWorkerRegistry::service_worker_did_request_clients(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type)
 {
     auto* worker = service_worker_of_agent(agent_id);
@@ -1455,12 +1797,11 @@ void ServiceWorkerRegistry::service_worker_did_request_clients(Web::HTML::Worker
     // AD-HOC: Only the clients in the partition of the worker's registration are clients of the worker.
     //     3. If options["includeUncontrolled"] is false, and if client's active service worker is not the associated
     //        service worker, continue.
-    // NB: No client is controlled yet, so without includeUncontrolled, matchAll() matches none. get() matches a client of
-    //     the id, controlled or not.
+    // NB: get() matches a client of the id, controlled or not.
     auto matches = [&](Web::HTML::EnvironmentId const& id, bool is_window, Optional<Web::HTML::AgentType> agent_type) {
         if (is_get)
             return id.to_string() == client_id;
-        if (!include_uncontrolled)
+        if (!include_uncontrolled && !any_of(m_controlled_clients, [&](ControlledClient const& client) { return client.id == id && client.active_service_worker == worker->id; }))
             return false;
         // 2.5.1. If options["type"] is "window" or "all", and client is not an environment settings object or is a
         //        window client, then:
@@ -1630,6 +1971,10 @@ void ServiceWorkerRegistry::forget_service_worker_if_unused(ServiceWorkerId work
     auto* registration = registration_by_id((*worker)->registration_id);
     if (registration && first_is_one_of(Optional<ServiceWorkerId> { worker_id }, registration->installing_worker, registration->waiting_worker, registration->active_worker))
         return;
+
+    // NB: A redundant worker stays the active service worker of the clients it controls, until they unload.
+    if (any_of(m_controlled_clients, [&](ControlledClient const& client) { return client.active_service_worker == worker_id; }))
+        return;
     m_service_workers.remove(worker_id);
 }
 
@@ -1677,8 +2022,8 @@ void ServiceWorkerRegistry::try_clear_registration(Registration& registration)
     //      registration's waiting worker is true.
     //    - registration's active worker is null or the result of running Service Worker Has No Pending Events with
     //      registration's active worker is true.
-    // NB: No service worker client uses a registration yet, as none is controlled.
-    if (!service_worker_has_no_pending_events(registration.installing_worker)
+    if (any_service_worker_client_is_using(registration)
+        || !service_worker_has_no_pending_events(registration.installing_worker)
         || !service_worker_has_no_pending_events(registration.waiting_worker)
         || !service_worker_has_no_pending_events(registration.active_worker))
         return;

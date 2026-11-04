@@ -268,6 +268,17 @@ void PageHost::page_did_request_service_worker_clients(Web::ServiceWorker::Servi
     m_client.async_did_request_service_worker_clients(request_id, client_id, is_get, include_uncontrolled, type);
 }
 
+bool PageHost::page_did_request_service_worker_match(Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::ServiceWorker::ServiceWorkerReservedClient const& reserved_client)
+{
+    m_client.async_did_request_service_worker_match(request_id, reserved_client);
+    return true;
+}
+
+void PageHost::page_did_request_service_worker_claim(Web::ServiceWorker::ServiceWorkerRequestId request_id)
+{
+    m_client.async_did_request_service_worker_claim(request_id);
+}
+
 void PageHost::did_change_service_worker_pending_events(bool has_pending_events)
 {
     m_client.async_did_change_service_worker_pending_events(has_pending_events);

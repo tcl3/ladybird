@@ -53,6 +53,9 @@ public:
 
     void set_service_worker(ServiceWorkerDescriptor service_worker) { m_service_worker = move(service_worker); }
     void set_registration(ServiceWorkerRegistrationSnapshot registration) { m_registration = move(registration); }
+
+    // https://w3c.github.io/ServiceWorker/#dfn-active-worker
+    bool is_active_worker() const { return m_registration.active_worker.has_value() && m_registration.active_worker->id == m_service_worker.id; }
     void service_worker_state_changed(ServiceWorkerDescriptor const&);
     void registration_state_changed(ServiceWorkerRegistrationSlot, Optional<ServiceWorkerDescriptor>);
     void prune_script_resource_map();

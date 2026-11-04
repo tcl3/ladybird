@@ -2,8 +2,8 @@ Harness status: OK
 
 Found 302 tests
 
-292 Pass
-10 Fail
+294 Pass
+8 Fail
 Pass	idl_test setup
 Pass	idl_test validation
 Pass	Partial interface Navigator: original interface defined
@@ -189,7 +189,7 @@ Pass	Clients interface: existence and properties of interface prototype object's
 Pass	Clients interface: operation get(DOMString)
 Pass	Clients interface: operation matchAll(optional ClientQueryOptions)
 Fail	Clients interface: operation openWindow(USVString)
-Fail	Clients interface: operation claim()
+Pass	Clients interface: operation claim()
 Pass	Clients must be primary interface of clients
 Pass	Stringification of clients
 Pass	Clients interface: clients must inherit property "get(DOMString)" with the proper type
@@ -198,7 +198,7 @@ Pass	Clients interface: clients must inherit property "matchAll(optional ClientQ
 Pass	Clients interface: calling matchAll(optional ClientQueryOptions) on clients with too few arguments must throw TypeError
 Fail	Clients interface: clients must inherit property "openWindow(USVString)" with the proper type
 Fail	Clients interface: calling openWindow(USVString) on clients with too few arguments must throw TypeError
-Fail	Clients interface: clients must inherit property "claim()" with the proper type
+Pass	Clients interface: clients must inherit property "claim()" with the proper type
 Pass	ExtendableEvent interface: existence and properties of interface object
 Pass	ExtendableEvent interface object length
 Pass	ExtendableEvent interface object name

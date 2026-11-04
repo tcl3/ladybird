@@ -14,14 +14,17 @@ use crate::bindings::interface::{Ref, cell_from_abi, cell_into_abi, realm_argume
 use crate::dom::document::DocumentVisibilityState;
 use crate::html::structured_serialize::cpp::OwnedSerializedTransferRecord;
 use crate::service_worker::client::{FrameType, ServiceWorkerClientSnapshot};
-use crate::service_worker::clients::{ClientType, Clients, service_worker_clients_matched};
+use crate::service_worker::clients::{
+    ClientType, Clients, service_worker_claim_finished, service_worker_clients_matched,
+};
 use crate::service_worker::navigation_preload_manager::navigation_preload_settled;
 use crate::service_worker::service_worker::{
     ServiceWorker, ServiceWorkerState, get_the_service_worker_object, service_worker_state_changed,
 };
 use crate::service_worker::service_worker_container::{
     ServiceWorkerContainer, ServiceWorkerJobResult, add_client_message, enable_client_message_queue,
-    service_worker_job_settled, service_worker_ready, service_worker_registration_lookup_finished,
+    notify_controller_change, service_worker_job_settled, service_worker_ready,
+    service_worker_registration_lookup_finished,
 };
 use crate::service_worker::service_worker_registration::get_the_service_worker_registration_object;
 use crate::service_worker::service_worker_registration::{
@@ -253,6 +256,18 @@ pub unsafe extern "C" fn web_rust_service_worker_message_to_client(
     );
 }
 
+/// The UI process changed the active service worker of the service worker client whose realm this is.
+///
+/// # Safety
+///
+/// The pointers must be the live VM and a live realm.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_notify_controller_change(vm: *mut c_void, realm: *mut c_void) {
+    // SAFETY: The caller passes the live VM and a live realm.
+    let (vm, realm) = unsafe { realm_arguments(vm, realm) };
+    notify_controller_change(vm, realm);
+}
+
 /// Enables the client message queue of the ServiceWorkerContainer whose service worker client's realm this is.
 ///
 /// # Safety
@@ -354,6 +369,19 @@ pub unsafe extern "C" fn web_rust_service_worker_clients_matched(
     let vm = unsafe { &*vm.cast::<Vm>() };
     let clients = clients.as_slice().iter().map(client_snapshot_from_abi).collect();
     service_worker_clients_matched(vm, request_id, clients);
+}
+
+/// The UI process ran the substeps of a claim() of this process's service worker, or found that the worker is no longer
+/// an active worker.
+///
+/// # Safety
+///
+/// `vm` must be the live VM.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_claim_finished(vm: *mut c_void, request_id: u64, succeeded: bool) {
+    // SAFETY: The caller passes the live VM.
+    let vm = unsafe { &*vm.cast::<Vm>() };
+    service_worker_claim_finished(vm, request_id, succeeded);
 }
 
 /// The Clients object of the service worker global scope whose realm this is.

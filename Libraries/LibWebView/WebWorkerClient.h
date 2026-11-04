@@ -89,6 +89,8 @@ public:
     virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId, u64 request_id, URL::URL creation_url) override;
     virtual void did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) override;
     virtual void did_post_message_to_service_worker_client(String client_id, Web::HTML::SerializedTransferRecord message) override;
+    virtual void did_request_service_worker_match(u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client) override;
+    virtual void did_request_service_worker_claim(u64 request_id) override;
     virtual void did_change_service_worker_pending_events(bool has_pending_events) override;
     virtual void did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts) override;
     virtual void did_respond_to_service_worker_heartbeat(u64 heartbeat_id) override;

@@ -36,6 +36,16 @@ URL::Origin const& CanonicalWindowEnvironmentSettingsObject::origin() const
     return m_window.associated_document().origin();
 }
 
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#set-up-a-window-environment-settings-object
+Optional<URL::URL> CanonicalWindowEnvironmentSettingsObject::creation_url() const
+{
+    // 6. Set settings object's creation URL to creationURL, [...]
+    // NB: creationURL is the URL its associated Document was created with.
+    if (!m_window.has_associated_document())
+        return {};
+    return m_window.associated_document().creation_url();
+}
+
 Optional<URL::Origin> CanonicalWindowEnvironmentSettingsObject::top_level_origin() const
 {
     // NB: The top-level origin of a window's settings object is that of the top-level document of its associated

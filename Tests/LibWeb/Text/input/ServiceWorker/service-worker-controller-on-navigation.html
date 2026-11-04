@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A document whose navigation matches a registration with an active worker is controlled by that worker.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("message", async event => {
+                const controlled = await self.clients.matchAll();
+                const all = await self.clients.matchAll({ includeUncontrolled: true });
+                event.source.postMessage({ controlled: controlled.map(client => client.url), all: all.length });
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html><p>In scope</p>",
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        println(`Controller of the page outside the scope: ${navigator.serviceWorker.controller}`);
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+
+        const frameWindow = frame.contentWindow;
+        const controller = frameWindow.navigator.serviceWorker.controller;
+        println(`The frame's controller is a ServiceWorker of the frame: ${controller instanceof frameWindow.ServiceWorker}`);
+        println(`Its script URL is the worker's: ${controller.scriptURL === script}`);
+        println(`Its state: ${controller.state}`);
+        println(`It is not the page's object for the worker: ${controller !== registration.active}`);
+        const frameRegistration = await frameWindow.navigator.serviceWorker.getRegistration();
+        println(`The frame's registration's active worker is its controller: ${frameRegistration.active === controller}`);
+
+        const reply = await new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage("matchAll");
+        });
+        println(`Controlled clients the worker sees: ${reply.controlled.length}, the frame: ${reply.controlled[0] === frameURL}`);
+        println(`Clients including uncontrolled ones: ${reply.all}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

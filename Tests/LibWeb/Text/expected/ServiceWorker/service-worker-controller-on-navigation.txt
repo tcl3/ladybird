@@ -1,0 +1,9 @@
+Controller of the page outside the scope: null
+The frame's controller is a ServiceWorker of the frame: true
+Its script URL is the worker's: true
+Its state: activated
+It is not the page's object for the worker: true
+The frame's registration's active worker is its controller: true
+Controlled clients the worker sees: 1, the frame: true
+Clients including uncontrolled ones: 2
+unregister(): true

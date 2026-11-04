@@ -46,6 +46,21 @@ struct Web::ServiceWorker::ServiceWorkerJobRequest {
 }
 
 [ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerReservedClient {
+    Web::HTML::EnvironmentId id;
+    URL::URL creation_url;
+    URL::URL url;
+    Optional<Web::HTML::CrossProcessId> navigable_id;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerControllerMatch {
+    Web::ServiceWorker::ServiceWorkerDescriptor active_worker;
+    Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration;
+    bool handles_fetch_events;
+}
+
+[ExistingCpp]
 struct Web::ServiceWorker::ServiceWorkerScriptFetchParameters {
     Web::HTML::SerializedEnvironmentSettingsObject job_client;
     bool force_bypass_cache;

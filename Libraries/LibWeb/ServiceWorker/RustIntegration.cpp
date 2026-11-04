@@ -79,6 +79,7 @@ void web_service_worker_post_message_to_client(void* realm, ReadonlyBytes client
 void* web_service_worker_container_of_realm(void* realm);
 void web_service_worker_request_navigation_preload(void* realm, u64 request_id, u64 registration_id, u8 operation, ReadonlyBytes header_value);
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type);
+bool web_service_worker_claim(void* realm, u64 request_id);
 
 // Defined on the Rust side.
 void* web_rust_service_worker_create_container(JSVM*, void* realm);
@@ -90,11 +91,13 @@ void web_rust_service_worker_update_found(JSVM*, u64 registration_id);
 void web_rust_service_worker_ready(JSVM*, u64 request_id, FfiServiceWorkerRegistrationSnapshot const*);
 void web_rust_service_worker_message_to_client(JSVM*, void* realm, FfiServiceWorkerDescriptor const* source, ReadonlyBytes origin, HTML::SerializedTransferRecord* record);
 void web_rust_service_worker_enable_client_message_queue(JSVM*, void* realm);
+void web_rust_service_worker_notify_controller_change(JSVM*, void* realm);
 u64 web_rust_service_worker_dispatch_message_event(JSVM*, void* realm, DOM::EventTarget* global, FfiServiceWorkerClientSnapshot const*, FfiServiceWorkerDescriptor const*, ReadonlyBytes origin, HTML::SerializedTransferRecord* record, void* ctx, void (*on_pending_events_changed)(void*, bool));
 void web_rust_service_worker_time_out_extended_event(JSVM*, u64 event_id);
 u64 web_rust_service_worker_id(ServiceWorker const*);
 void web_rust_service_worker_navigation_preload_settled(JSVM*, u64 request_id, bool succeeded, bool enabled, ReadonlyBytes header_value);
 void web_rust_service_worker_clients_matched(JSVM*, u64 request_id, ReadonlySpan<FfiServiceWorkerClientSnapshot>);
+void web_rust_service_worker_claim_finished(JSVM*, u64 request_id, bool succeeded);
 void* web_rust_service_worker_create_clients(JSVM*, void* realm);
 void* web_rust_service_worker_registration_object(JSVM*, void* realm, FfiServiceWorkerRegistrationSnapshot const*);
 void* web_rust_service_worker_service_worker_object(JSVM*, void* realm, FfiServiceWorkerDescriptor const*);
@@ -276,6 +279,25 @@ void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyByt
     Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_clients(request_id, String::from_utf8_without_validation(client_id), is_get, include_uncontrolled, static_cast<Bindings::ClientType>(type));
 }
 
+bool web_service_worker_claim(void* realm, u64 request_id)
+{
+    auto* global_scope = Bindings::impl_from<ServiceWorkerGlobalScope>(&realm_from_abi(realm).global_object());
+    VERIFY(global_scope);
+
+    // https://w3c.github.io/ServiceWorker/#clients-claim
+    // 1. If the service worker is not an active worker, return a promise rejected with an "InvalidStateError"
+    //    DOMException.
+    if (!global_scope->is_active_worker())
+        return false;
+    Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_claim(request_id);
+    return true;
+}
+
+void service_worker_claim_finished(ServiceWorkerRequestId request_id, bool succeeded)
+{
+    web_rust_service_worker_claim_finished(JS::HostABI::vm_to_abi(JS::VM::the()), request_id, succeeded);
+}
+
 void* web_service_worker_container_of_realm(void* realm)
 {
     auto& global = realm_from_abi(realm).global_object();
@@ -398,6 +420,22 @@ void service_worker_message_to_client(HTML::EnvironmentId const& client_id, Serv
     auto ffi_source = descriptor_to_ffi(source, script_url);
     auto serialized_origin = origin.serialize();
     web_rust_service_worker_message_to_client(JS::HostABI::vm_to_abi(JS::VM::the()), &settings->realm(), &ffi_source, serialized_origin.bytes(), new HTML::SerializedTransferRecord(move(message)));
+}
+
+void service_worker_controller_changed(HTML::EnvironmentId const& client_id, ServiceWorkerDescriptor controller)
+{
+    auto settings = HTML::environment_settings_object_with_id(client_id);
+    if (!settings)
+        return;
+
+    // https://w3c.github.io/ServiceWorker/#activation-algorithm
+    // 8.1. Set client's active worker to registration's active worker.
+    // https://w3c.github.io/ServiceWorker/#clients-claim
+    // 3.1.6.2. Set client's active service worker to service worker.
+    settings->active_service_worker = move(controller);
+
+    // 8.2. Invoke Notify Controller Change algorithm with client as the argument.
+    web_rust_service_worker_notify_controller_change(JS::HostABI::vm_to_abi(settings->realm().vm()), &settings->realm());
 }
 
 void enable_client_message_queue(HTML::EnvironmentSettingsObject& settings)

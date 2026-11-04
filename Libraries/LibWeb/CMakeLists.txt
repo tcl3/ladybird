@@ -764,6 +764,7 @@ set(SOURCES
     ServiceWorker/Cache.cpp
     ServiceWorker/CacheStorage.cpp
     ServiceWorker/EventNames.cpp
+    ServiceWorker/HandleFetch.cpp
     ServiceWorker/NameToCacheMap.cpp
     ServiceWorker/RustIntegration.cpp
     ServiceWorker/ServiceWorkerGlobalScope.cpp

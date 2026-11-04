@@ -390,6 +390,33 @@ void WebWorkerClient::did_provide_service_worker_client_snapshots(u64 gather_id,
     session->service_worker_registry->client_did_provide_service_worker_client_snapshots(gather_id, ServiceWorkerClientConnection { *this }, move(snapshots));
 }
 
+void WebWorkerClient::did_request_service_worker_match(u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client)
+{
+    auto session = m_session.strong_ref();
+    if (!session)
+        return;
+
+    // NB: A worker's process matches a registration for the reserved client of its worker's script fetch, which is the
+    //     worker's own environment.
+    auto settings = hosted_environment(reserved_client.id);
+    if (!settings.has_value() || reserved_client.navigable_id.has_value()) {
+        did_misbehave("did_request_service_worker_match"sv, "a worker named a reserved client that is not its own environment"sv);
+        return;
+    }
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->match_reserved_client_of_worker(client_environment, request_id, reserved_client);
+}
+
+void WebWorkerClient::did_request_service_worker_claim(u64 request_id)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_request_service_worker_claim"sv))
+        registry->service_worker_did_request_claim(m_agent_id, request_id);
+}
+
 void WebWorkerClient::did_change_service_worker_pending_events(bool has_pending_events)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_change_service_worker_pending_events"sv))

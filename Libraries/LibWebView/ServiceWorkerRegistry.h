@@ -72,6 +72,20 @@ public:
 
     static void environment_was_discarded(Web::HTML::EnvironmentId const&);
 
+    // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+    // Handle Fetch's steps 9.5 to 9.8, for the reserved client of a navigation or of a worker's script fetch.
+    void match_reserved_client_of_navigation(ServiceWorkerClientConnection const&, CanonicalNavigable const&, NavigationLoader const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&);
+    void match_reserved_client_of_worker(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&);
+
+    // Whether a registry recorded the reserved client as the one the navigation's fetch matched a registration for,
+    // so that the navigation's window may take the reserved client's id.
+    static bool has_reserved_client_of_navigation(NavigationLoader const&, Web::HTML::EnvironmentId const&);
+
+    // The window that the navigation created took over its reserved client. Returns the window's active service worker.
+    static Optional<Web::ServiceWorker::ServiceWorkerDescriptor> reserved_client_became_window(NavigationLoader const&, Web::HTML::EnvironmentId const& reserved_client_id, Web::HTML::EnvironmentId const& window_id);
+
+    static void navigation_loader_will_be_destroyed(NavigationLoader const&);
+
     void schedule_job(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerJobRequest);
     void get_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL client_url);
     void get_registrations(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId);
@@ -89,6 +103,7 @@ public:
     void terminate_service_worker_for_testing(Web::ServiceWorker::ServiceWorkerId, bool kill_process);
 
     void navigation_preload(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerRegistrationId, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation, ByteString header_value);
+    void service_worker_did_request_claim(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
     void service_worker_did_request_clients(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType);
     void client_did_provide_service_worker_client_snapshots(u64 gather_id, ServiceWorkerClientConnection const& provider, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot>);
 
@@ -175,6 +190,18 @@ private:
         Optional<u64> unanswered_heartbeat;
     };
 
+    // https://w3c.github.io/ServiceWorker/#dfn-service-worker-client
+    // A service worker client whose active service worker is not null, which is said to be using the active service
+    // worker's containing service worker registration.
+    struct ControlledClient {
+        Web::HTML::EnvironmentId id;
+        Web::ServiceWorker::ServiceWorkerId active_service_worker { 0 };
+
+        // NB: The navigation whose reserved client this is, until the window the navigation creates takes the reserved
+        //     client's id. Only compared, never dereferenced.
+        NavigationLoader const* reserving_navigation { nullptr };
+    };
+
     // The timer that stops the running workers of a partition whose last client went away.
     struct PartitionTermination {
         Partition partition;
@@ -253,6 +280,24 @@ private:
         URL::URL creation_url;
     };
 
+    void match_reserved_client(ServiceWorkerClientConnection const&, Optional<Partition> const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&, NavigationLoader const* reserving_navigation);
+    bool is_using(ControlledClient const&, Registration const&) const;
+    bool any_service_worker_client_is_using(Registration const&) const;
+    void handle_service_worker_client_unload(Web::HTML::EnvironmentId const&);
+    void forget_reserved_clients_of(NavigationLoader const&);
+    void notify_controller_change(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerDescriptor const&);
+
+    struct HostedClient {
+        ServiceWorkerClientConnection connection;
+        CanonicalEnvironmentSettingsObject const& settings;
+        bool has_cross_site_ancestor { false };
+        bool is_window { false };
+        Optional<Web::HTML::AgentType> agent_type;
+    };
+    // Every window and every dedicated or shared worker environment of this registry's session.
+    void for_each_hosted_client(Function<IterationDecision(HostedClient const&)> const&) const;
+    Optional<ServiceWorkerClientConnection> connection_of_client(Web::HTML::EnvironmentId const&) const;
+
     void run_job(RegistrationKey const& job_queue_key);
     void finish_job(RegistrationKey const& job_queue_key, Job&);
     Job* job_in_progress_of(ServiceWorkerRecord const&);
@@ -324,6 +369,8 @@ private:
     HashMap<RegistrationKey, JobQueue, RegistrationKeyTraits> m_scope_to_job_queue_map;
 
     Vector<ReadyRequest> m_ready_requests;
+
+    Vector<ControlledClient> m_controlled_clients;
 
     Web::ServiceWorker::ServiceWorkerRegistrationId m_next_registration_id { 0 };
     Web::ServiceWorker::ServiceWorkerId m_next_service_worker_id { 0 };

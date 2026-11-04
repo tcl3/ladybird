@@ -1040,6 +1040,9 @@ public:
     virtual void page_did_post_message_to_service_worker_client([[maybe_unused]] String client_id, [[maybe_unused]] HTML::SerializedTransferRecord message) { }
     virtual void page_did_request_navigation_preload([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRegistrationId registration_id, [[maybe_unused]] ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, [[maybe_unused]] ByteString header_value) { }
     virtual void page_did_request_service_worker_clients([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] String client_id, [[maybe_unused]] bool is_get, [[maybe_unused]] bool include_uncontrolled, [[maybe_unused]] Bindings::ClientType type) { }
+    // Returns whether the UI process was asked, and so will answer.
+    virtual bool page_did_request_service_worker_match([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] ServiceWorker::ServiceWorkerReservedClient const& reserved_client) { return false; }
+    virtual void page_did_request_service_worker_claim([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }
 
     struct StartedWorkerAgent {
         HTML::WorkerAgentId agent_id { 0 };

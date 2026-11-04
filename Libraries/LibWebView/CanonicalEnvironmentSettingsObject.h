@@ -28,6 +28,9 @@ public:
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-origin
     virtual URL::Origin const& origin() const = 0;
 
+    // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-creation-url
+    virtual Optional<URL::URL> creation_url() const = 0;
+
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-environment-top-level-creation-url
     virtual Optional<URL::URL> top_level_creation_url() const = 0;
 
@@ -52,6 +55,7 @@ public:
     CanonicalWindowEnvironmentSettingsObject(CanonicalWindow&, Web::HTML::EnvironmentId id, URL::URL top_level_creation_url);
 
     virtual URL::Origin const& origin() const override;
+    virtual Optional<URL::URL> creation_url() const override;
     virtual Optional<URL::URL> top_level_creation_url() const override { return m_top_level_creation_url; }
     virtual Optional<URL::Origin> top_level_origin() const override;
 
@@ -66,7 +70,11 @@ public:
     CanonicalWorkerEnvironmentSettingsObject(URL::Origin, Optional<URL::Origin> top_level_origin, bool has_cross_site_ancestor, Web::HTML::EnvironmentId id);
 
     virtual URL::Origin const& origin() const override { return m_origin; }
+    virtual Optional<URL::URL> creation_url() const override { return m_creation_url; }
     virtual Optional<URL::URL> top_level_creation_url() const override { return {}; }
+
+    // NB: The URL of the worker's script, which the worker's settings object is created with.
+    void set_creation_url(URL::URL url) { m_creation_url = move(url); }
     virtual Optional<URL::Origin> top_level_origin() const override { return m_top_level_origin; }
 
     // https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-has-cross-site-ancestor
@@ -74,6 +82,7 @@ public:
 
 private:
     URL::Origin m_origin;
+    Optional<URL::URL> m_creation_url;
     Optional<URL::Origin> m_top_level_origin;
     bool m_has_cross_site_ancestor { false };
 };

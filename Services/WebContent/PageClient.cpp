@@ -1779,6 +1779,12 @@ void PageClient::page_did_request_navigation_preload(Web::HTML::EnvironmentId co
     client().async_did_request_navigation_preload(m_id, environment_id, request_id, registration_id, operation, header_value);
 }
 
+bool PageClient::page_did_request_service_worker_match(Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::ServiceWorker::ServiceWorkerReservedClient const& reserved_client)
+{
+    client().async_did_request_service_worker_match(m_id, request_id, reserved_client);
+    return true;
+}
+
 void PageClient::page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, Web::ServiceWorker::ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
 {
     client().async_did_post_message_to_service_worker(m_id, source, service_worker_id, move(message));

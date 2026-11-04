@@ -188,6 +188,7 @@ static Variant<Infrastructure::ReservedClientContext::Environment, Infrastructur
         return Context::SettingsObject {
             .origin = settings_object->origin(),
             .has_cross_site_ancestor = settings_object->has_cross_site_ancestor() ? Infrastructure::HasCrossSiteAncestor::Yes : Infrastructure::HasCrossSiteAncestor::No,
+            .address = settings_object->address(),
         };
     }
 
@@ -199,6 +200,8 @@ static Variant<Infrastructure::ReservedClientContext::Environment, Infrastructur
 
     auto const* document = target_browsing_context->active_document();
     auto navigable = document ? document->navigable() : nullptr;
+    if (navigable)
+        environment.navigable_id = navigable->id();
     if (auto parent = navigable ? navigable->parent() : nullptr) {
         environment.parent = Context::Parent {
             .active_document_origin = parent->active_document_origin(),
@@ -213,6 +216,7 @@ NonnullRefPtr<Infrastructure::ReservedClientContextSnapshot const> snapshot_rese
     using Context = Infrastructure::ReservedClientContext;
 
     return make_ref_counted<Infrastructure::ReservedClientContextSnapshot>(Context {
+        .id = reserved_client.id,
         .creation_url = reserved_client.creation_url,
         .top_level_creation_url = reserved_client.top_level_creation_url,
         .top_level_origin = reserved_client.top_level_origin,

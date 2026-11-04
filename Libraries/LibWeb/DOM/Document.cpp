@@ -467,6 +467,21 @@ WebIDL::ExceptionOr<GC::Ref<Document>> Document::create_and_initialize(Type type
     if (browsing_context->active_document()->is_initial_about_blank()
         && browsing_context->active_document()->origin().is_same_origin_domain(navigation_params.origin)) {
         window = browsing_context->active_window();
+
+        // https://w3c.github.io/ServiceWorker/#control-and-use-window-client
+        // NOTE: For an initial replacement navigation, the initial window client that was created when the browsing
+        //       context was created is reused, but the active service worker is determined by the same behavior as
+        //       above.
+        // NB: The UI process gives navigationParams's reserved environment the window's active service worker.
+        auto& settings_object = HTML::relevant_settings_object(*window);
+        if (navigation_params.reserved_environment)
+            settings_object.active_service_worker = navigation_params.reserved_environment->active_service_worker;
+
+        // AD-HOC: The reused window client is the client of the document that replaces the initial about:blank one, so
+        //         its creation URL is the URL that document is created with, which Client.url exposes. This matches
+        //         other engines.
+        if (creation_url.has_value())
+            settings_object.creation_url = *creation_url;
     }
     // 7. Otherwise:
     else {

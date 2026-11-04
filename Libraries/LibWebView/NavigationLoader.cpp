@@ -26,6 +26,7 @@
 #include <LibWebView/NavigationLoader.h>
 #include <LibWebView/RequestServerManager.h>
 #include <LibWebView/RequestServerSiteBindings.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 
 namespace WebView {
 
@@ -87,6 +88,16 @@ Optional<NavigationLoader::ResponseDocument> NavigationLoader::response_document
     // 7.2. Let requestsOAC be true if oacHeader is not null and oacHeader[0] is the boolean true; otherwise false.
     auto requests_oac = oac_header.has_value() && oac_header->bare_item.has<bool>() && oac_header->bare_item.get<bool>();
 
+    // https://html.spec.whatwg.org/multipage/nav-history-apis.html#set-up-a-window-environment-settings-object
+    // 4.1. Set settings object's id to reservedEnvironment's id, [...]
+    // NB: The UI process generates the window's id, unless the navigation's fetch matched a service worker registration
+    //     for the reserved environment, whose id the registry then vouches for. The service worker saw that id as
+    //     the fetch event's resulting client id.
+    Optional<Web::HTML::EnvironmentId> environment_id;
+    if (auto const& reserved_environment = fetched_navigation_params.reserved_environment; reserved_environment.has_value()
+        && ServiceWorkerRegistry::has_reserved_client_of_navigation(*this, reserved_environment->id))
+        environment_id = reserved_environment->id;
+
     return ResponseDocument {
         .is_inline_content = false,
         .coop_enforcement_result = fetched_navigation_params.coop_enforcement_result,
@@ -100,7 +111,7 @@ Optional<NavigationLoader::ResponseDocument> NavigationLoader::response_document
         .opener_policy = fetched_navigation_params.opener_policy,
         .embedder_policy = fetched_navigation_params.policy_container.embedder_policy,
         .final_sandboxing_flag_set = fetched_navigation_params.final_sandboxing_flag_set,
-        .environment_id = {},
+        .environment_id = move(environment_id),
         .document_id = {},
         .permissions_policy = fetched_navigation_params.permissions_policy,
         .requests_oac = requests_oac,
@@ -118,6 +129,7 @@ static Web::HTML::NavigationResponseBodyHandle* response_body_handle(Web::HTML::
 NavigationLoader::~NavigationLoader()
 {
     release_response_body();
+    ServiceWorkerRegistry::navigation_loader_will_be_destroyed(*this);
 }
 
 void NavigationLoader::did_finish_navigation_params_creation(Web::HTML::NavigationPopulationResult result)
@@ -491,9 +503,11 @@ void NavigationLoader::set_document(CanonicalDocument const& document, Canonical
             .creation_url = m_request.history_entry.url,
             .top_level_creation_url = {},
             .top_level_origin = {},
+            .active_service_worker = {},
         };
     }
-    navigation_params->reserved_environment->id = window.relevant_settings_object().id();
+    auto reserved_environment_id = exchange(navigation_params->reserved_environment->id, window.relevant_settings_object().id());
+    navigation_params->reserved_environment->active_service_worker = ServiceWorkerRegistry::reserved_client_became_window(*this, reserved_environment_id, window.relevant_settings_object().id());
     navigation_params->agent_cluster_id = window.agent().agent_cluster_id();
     navigation_params->agent_cluster_is_origin_keyed = window.agent().agent_cluster_is_origin_keyed();
     navigation_params->agent_cluster_cross_origin_isolation_mode = window.agent().agent_cluster_cross_origin_isolation_mode();

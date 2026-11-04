@@ -34,6 +34,7 @@ WEB_API void service_worker_state_changed(ServiceWorkerDescriptor);
 WEB_API void service_worker_update_found(ServiceWorkerRegistrationId);
 WEB_API void service_worker_ready(ServiceWorkerRequestId, ServiceWorkerRegistrationSnapshot);
 WEB_API void service_worker_message_to_client(HTML::EnvironmentId const& client_id, ServiceWorkerDescriptor source, URL::Origin const&, HTML::SerializedTransferRecord);
+WEB_API void service_worker_controller_changed(HTML::EnvironmentId const& client_id, ServiceWorkerDescriptor controller);
 WEB_API void enable_client_message_queue(HTML::EnvironmentSettingsObject&);
 WEB_API GC::Ref<ServiceWorker> service_worker_object(JS::Realm&, ServiceWorkerDescriptor const&);
 WEB_API GC::Ref<ServiceWorkerRegistration> service_worker_registration_object(JS::Realm&, ServiceWorkerRegistrationSnapshot const&);
@@ -48,6 +49,7 @@ WEB_API ServiceWorkerId service_worker_id(ServiceWorker const&);
 
 WEB_API GC::Ref<Clients> create_clients(JS::Realm&);
 WEB_API void service_worker_clients_matched(ServiceWorkerRequestId, Vector<ServiceWorkerClientSnapshot> const&);
+WEB_API void service_worker_claim_finished(ServiceWorkerRequestId, bool succeeded);
 WEB_API Vector<ServiceWorkerClientSnapshot> service_worker_client_snapshots(Vector<HTML::EnvironmentId> const&);
 WEB_API void navigation_preload_settled(ServiceWorkerRequestId, Optional<ServiceWorkerNavigationPreloadState> const&);
 

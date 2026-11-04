@@ -1,0 +1,6 @@
+The frame's controller before the worker claims: null
+controllerchange fired, and the frame's controller is the worker: true
+The page outside the scope stays uncontrolled: null
+claim() during install: InvalidStateError
+claim() during activate: resolved
+unregister(): true

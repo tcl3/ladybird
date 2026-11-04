@@ -5,7 +5,7 @@ interface Clients {
     [NewObject] Promise<(Client or undefined)> get(DOMString id);
     [NewObject] Promise<FrozenArray<Client>> matchAll(optional ClientQueryOptions options = {});
     [FIXME, NewObject] Promise<WindowClient?> openWindow(USVString url);
-    [FIXME, NewObject] Promise<undefined> claim();
+    [NewObject] Promise<undefined> claim();
 };
 
 dictionary ClientQueryOptions {
