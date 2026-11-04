@@ -1,0 +1,3 @@
+Navigation preload: enabled true, header value hello
+The frame shows the preload response, whose request had: Service-Worker-Navigation-Preload: hello
+unregister(): true

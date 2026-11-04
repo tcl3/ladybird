@@ -24,6 +24,7 @@ struct Web::ServiceWorker::FetchEventRequest {
     bool history_navigation;
     Optional<String> client_id;
     String replaces_client_id;
+    Optional<ByteString> navigation_preload_header_value;
 }
 
 [ExistingCpp]

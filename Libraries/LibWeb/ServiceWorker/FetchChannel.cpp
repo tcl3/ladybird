@@ -386,10 +386,11 @@ static FetchEventRequest describe_request(Fetch::Infrastructure::Request const& 
         .history_navigation = request.history_navigation(),
         .client_id = move(client_id),
         .replaces_client_id = request.replaces_client_id().to_string(),
+        .navigation_preload_header_value = {},
     };
 }
 
-void dispatch_fetch_event(Page& page, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, Fetch::Infrastructure::Request const& request, HandleFetchCallback on_complete)
+void dispatch_fetch_event(Page& page, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, Fetch::Infrastructure::Request const& request, Optional<ByteString> navigation_preload_header_value, HandleFetchCallback on_complete)
 {
     close_channels_of_departed_clients();
 
@@ -406,6 +407,7 @@ void dispatch_fetch_event(Page& page, HTML::EnvironmentId const& client, Service
                                                  .body_transport = {},
                                              });
     auto request_descriptor = describe_request(request);
+    request_descriptor.navigation_preload_header_value = move(navigation_preload_header_value);
 
     auto entry = state.channels.find_if([&](ChannelEntry const& entry) {
         return entry.client == client && entry.service_worker == active_worker.id;

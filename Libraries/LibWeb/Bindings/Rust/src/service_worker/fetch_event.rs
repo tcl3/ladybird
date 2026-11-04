@@ -20,7 +20,7 @@ use crate::bindings::interface::{
     with_temporary_execution_context_and_callbacks,
 };
 use crate::bindings::promise::{
-    WebIdlPromise, create_promise, create_resolved_promise, promise_realm, react_to_promise,
+    WebIdlPromise, create_promise, create_resolved_promise, promise_from_abi, promise_realm, react_to_promise,
     reject_promise_with_exception, resolve_promise,
 };
 use crate::bindings::{CallContext, Exception, WebIdlResult};
@@ -381,11 +381,13 @@ impl FetchEvent {
     }
 }
 
-/// The ids by which a fetch event names its clients.
-pub(crate) struct FetchEventClientIds {
+/// What a fetch event is initialized with besides its request: the ids by which it names its clients, and its
+/// preloadResponse.
+pub(crate) struct FetchEventFields {
     pub(crate) client_id: Utf16String,
     pub(crate) resulting_client_id: Utf16String,
     pub(crate) replaces_client_id: Utf16String,
+    pub(crate) preload_response: Option<WebIdlPromise>,
 }
 
 // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
@@ -394,7 +396,7 @@ fn dispatch_fetch_event(
     realm: Gc<Realm>,
     global: CppEventTarget,
     request: CppInterface,
-    client_ids: FetchEventClientIds,
+    fields: FetchEventFields,
     ctx: *mut c_void,
     on_settled: OnFetchEventSettled,
 ) -> Option<u64> {
@@ -406,7 +408,8 @@ fn dispatch_fetch_event(
         // 17.4.4. Initialize e's type attribute to fetch.
         // 17.4.5. Initialize e's cancelable attribute to true.
         // 17.4.6. Initialize e's request attribute to requestObject.
-        // FIXME: 17.4.7. Initialize e's preloadResponse to preloadResponse.
+        // 17.4.7. Initialize e's preloadResponse to preloadResponse.
+        // NB: preloadResponse is a promise resolved with undefined unless the navigation is preloaded.
         // 17.4.8. If client is not null, initialize e's clientId attribute to client's id.
         // 17.4.9. If request is a non-subresource request, request's destination is not "report", and reservedClient
         //         is not null, initialize e's resultingClientId attribute to reservedClient's id.
@@ -423,10 +426,10 @@ fn dispatch_fetch_event(
                 },
             },
             request,
-            preload_response: None,
-            client_id: client_ids.client_id,
-            resulting_client_id: client_ids.resulting_client_id,
-            replaces_client_id: client_ids.replaces_client_id,
+            preload_response: fields.preload_response,
+            client_id: fields.client_id,
+            resulting_client_id: fields.resulting_client_id,
+            replaces_client_id: fields.replaces_client_id,
             handled: Some(event_handled),
         };
         FetchEvent::create(vm, realm, &Utf16String::from_ascii(b"fetch"), event_init)
@@ -519,6 +522,7 @@ pub unsafe extern "C" fn web_rust_service_worker_dispatch_fetch_event(
     client_id: ak::Span<'_, u8>,
     resulting_client_id: ak::Span<'_, u8>,
     replaces_client_id: ak::Span<'_, u8>,
+    preload_response: *mut c_void,
     ctx: *mut c_void,
     on_settled: OnFetchEventSettled,
     pending_events_ctx: *mut c_void,
@@ -537,11 +541,13 @@ pub unsafe extern "C" fn web_rust_service_worker_dispatch_fetch_event(
         )
     };
     let string = |span: ak::Span<'_, u8>| Utf16String::from_utf8(&String::from_utf8_lossy(span.as_slice()));
-    let client_ids = FetchEventClientIds {
+    let fields = FetchEventFields {
         client_id: string(client_id),
         resulting_client_id: string(resulting_client_id),
         replaces_client_id: string(replaces_client_id),
+        // SAFETY: The caller passes a live promise of the realm, or null.
+        preload_response: (!preload_response.is_null()).then(|| unsafe { promise_from_abi(preload_response) }),
     };
     set_on_pending_events_changed(pending_events_ctx, on_pending_events_changed);
-    dispatch_fetch_event(vm, realm, global, request, client_ids, ctx, on_settled).unwrap_or(0)
+    dispatch_fetch_event(vm, realm, global, request, fields, ctx, on_settled).unwrap_or(0)
 }

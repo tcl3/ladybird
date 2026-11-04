@@ -52,6 +52,11 @@ struct FetchEventRequest {
     // 17.4.10. If request is a navigation request, initialize e's replacesClientId attribute to request's replaces
     //          client id.
     String replaces_client_id;
+
+    // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+    // 15.1. If registration's navigation preload enabled flag is set then:
+    // NB: The registration's navigation preload header value, which the worker's process preloads the navigation with.
+    Optional<ByteString> navigation_preload_header_value;
 };
 
 // https://fetch.spec.whatwg.org/#concept-response

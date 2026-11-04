@@ -31,6 +31,7 @@
 #include <LibWeb/HTML/Scripting/WorkerEnvironmentSettingsObject.h>
 #include <LibWeb/HTML/WorkerDebugConsoleClient.h>
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
+#include <LibWeb/ServiceWorker/NavigationPreload.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/ServiceWorker/Update.h>
 #include <LibWeb/Streams/ReadableStreamDefaultReader.h>
@@ -41,7 +42,7 @@
 extern "C" {
 void web_rust_service_worker_dispatch_lifecycle_event(JSVM*, void* realm, Web::DOM::EventTarget* global, u8 kind, void* ctx, void (*on_finished)(void*, bool failed));
 void web_rust_service_worker_time_out_lifecycle_event(JSVM*);
-u64 web_rust_service_worker_dispatch_fetch_event(JSVM*, void* realm, Web::DOM::EventTarget* global, void* request, ReadonlyBytes client_id, ReadonlyBytes resulting_client_id, ReadonlyBytes replaces_client_id, void* ctx, void (*on_settled)(void*, u8 outcome, void* response), void* pending_events_ctx, void (*on_pending_events_changed)(void*, bool));
+u64 web_rust_service_worker_dispatch_fetch_event(JSVM*, void* realm, Web::DOM::EventTarget* global, void* request, ReadonlyBytes client_id, ReadonlyBytes resulting_client_id, ReadonlyBytes replaces_client_id, void* preload_response, void* ctx, void (*on_settled)(void*, u8 outcome, void* response), void* pending_events_ctx, void (*on_pending_events_changed)(void*, bool));
 }
 
 namespace WebWorker {
@@ -652,6 +653,7 @@ void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
     //     client of a subresource request.
     auto client_id = descriptor.client_id.value_or({});
     auto replaces_client_id = move(descriptor.replaces_client_id);
+    auto navigation_preload_header_value = move(descriptor.navigation_preload_header_value);
     auto request = request_from(move(descriptor));
     String resulting_client_id;
     if (request->is_non_subresource_request() && request->destination() != Web::Fetch::Infrastructure::Request::Destination::Report)
@@ -662,7 +664,13 @@ void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
     // 17.4. Queue a task task to run the following substeps:
     //       The task must use activeWorker's event loop and the handle fetch task source.
     auto dispatch_id = fetch_event.dispatch_id;
-    Web::HTML::queue_global_task(Web::HTML::Task::Source::HandleFetch, Web::HTML::relevant_global_object(*m_global_scope), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id, request, move(client_id), move(resulting_client_id), move(replaces_client_id)), [](auto& protected_this, auto& dispatch_id, auto& request, auto& client_id, auto& resulting_client_id, auto& replaces_client_id) {
+    // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
+    // 15.1. If registration's navigation preload enabled flag is set then:
+    GC::Ptr<Web::WebIDL::Promise> preload_response;
+    if (navigation_preload_header_value.has_value())
+        preload_response = Web::ServiceWorker::start_navigation_preload(*m_settings_object, *request, *navigation_preload_header_value);
+
+    Web::HTML::queue_global_task(Web::HTML::Task::Source::HandleFetch, Web::HTML::relevant_global_object(*m_global_scope), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id, request, move(client_id), move(resulting_client_id), move(replaces_client_id), preload_response), [](auto& protected_this, auto& dispatch_id, auto& request, auto& client_id, auto& resulting_client_id, auto& replaces_client_id, auto& preload_response) {
         if (!protected_this->fetch_event_with_dispatch_id(dispatch_id))
             return;
         auto& realm = protected_this->m_settings_object->realm();
@@ -682,7 +690,7 @@ void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
         // NB: The service worker's Rust bindings run these substeps, and the steps after the task.
         auto extended_event_id = web_rust_service_worker_dispatch_fetch_event(
             JS::HostABI::vm_to_abi(realm.vm()), &realm, protected_this->m_global_scope.ptr(), JS::HostABI::object_to_abi(request_wrapper.ptr()),
-            client_id.bytes(), resulting_client_id.bytes(), replaces_client_id.bytes(),
+            client_id.bytes(), resulting_client_id.bytes(), replaces_client_id.bytes(), preload_response.ptr(),
             bit_cast<void*>(static_cast<FlatPtr>(dispatch_id)), fetch_event_settled,
             protected_this.ptr(), [](void* ctx, bool has_pending_events) {
                 static_cast<ServiceWorkerHost*>(ctx)->pending_events_changed(has_pending_events);

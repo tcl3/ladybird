@@ -130,6 +130,12 @@ struct ServiceWorkerControllerMatch {
     // https://w3c.github.io/ServiceWorker/#dfn-set-of-event-types-to-handle
     // Whether the active worker's set of event types to handle contains "fetch".
     bool handles_fetch_events { false };
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-navigation-preload-enabled-flag
+    bool navigation_preload_enabled { false };
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-navigation-preload-header-value
+    ByteString navigation_preload_header_value;
 };
 
 struct ServiceWorkerScriptFetchParameters {

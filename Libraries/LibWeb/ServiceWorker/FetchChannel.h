@@ -49,7 +49,7 @@ private:
 // Dispatches a fetch event for the request at the client's active service worker, over the client's channel to the
 // worker's process. The client is the request's reserved client for a non-subresource request, and its client
 // otherwise.
-WEB_API void dispatch_fetch_event(Page&, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, Fetch::Infrastructure::Request const&, HandleFetchCallback);
+WEB_API void dispatch_fetch_event(Page&, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, Fetch::Infrastructure::Request const&, Optional<ByteString> navigation_preload_header_value, HandleFetchCallback);
 
 // The UI process's answer to a client's request for a channel to its active service worker's process.
 WEB_API void service_worker_fetch_channel_ready(ServiceWorkerRequestId, Optional<IPC::TransportHandle>);

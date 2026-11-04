@@ -58,6 +58,8 @@ struct Web::ServiceWorker::ServiceWorkerControllerMatch {
     Web::ServiceWorker::ServiceWorkerDescriptor active_worker;
     Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration;
     bool handles_fetch_events;
+    bool navigation_preload_enabled;
+    ByteString navigation_preload_header_value;
 }
 
 [ExistingCpp]

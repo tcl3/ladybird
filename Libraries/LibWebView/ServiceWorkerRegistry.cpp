@@ -354,6 +354,8 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
         .active_worker = *descriptor_of(active_worker.id),
         .registration = snapshot_of(*registration),
         .handles_fetch_events = active_worker.set_of_event_types_to_handle.contains_slow("fetch"sv),
+        .navigation_preload_enabled = registration->navigation_preload_enabled,
+        .navigation_preload_header_value = registration->navigation_preload_header_value,
     });
 
     // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A registration with navigation preload enabled preloads its navigations, which the fetch event's preloadResponse
+    // gives.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("activate", event => {
+                event.waitUntil(self.registration.navigationPreload.enable().then(() => self.registration.navigationPreload.setHeaderValue("hello")));
+            });
+            self.addEventListener("fetch", event => {
+                if (event.request.mode !== "navigate")
+                    return;
+                event.respondWith(event.preloadResponse.then(response => response ? response : new Response("No preload response")));
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/plain" },
+            body: "$HEADERS",
+            reflect_headers_in_body: true,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        const state = await registration.navigationPreload.getState();
+        println(`Navigation preload: enabled ${state.enabled}, header value ${state.headerValue}`);
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+        const headers = JSON.parse(frame.contentDocument.body.textContent);
+        const name = Object.keys(headers).find(name => name.toLowerCase() === "service-worker-navigation-preload");
+        println(`The frame shows the preload response, whose request had: ${name ? `Service-Worker-Navigation-Preload: ${headers[name]}` : "no Service-Worker-Navigation-Preload header"}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

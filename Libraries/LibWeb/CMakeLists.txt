@@ -766,6 +766,7 @@ set(SOURCES
     ServiceWorker/EventNames.cpp
     ServiceWorker/FetchChannel.cpp
     ServiceWorker/HandleFetch.cpp
+    ServiceWorker/NavigationPreload.cpp
     ServiceWorker/NameToCacheMap.cpp
     ServiceWorker/RustIntegration.cpp
     ServiceWorker/ServiceWorkerGlobalScope.cpp
