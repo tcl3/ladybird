@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // Pages and service workers of a storage key share their caches, which outlive a worker that restarts.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("message", event => {
+                event.waitUntil((async () => {
+                    if (event.data.put) {
+                        const cache = await caches.open("shared");
+                        await cache.put(event.data.put, new Response("from the worker", { headers: { "X-Source": "worker" } }));
+                        event.source.postMessage("stored");
+                        return;
+                    }
+                    const response = await caches.match(event.data.match);
+                    event.source.postMessage(response ? await response.text() : "no match");
+                })());
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html>",
+        });
+        const pageEntry = new URL("/page-entry", script).href;
+        const workerEntry = new URL("/worker-entry", script).href;
+
+        const cache = await caches.open("shared");
+        await cache.put(pageEntry, new Response("from the page"));
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+        const frameResponse = await frame.contentWindow.caches.match(pageEntry, { cacheName: "shared" });
+        println(`A frame of the same origin reads the page's entry: ${await frameResponse.text()}`);
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        const ask = data => new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage(data);
+        });
+
+        println(`The worker reads the page's entry: ${await ask({ match: pageEntry })}`);
+        println(`The worker stores an entry: ${await ask({ put: workerEntry })}`);
+        const workerResponse = await cache.match(workerEntry);
+        println(`The page reads the worker's entry: ${await workerResponse.text()}, X-Source: ${workerResponse.headers.get("X-Source")}`);
+
+        internals.terminateServiceWorker(worker);
+        println(`After it restarts, the worker reads its entry: ${await ask({ match: workerEntry })}`);
+
+        println(`caches.keys(): ${JSON.stringify(await caches.keys())}`);
+        println(`caches.delete("shared"): ${await caches.delete("shared")}`);
+        println(`caches.has("shared"): ${await caches.has("shared")}`);
+        println(`The deleted cache's object still reads it: ${await (await cache.match(pageEntry)).text()}`);
+        println(`The worker no longer finds the entry: ${await ask({ match: pageEntry })}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

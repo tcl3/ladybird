@@ -1,0 +1,11 @@
+A frame of the same origin reads the page's entry: from the page
+The worker reads the page's entry: from the page
+The worker stores an entry: stored
+The page reads the worker's entry: from the worker, X-Source: worker
+After it restarts, the worker reads its entry: from the worker
+caches.keys(): ["shared"]
+caches.delete("shared"): true
+caches.has("shared"): false
+The deleted cache's object still reads it: from the page
+The worker no longer finds the entry: no match
+unregister(): true

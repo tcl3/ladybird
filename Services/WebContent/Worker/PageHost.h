@@ -50,6 +50,7 @@ public:
     virtual void page_did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest const&) override;
     virtual void page_did_request_service_worker_registration(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& client_url) override;
     virtual void page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId) override;
+    virtual void page_did_request_cache_storage_operation(Web::HTML::EnvironmentId const&, u64 request_id, Web::ServiceWorker::CacheStorageRequest const&) override;
     virtual void page_did_request_service_worker_ready(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& creation_url) override;
     virtual void page_did_call_service_worker_skip_waiting(Web::ServiceWorker::ServiceWorkerRequestId) override;
     virtual void page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord) override;

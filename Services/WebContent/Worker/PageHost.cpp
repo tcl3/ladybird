@@ -157,6 +157,11 @@ void PageHost::page_did_request_service_worker_registrations(Web::HTML::Environm
     m_client.async_did_request_service_worker_registrations(environment_id, request_id);
 }
 
+void PageHost::page_did_request_cache_storage_operation(Web::HTML::EnvironmentId const& environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest const& request)
+{
+    m_client.async_did_request_cache_storage_operation(environment_id, request_id, request);
+}
+
 void PageHost::request_file(Web::FileRequest request)
 {
     m_client.request_file(move(request));

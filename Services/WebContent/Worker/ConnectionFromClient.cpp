@@ -35,6 +35,7 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
+#include <LibWeb/ServiceWorker/CacheStorage.h>
 #include <LibWeb/ServiceWorker/FetchChannel.h>
 #include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
@@ -367,6 +368,11 @@ void ConnectionFromClient::broadcast_channel_message(Web::HTML::BroadcastChannel
 void ConnectionFromClient::service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result)
 {
     Web::ServiceWorker::service_worker_job_settled(request_id, move(result));
+}
+
+void ConnectionFromClient::cache_storage_operation_finished(u64 request_id, Web::ServiceWorker::CacheStorageResult result)
+{
+    Web::ServiceWorker::cache_storage_operation_finished(request_id, move(result));
 }
 
 void ConnectionFromClient::service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations)

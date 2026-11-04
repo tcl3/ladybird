@@ -1,0 +1,3 @@
+Opaque response from the network: from the network
+Opaque response from a cache: from the cache
+unregister(): true

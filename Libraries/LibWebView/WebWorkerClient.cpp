@@ -301,6 +301,20 @@ void WebWorkerClient::did_request_service_worker_registrations(Web::HTML::Enviro
     session->service_worker_registry->get_registrations(client_environment, request_id);
 }
 
+void WebWorkerClient::did_request_cache_storage_operation(Web::HTML::EnvironmentId environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest request)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(environment_id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->cache_storage_operation(client_environment, request_id, request);
+}
+
 void WebWorkerClient::did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url)
 {
     auto session = m_session.strong_ref();

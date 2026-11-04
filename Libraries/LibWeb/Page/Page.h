@@ -1033,6 +1033,7 @@ public:
     virtual void page_did_schedule_service_worker_job([[maybe_unused]] ServiceWorker::ServiceWorkerJobRequest const& request) { }
     virtual void page_did_request_service_worker_registration([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] URL::URL const& client_url) { }
     virtual void page_did_request_service_worker_registrations([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }
+    virtual void page_did_request_cache_storage_operation([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] u64 request_id, [[maybe_unused]] ServiceWorker::CacheStorageRequest const& request) { }
     virtual void page_did_dispatch_dom_content_loaded_for_service_worker_jobs([[maybe_unused]] HTML::EnvironmentId const& environment_id) { }
     virtual void page_did_request_service_worker_ready([[maybe_unused]] HTML::EnvironmentId const& environment_id, [[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] URL::URL const& creation_url) { }
     virtual void page_did_call_service_worker_skip_waiting([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A controlled worker imports cross-origin scripts that its service worker answers with opaque responses, fetched
+    // from the network or taken from a cache. The script runs from the body of the opaque response's internal response.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const otherOrigin = uniqueLocalhostHostname("service-worker-opaque");
+        const onOtherOrigin = url => {
+            const result = new URL(url);
+            result.hostname = otherOrigin;
+            return result.href;
+        };
+        const javascript = { "Content-Type": "text/javascript" };
+        const fromNetwork = onOtherOrigin(await server.createEcho("GET", "/opaque/from-network.js", { status: 200, headers: javascript, body: "self.imported = 'from the network';" }));
+        const fromCache = onOtherOrigin(await server.createEcho("GET", "/opaque/from-cache.js", { status: 200, headers: javascript, body: "self.imported = 'from the cache';" }));
+        const script = await server.createEcho("GET", "/opaque/service-worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("install", event => event.waitUntil((async () => {
+                const cache = await caches.open("opaque");
+                await cache.put("${fromCache}", await fetch("${fromCache}", { mode: "no-cors" }));
+            })()));
+            self.addEventListener("fetch", event => {
+                if (event.request.url === "${fromNetwork}")
+                    event.respondWith(fetch(event.request));
+                else if (event.request.url === "${fromCache}")
+                    event.respondWith(caches.open("opaque").then(cache => cache.match(event.request)));
+            });`,
+        });
+        const workerScript = await server.createEcho("GET", "/opaque/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.onmessage = event => {
+                try {
+                    importScripts(event.data);
+                    postMessage(self.imported);
+                } catch (error) {
+                    postMessage(error.name);
+                }
+            };`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const serviceWorker = registration.installing;
+        await waitForCondition(() => serviceWorker.state === "activated");
+
+        const importInWorker = url =>
+            new Promise(resolve => {
+                const worker = new Worker(workerScript);
+                worker.onmessage = event => {
+                    resolve(event.data);
+                    worker.terminate();
+                };
+                worker.postMessage(url);
+            });
+        println(`Opaque response from the network: ${await importInWorker(fromNetwork)}`);
+        println(`Opaque response from a cache: ${await importInWorker(fromCache)}`);
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

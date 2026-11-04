@@ -1,3 +1,4 @@
+#include <LibWebCommon/ServiceWorker/CacheStorageTypes.h>
 #include <LibHTTP/Cookie/Cookie.h>
 #include <LibHTTP/HSTS/ParsedHSTSPolicy.h>
 #include <LibIPC/File.h>
@@ -50,6 +51,7 @@ endpoint WebWorkerClient {
     did_provide_service_worker_client_snapshots(u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) =|
     did_request_service_worker_match(u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client) =|
     did_request_service_worker_claim(u64 request_id) =|
+    did_request_cache_storage_operation(Web::HTML::EnvironmentId environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest request) =|
     did_request_service_worker_client_navigation(u64 request_id, String client_id, URL::URL url) =|
     did_request_service_worker_fetch_channel(u64 request_id, Web::HTML::EnvironmentId client_id, u64 service_worker_id) =|
 }

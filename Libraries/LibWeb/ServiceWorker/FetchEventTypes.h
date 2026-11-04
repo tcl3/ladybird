@@ -16,6 +16,7 @@
 #include <LibHTTP/Header.h>
 #include <LibURL/Origin.h>
 #include <LibURL/URL.h>
+#include <LibWeb/Export.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Requests.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Responses.h>
 #include <LibWebCommon/Fetch/Infrastructure/HTTP/RequestReferrer.h>
@@ -89,6 +90,16 @@ enum class FetchEventOutcome : u8 {
     NetworkError,
     Response,
 };
+
+// The request that a description is of.
+WEB_API NonnullRefPtr<Fetch::Infrastructure::Request> request_from(FetchEventRequest&&);
+
+// What a response is, except for its body.
+WEB_API FetchEventResponse describe_response(Fetch::Infrastructure::ResponseView const&);
+
+// The internal response that a description is of, without a body, and a response of the type with it.
+WEB_API NonnullRefPtr<Fetch::Infrastructure::Response> internal_response_from(FetchEventResponse const&);
+WEB_API NonnullRefPtr<Fetch::Infrastructure::Response> response_of_type(Fetch::Infrastructure::Response::Type, NonnullRefPtr<Fetch::Infrastructure::Response> internal_response);
 
 }
 

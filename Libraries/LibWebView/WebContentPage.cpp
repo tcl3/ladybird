@@ -3540,6 +3540,19 @@ void WebContentPage::did_request_navigation_preload(Web::HTML::EnvironmentId env
     client().session().service_worker_registry->navigation_preload(client_environment, request_id, registration_id, operation, move(header_value));
 }
 
+void WebContentPage::did_request_cache_storage_operation(Web::HTML::EnvironmentId environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest request)
+{
+    auto settings = hosted_environment(environment_id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
+    };
+    client().session().service_worker_registry->cache_storage_operation(client_environment, request_id, request);
+}
+
 void WebContentPage::did_request_service_worker_match(u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client)
 {
     auto reply_with_no_match = [&] {

@@ -1764,6 +1764,11 @@ void PageClient::page_did_request_service_worker_registrations(Web::HTML::Enviro
     client().async_did_request_service_worker_registrations(m_id, environment_id, request_id);
 }
 
+void PageClient::page_did_request_cache_storage_operation(Web::HTML::EnvironmentId const& environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest const& request)
+{
+    client().async_did_request_cache_storage_operation(m_id, environment_id, request_id, request);
+}
+
 void PageClient::page_did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId const& environment_id)
 {
     client().async_did_dispatch_dom_content_loaded_for_service_worker_jobs(m_id, environment_id);

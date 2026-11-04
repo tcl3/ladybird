@@ -691,30 +691,6 @@ void ServiceWorkerHost::dispatch_waiting_fetch_events()
 // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
 // 17.3.1. Let requestObject be the result of creating a Request object, given request, [...]
 // NB: What the client's process says of request.
-static NonnullRefPtr<Web::Fetch::Infrastructure::Request> request_from(Web::ServiceWorker::FetchEventRequest&& descriptor)
-{
-    auto request = Web::Fetch::Infrastructure::Request::create();
-    request->set_method(move(descriptor.method));
-    request->set_url_list(move(descriptor.url_list));
-    if (descriptor.origin.has_value())
-        request->set_origin(descriptor.origin.release_value());
-    request->set_header_list(HTTP::HeaderList::create(move(descriptor.header_list)));
-    if (descriptor.body.has_value())
-        request->set_body(Web::Fetch::Infrastructure::FetchBody::from_bytes(Core::ImmutableBytes::adopt(descriptor.body.release_value())));
-    request->set_destination(descriptor.destination);
-    request->set_mode(descriptor.mode);
-    request->set_credentials_mode(descriptor.credentials_mode);
-    request->set_cache_mode(descriptor.cache_mode);
-    request->set_redirect_mode(descriptor.redirect_mode);
-    request->set_referrer(move(descriptor.referrer));
-    request->set_referrer_policy(descriptor.referrer_policy);
-    request->set_integrity_metadata(Utf16String::from_utf8(descriptor.integrity_metadata));
-    request->set_keepalive(descriptor.keepalive);
-    request->set_reload_navigation(descriptor.reload_navigation);
-    request->set_history_navigation(descriptor.history_navigation);
-    return request;
-}
-
 static void fetch_event_settled(void* ctx, u8 outcome, void* response);
 
 void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
@@ -734,7 +710,7 @@ void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
     auto client_id = descriptor.client_id.value_or({});
     auto replaces_client_id = move(descriptor.replaces_client_id);
     auto navigation_preload_header_value = move(descriptor.navigation_preload_header_value);
-    auto request = request_from(move(descriptor));
+    auto request = Web::ServiceWorker::request_from(move(descriptor));
     String resulting_client_id;
     if (request->is_non_subresource_request() && request->destination() != Web::Fetch::Infrastructure::Request::Destination::Report)
         resulting_client_id = connection->client().to_string();
@@ -802,28 +778,6 @@ static void fetch_event_settled(void* ctx, u8 outcome, void* response)
 
 // https://fetch.spec.whatwg.org/#concept-response
 // NB: What the client's process makes potentialResponse from: its type, and the fields of its internal response.
-static Web::ServiceWorker::FetchEventResponse describe_response(Web::Fetch::Infrastructure::ResponseView const& response)
-{
-    auto const& record = *response.record();
-    auto const* filtered_response = as_if<Web::Fetch::Infrastructure::FilteredResponse>(record);
-    auto const& internal_response = filtered_response ? *filtered_response->internal_response() : record;
-    return Web::ServiceWorker::FetchEventResponse {
-        .type = record.type(),
-        .status = internal_response.status(),
-        .status_message = internal_response.status_message(),
-        .header_list = internal_response.header_list()->headers(),
-        .url_list = internal_response.url_list(),
-        .cors_exposed_header_name_list = internal_response.cors_exposed_header_name_list(),
-        .range_requested = internal_response.range_requested(),
-        .request_includes_credentials = internal_response.request_includes_credentials(),
-        .timing_allow_passed = internal_response.timing_allow_passed(),
-        .redirect_taint = internal_response.redirect_taint(),
-        // NB: An opaque filtered response has no body, but the client reads the body of its internal response, as
-        //     importScripts() does.
-        .has_body = internal_response.body().has_value(),
-    };
-}
-
 void ServiceWorkerHost::fetch_event_did_settle(u64 dispatch_id, Web::ServiceWorker::FetchEventOutcome outcome, JS::Object* response_wrapper)
 {
     auto* fetch_event = fetch_event_with_dispatch_id(dispatch_id);
@@ -848,7 +802,7 @@ void ServiceWorkerHost::fetch_event_did_settle(u64 dispatch_id, Web::ServiceWork
     }
 
     auto response = response_object->response();
-    auto descriptor = describe_response(*response);
+    auto descriptor = Web::ServiceWorker::describe_response(*response);
     connection->async_fetch_event_settled(fetch_event->fetch_id, outcome, descriptor);
     if (!descriptor.has_body) {
         forget_fetch_event(*fetch_event);

@@ -1,0 +1,93 @@
+// Copyright (c) 2026-present, the Ladybird developers.
+
+// NB: The IPC compiler cannot check that each struct here lists every field of its C++ type. A field left out
+//     here does not cross IPC.
+
+#include <LibWebCommon/ServiceWorker/CacheStorageTypes.h>
+
+[ExistingCpp]
+struct Web::ServiceWorker::CachedRequest {
+    ByteString method;
+    Vector<URL::URL> url_list;
+    Vector<HTTP::Header> header_list;
+    Optional<u8> destination;
+    u8 mode;
+    u8 credentials_mode;
+    HTTP::CacheMode cache_mode;
+    u8 redirect_mode;
+    Web::Fetch::Infrastructure::RequestReferrerType referrer;
+    Web::ReferrerPolicy::ReferrerPolicy referrer_policy;
+    String integrity_metadata;
+    bool keepalive;
+    bool reload_navigation;
+    bool history_navigation;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CachedResponse {
+    u8 type;
+    Vector<HTTP::Header> filtered_header_list;
+    u16 status;
+    ByteString status_message;
+    Vector<HTTP::Header> header_list;
+    Vector<URL::URL> url_list;
+    Vector<ByteString> cors_exposed_header_name_list;
+    bool range_requested;
+    bool request_includes_credentials;
+    bool timing_allow_passed;
+    Web::Fetch::Infrastructure::RedirectTaint redirect_taint;
+    Optional<ByteBuffer> body;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheQueryParameters {
+    bool ignore_search;
+    bool ignore_method;
+    bool ignore_vary;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CachedRequestResponse {
+    Web::ServiceWorker::CachedRequest request;
+    Web::ServiceWorker::CachedResponse response;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheBatchOperationDescriptor {
+    Web::ServiceWorker::CacheBatchOperationType type;
+    Web::ServiceWorker::CachedRequest request;
+    Optional<Web::ServiceWorker::CachedResponse> response;
+    Web::ServiceWorker::CacheQueryParameters options;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheStorageNameRequest {
+    Web::ServiceWorker::CacheStorageNameOperation operation;
+    String cache_name;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheStorageMatchRequest {
+    Web::ServiceWorker::CachedRequest request;
+    Web::ServiceWorker::CacheQueryParameters options;
+    Optional<String> cache_name;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheQueryRequest {
+    u64 cache;
+    Web::ServiceWorker::CacheQueryKind kind;
+    Optional<Web::ServiceWorker::CachedRequest> request;
+    Web::ServiceWorker::CacheQueryParameters options;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheBatchRequest {
+    u64 cache;
+    Vector<Web::ServiceWorker::CacheBatchOperationDescriptor> operations;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::CacheStorageRequest {
+    Variant<Web::ServiceWorker::CacheStorageNameRequest, Web::ServiceWorker::CacheStorageMatchRequest, Web::ServiceWorker::CacheQueryRequest, Web::ServiceWorker::CacheBatchRequest> operation;
+}

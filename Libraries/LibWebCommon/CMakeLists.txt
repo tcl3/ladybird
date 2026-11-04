@@ -121,6 +121,7 @@ compile_ipc(MixedContent/ProhibitsMixedSecurityContexts.ipc MixedContent/Prohibi
 compile_ipc(Page/InputEvent.ipc Page/InputEventCodecs.h)
 compile_ipc(Page/TextEditingCommand.ipc Page/TextEditingCommandCodecs.h)
 compile_ipc(PixelUnits.ipc PixelUnitsCodecs.h)
+compile_ipc(ServiceWorker/CacheStorageTypes.ipc ServiceWorker/CacheStorageTypesCodecs.h)
 compile_ipc(ServiceWorker/ServiceWorkerTypes.ipc ServiceWorker/ServiceWorkerTypesCodecs.h)
 compile_ipc(UpgradeInsecureRequests/InsecureRequestsPolicy.ipc UpgradeInsecureRequests/InsecureRequestsPolicyCodecs.h)
 compile_ipc(WebView/AccessibilityNodeData.ipc WebView/AccessibilityNodeDataCodecs.h)

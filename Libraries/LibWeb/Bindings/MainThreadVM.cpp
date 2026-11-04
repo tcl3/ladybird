@@ -79,6 +79,7 @@
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/ThreadPoolWork.h>
+#include <LibWeb/ServiceWorker/Cache.h>
 #include <LibWeb/ServiceWorker/FetchChannel.h>
 #include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/TrustedTypes/TrustedScript.h>
@@ -818,6 +819,7 @@ void shut_down_agent()
     // NB: What waits for an answer from the UI process could only go once the replies that came meanwhile were handled.
     ServiceWorker::forget_pending_matches_of_this_agent();
     ServiceWorker::forget_fetch_channels_of_this_agent();
+    ServiceWorker::forget_cache_storage_operations_of_this_agent();
 
     web_rust_shut_down_agent(JS::HostABI::vm_to_abi(vm));
     ResourceLoader::shut_down();

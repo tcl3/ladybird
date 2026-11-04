@@ -437,6 +437,7 @@ private:
     virtual void page_did_schedule_service_worker_job(Web::ServiceWorker::ServiceWorkerJobRequest const&) override;
     virtual void page_did_request_service_worker_registration(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& client_url) override;
     virtual void page_did_request_service_worker_registrations(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId) override;
+    virtual void page_did_request_cache_storage_operation(Web::HTML::EnvironmentId const&, u64 request_id, Web::ServiceWorker::CacheStorageRequest const&) override;
     virtual void page_did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId const&) override;
     virtual void page_did_request_service_worker_ready(Web::HTML::EnvironmentId const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL const& creation_url) override;
     virtual bool page_did_request_service_worker_match(Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&) override;

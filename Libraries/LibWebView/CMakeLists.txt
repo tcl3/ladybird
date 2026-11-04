@@ -68,6 +68,7 @@ set(SOURCES
     RequestServerManager.cpp
     RequestServerSiteBindings.cpp
     SearchEngine.cpp
+    ServiceWorkerCacheStorage.cpp
     ServiceWorkerRegistry.cpp
     SessionHistory.cpp
     SessionHistoryTraversalQueue.cpp

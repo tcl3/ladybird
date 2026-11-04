@@ -85,6 +85,7 @@ private:
     virtual void broadcast_channel_message(Web::HTML::BroadcastChannelMessage message) override;
     virtual void service_worker_job_settled(u64 request_id, Web::ServiceWorker::ServiceWorkerJobResult result) override;
     virtual void service_worker_registration_lookup_finished(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> registrations) override;
+    virtual void cache_storage_operation_finished(u64 request_id, Web::ServiceWorker::CacheStorageResult result) override;
     virtual void service_worker_registration_state_changed(u64 registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> source) override;
     virtual void service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker) override;
     virtual void service_worker_update_found(u64 registration_id) override;

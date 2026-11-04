@@ -410,6 +410,7 @@ private:
     virtual void did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url) override;
     virtual void did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) override;
     virtual void did_request_navigation_preload(Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value) override;
+    virtual void did_request_cache_storage_operation(Web::HTML::EnvironmentId environment_id, u64 request_id, Web::ServiceWorker::CacheStorageRequest request) override;
     Messages::WebContentClient::DidRequestCookieResponse did_request_cookie(Optional<Web::HTML::EnvironmentId> const&, URL::URL, HTTP::Cookie::Source);
     Messages::WebContentClient::DidRequestAllCookiesCookiestoreResponse did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId const&, URL::URL);
     Messages::WebContentClient::DidAddBlobUrlEntryResponse did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry);

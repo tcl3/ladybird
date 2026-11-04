@@ -98,6 +98,14 @@ void ServiceWorkerClientConnection::service_worker_registration_lookup_finished(
     });
 }
 
+void ServiceWorkerClientConnection::cache_storage_operation_finished(u64 request_id, Web::ServiceWorker::CacheStorageResult const& result) const
+{
+    m_connection.visit([&](auto const& connection) {
+        if (connection && connection->is_open())
+            connection->async_cache_storage_operation_finished(request_id, result);
+    });
+}
+
 unsigned ServiceWorkerRegistry::RegistrationKeyTraits::hash(RegistrationKey const& key)
 {
     auto hash = pair_int_hash(Traits<Web::StorageAPI::StorageKey>::hash(key.partition.storage_key), key.serialized_scope_url.hash());
@@ -2755,6 +2763,24 @@ void ServiceWorkerRegistry::get_registration(ServiceWorkerClientEnvironment cons
 }
 
 // https://w3c.github.io/ServiceWorker/#navigator-service-worker-getRegistrations
+// https://w3c.github.io/ServiceWorker/#cachestorage-interface
+void ServiceWorkerRegistry::cache_storage_operation(ServiceWorkerClientEnvironment const& client, u64 request_id, Web::ServiceWorker::CacheStorageRequest const& request)
+{
+    // https://w3c.github.io/ServiceWorker/#relevant-name-to-cache-map
+    // The relevant name to cache map for a CacheStorage object is the name to cache map associated with the result of
+    // running obtain a local storage bottle map with the object's relevant settings object and "caches".
+    // AD-HOC: The caches are keyed by the partition of the client, as its registrations are.
+    // NB: The client's process runs the other steps of the method, and settles its promise with what this answers.
+    // AD-HOC: A client for which obtaining a storage key fails, such as one with an opaque origin, is denied access
+    //         with a "SecurityError" DOMException, as in other engines.
+    auto partition = partition_of(client.settings, client.has_cross_site_ancestor);
+    if (!partition.has_value()) {
+        client.connection.cache_storage_operation_finished(request_id, Web::ServiceWorker::CacheStorageError::SecurityError);
+        return;
+    }
+    client.connection.cache_storage_operation_finished(request_id, m_cache_storage.perform(*partition, request));
+}
+
 void ServiceWorkerRegistry::get_registrations(ServiceWorkerClientEnvironment const& client, ServiceWorkerRequestId request_id)
 {
     // NB: The client's process runs the other steps, and settles its promise with what step 4 finds here.

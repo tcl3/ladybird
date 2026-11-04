@@ -27,6 +27,7 @@
 #include <LibWebView/BrowsingSession.h>
 #include <LibWebView/Export.h>
 #include <LibWebView/Forward.h>
+#include <LibWebView/ServiceWorkerCacheStorage.h>
 
 namespace WebView {
 
@@ -49,6 +50,7 @@ public:
 
     void service_worker_job_settled(Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerJobResult const&) const;
     void service_worker_registration_lookup_finished(Web::ServiceWorker::ServiceWorkerRequestId, Vector<Web::ServiceWorker::ServiceWorkerRegistrationSnapshot> const&) const;
+    void cache_storage_operation_finished(u64 request_id, Web::ServiceWorker::CacheStorageResult const&) const;
 
 private:
     Variant<WeakPtr<WebContentClient>, WeakPtr<WebWorkerClient>> m_connection;
@@ -102,6 +104,7 @@ public:
     void get_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL client_url);
     void get_registrations(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId);
     void get_ready_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL creation_url);
+    void cache_storage_operation(ServiceWorkerClientEnvironment const&, u64 request_id, Web::ServiceWorker::CacheStorageRequest const&);
     void client_did_dispatch_dom_content_loaded(Web::HTML::EnvironmentId const&);
 
     bool is_service_worker_agent(Web::HTML::WorkerAgentId) const;
@@ -131,15 +134,7 @@ public:
     void clear_registrations_for_testing(URL::Origin const& top_level_origin);
 
 private:
-    // AD-HOC: Registrations are keyed by the network state partition of the clients that use them as well as by their
-    //         storage key, so that a registration made under one top-level site is invisible under another.
-    struct Partition {
-        Web::StorageAPI::StorageKey storage_key;
-        Optional<Utf16String> top_level_site;
-        bool has_cross_site_ancestor { false };
-
-        bool operator==(Partition const&) const = default;
-    };
+    using Partition = ServiceWorkerPartition;
 
     struct RegistrationKey {
         Partition partition;
@@ -407,6 +402,8 @@ private:
     void finish_client_navigation(u64 navigation_id, Optional<Web::ServiceWorker::ServiceWorkerJobError>, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> const&);
     Vector<ClientNavigation> m_client_navigations;
     u64 m_next_client_navigation_id { 0 };
+
+    ServiceWorkerCacheStorage m_cache_storage;
 
     HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 

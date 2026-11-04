@@ -207,43 +207,6 @@ static void close_channels_of_departed_clients()
         channel->shutdown();
 }
 
-// https://w3c.github.io/ServiceWorker/#fetch-event-respondwith
-// 10.2.4. Let potentialResponse be a copy of response's associated response, except for its body.
-static NonnullRefPtr<Fetch::Infrastructure::Response> internal_response_from(FetchEventResponse const& descriptor)
-{
-    auto internal_response = Fetch::Infrastructure::Response::create();
-    internal_response->set_status(descriptor.status);
-    internal_response->set_status_message(descriptor.status_message);
-    internal_response->set_header_list(HTTP::HeaderList::create(descriptor.header_list));
-    internal_response->set_url_list(descriptor.url_list);
-    internal_response->set_cors_exposed_header_name_list(descriptor.cors_exposed_header_name_list);
-    internal_response->set_range_requested(descriptor.range_requested);
-    internal_response->set_request_includes_credentials(descriptor.request_includes_credentials);
-    internal_response->set_timing_allow_passed(descriptor.timing_allow_passed);
-    internal_response->set_redirect_taint(descriptor.redirect_taint);
-    return internal_response;
-}
-
-static NonnullRefPtr<Fetch::Infrastructure::Response> response_of_type(Fetch::Infrastructure::Response::Type type, NonnullRefPtr<Fetch::Infrastructure::Response> internal_response)
-{
-    using Type = Fetch::Infrastructure::Response::Type;
-    switch (type) {
-    case Type::Basic:
-        return Fetch::Infrastructure::BasicFilteredResponse::create(move(internal_response));
-    case Type::CORS:
-        return Fetch::Infrastructure::CORSFilteredResponse::create(move(internal_response));
-    case Type::Opaque:
-        return Fetch::Infrastructure::OpaqueFilteredResponse::create(move(internal_response));
-    case Type::OpaqueRedirect:
-        return Fetch::Infrastructure::OpaqueRedirectFilteredResponse::create(move(internal_response));
-    case Type::Default:
-        return internal_response;
-    case Type::Error:
-        break;
-    }
-    VERIFY_NOT_REACHED();
-}
-
 // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
 void FetchChannel::fetch_event_settled(u64 fetch_id, FetchEventOutcome outcome, Optional<FetchEventResponse> descriptor)
 {
