@@ -91,6 +91,9 @@ public:
     bool hosts_active_document_of(CanonicalNavigable const&) const;
     Optional<CanonicalEnvironmentSettingsObject const&> hosted_environment(Web::HTML::EnvironmentId const& environment_id) const;
 
+    // The navigable whose active document's window is the hosted window client with the id.
+    Optional<CanonicalNavigable&> navigable_of_hosted_window(Web::HTML::EnvironmentId const& environment_id) const;
+
     // Whether the document of an environment the page hosts has a cross-site ancestor, or nothing if the page hosts no
     // such environment.
     Optional<bool> hosted_environment_has_cross_site_ancestor(Web::HTML::EnvironmentId const& environment_id) const;

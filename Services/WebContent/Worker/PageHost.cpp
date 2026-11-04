@@ -284,6 +284,11 @@ void PageHost::page_did_request_service_worker_claim(Web::ServiceWorker::Service
     m_client.async_did_request_service_worker_claim(request_id);
 }
 
+void PageHost::page_did_request_service_worker_client_navigation(Web::ServiceWorker::ServiceWorkerRequestId request_id, String client_id, URL::URL url)
+{
+    m_client.async_did_request_service_worker_client_navigation(request_id, move(client_id), move(url));
+}
+
 bool PageHost::page_did_request_service_worker_fetch_channel(Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::HTML::EnvironmentId const& client, Web::ServiceWorker::ServiceWorkerId service_worker_id)
 {
     m_client.async_did_request_service_worker_fetch_channel(request_id, client, service_worker_id);

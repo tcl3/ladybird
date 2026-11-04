@@ -457,6 +457,11 @@ void ConnectionFromClient::service_worker_claim_finished(u64 request_id, bool su
     Web::ServiceWorker::service_worker_claim_finished(request_id, succeeded);
 }
 
+void ConnectionFromClient::service_worker_client_navigated(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerJobError> error, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> client)
+{
+    Web::ServiceWorker::service_worker_client_navigated(request_id, error, client);
+}
+
 void ConnectionFromClient::service_worker_fetch_channel_ready(u64 request_id, Optional<IPC::TransportHandle> handle)
 {
     Web::ServiceWorker::service_worker_fetch_channel_ready(request_id, move(handle));

@@ -81,6 +81,15 @@ void WebContentClient::did_provide_service_worker_client_snapshots(Web::PageId, 
     session().service_worker_registry->client_did_provide_service_worker_client_snapshots(gather_id, ServiceWorkerClientConnection { *this }, move(snapshots));
 }
 
+// NB: The registry waits for the process it asked to navigate a client, so this reaches it even when that page has closed.
+void WebContentClient::did_navigate_service_worker_client(Web::PageId, u64 navigation_id, Optional<Web::ServiceWorker::ServiceWorkerJobError> error, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> window_client)
+{
+    // NB: A process describes only the clients that it hosts.
+    if (window_client.has_value() && !hosted_environment(window_client->id).has_value())
+        window_client = {};
+    session().service_worker_registry->client_did_navigate_service_worker_client(navigation_id, ServiceWorkerClientConnection { *this }, error, move(window_client));
+}
+
 void WebContentClient::close_worker_agent(Web::PageId page_id, Web::HTML::WorkerAgentId agent_id, Web::HTML::WorkerAgentOwnerToken owner_token)
 {
     // NB: A page's workers are closed as its documents are destroyed, which happens after the tab's page has closed.

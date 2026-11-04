@@ -18,6 +18,7 @@
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
 #include <LibWebView/CanonicalTraversable.h>
 #include <LibWebView/CanonicalWindow.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/StorageJar.h>
 #include <LibWebView/ViewImplementation.h>
 #include <LibWebView/WebContentClient.h>
@@ -1709,8 +1710,10 @@ void CanonicalTraversable::did_activate_history_entry(HistoryOperation& operatio
 
     // NB: Another operation's job for the document this replaced cannot run: destroying the document drops its tasks.
     //     This operation's job has ended already.
-    if (&navigable.active_document() != replaced_document)
+    if (&navigable.active_document() != replaced_document) {
         end_history_jobs(navigable);
+        ServiceWorkerRegistry::navigable_did_activate_document(navigable);
+    }
 
     if (&navigable == this) {
         if (auto view = this->view(); view.has_value()) {

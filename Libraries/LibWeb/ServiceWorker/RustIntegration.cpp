@@ -34,6 +34,7 @@
 #include <LibWeb/TrustedTypes/RequireTrustedTypesForDirective.h>
 #include <LibWeb/TrustedTypes/TrustedScriptURL.h>
 #include <LibWeb/TrustedTypes/TrustedTypePolicy.h>
+#include <LibWebCommon/Fetch/Infrastructure/URL.h>
 
 // What the Rust implementation of the service worker interfaces asks of LibWeb's C++ code, declared on the Rust side
 // in Libraries/LibWeb/Bindings/Rust/src/service_worker.
@@ -81,6 +82,7 @@ void* web_service_worker_container_of_realm(void* realm);
 void web_service_worker_request_navigation_preload(void* realm, u64 request_id, u64 registration_id, u8 operation, ReadonlyBytes header_value);
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type);
 bool web_service_worker_claim(void* realm, u64 request_id);
+void web_service_worker_navigate_client(void* realm, u64 request_id, ReadonlyBytes client_id, ReadonlyBytes url);
 bool web_service_worker_is_response_object(void* object);
 bool web_service_worker_global_scope_is_installing(void* realm);
 
@@ -101,6 +103,7 @@ u64 web_rust_service_worker_id(ServiceWorker const*);
 void web_rust_service_worker_navigation_preload_settled(JSVM*, u64 request_id, bool succeeded, bool enabled, ReadonlyBytes header_value);
 void web_rust_service_worker_clients_matched(JSVM*, u64 request_id, ReadonlySpan<FfiServiceWorkerClientSnapshot>);
 void web_rust_service_worker_claim_finished(JSVM*, u64 request_id, bool succeeded);
+void web_rust_service_worker_client_navigated(JSVM*, u64 request_id, u8 error, FfiServiceWorkerClientSnapshot const*);
 void* web_rust_service_worker_create_clients(JSVM*, void* realm);
 void* web_rust_service_worker_registration_object(JSVM*, void* realm, FfiServiceWorkerRegistrationSnapshot const*);
 void* web_rust_service_worker_service_worker_object(JSVM*, void* realm, FfiServiceWorkerDescriptor const*);
@@ -310,6 +313,13 @@ bool web_service_worker_claim(void* realm, u64 request_id)
 void service_worker_claim_finished(ServiceWorkerRequestId request_id, bool succeeded)
 {
     web_rust_service_worker_claim_finished(JS::HostABI::vm_to_abi(JS::VM::the()), request_id, succeeded);
+}
+
+void web_service_worker_navigate_client(void* realm, u64 request_id, ReadonlyBytes client_id, ReadonlyBytes url)
+{
+    auto parsed_url = URL::Parser::basic_parse(StringView { url });
+    VERIFY(parsed_url.has_value());
+    Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_client_navigation(request_id, String::from_utf8_without_validation(client_id), parsed_url.release_value());
 }
 
 void* web_service_worker_container_of_realm(void* realm)
@@ -579,6 +589,81 @@ Vector<ServiceWorkerClientSnapshot> service_worker_client_snapshots(Vector<HTML:
         snapshots.append(client_snapshot_of(*settings));
     }
     return snapshots;
+}
+
+void service_worker_client_navigated(ServiceWorkerRequestId request_id, Optional<ServiceWorkerJobError> error, Optional<ServiceWorkerClientSnapshot> const& client)
+{
+    auto* vm = JS::HostABI::vm_to_abi(JS::VM::the());
+    // NB: The error is passed as 0 for none, or as one more than a ServiceWorkerJobError.
+    auto error_code = error.has_value() ? static_cast<u8>(to_underlying(*error) + 1) : 0;
+    if (!client.has_value()) {
+        web_rust_service_worker_client_navigated(vm, request_id, error_code, nullptr);
+        return;
+    }
+    SerializedClientSnapshotStrings strings;
+    auto ffi_client = client_snapshot_to_ffi(*client, strings);
+    web_rust_service_worker_client_navigated(vm, request_id, error_code, &ffi_client);
+}
+
+// https://w3c.github.io/ServiceWorker/#client-navigate
+void navigate_window_client(HTML::EnvironmentId const& client_id, URL::URL const& url, WindowClientNavigationCallback on_complete)
+{
+    // 7. Queue a task to run the following steps on this's associated service worker client's responsible event loop
+    //    using the user interaction task source:
+    auto settings = HTML::environment_settings_object_with_id(client_id);
+    auto* window = settings ? HTML::window_from_global_object(settings->global_object()) : nullptr;
+    if (!window) {
+        on_complete->function()(ServiceWorkerJobError::TypeError, {});
+        return;
+    }
+    HTML::queue_global_task(HTML::Task::Source::UserInteraction, settings->global_object(), GC::create_function(settings->heap(), GC::captures(GC::Weak<DOM::Document> { window->associated_document() }, url, on_complete), [](auto& document, auto& url, auto& on_complete) {
+        // 1. Let browsingContext be this's browsing context.
+        // 2. If browsingContext's associated document is not fully active, queue a task to reject promise with a
+        //    TypeError, on serviceWorkerEventLoop using the DOM manipulation task source, and abort these steps.
+        // NB: The service worker's process queues the tasks that settle the promise.
+        auto navigable = document ? document->navigable() : nullptr;
+        if (!document || !document->is_fully_active() || !navigable) {
+            on_complete->function()(ServiceWorkerJobError::TypeError, {});
+            return;
+        }
+
+        // AD-HOC: A URL whose scheme is not a fetch scheme, or a file URL for a document that is not a file document,
+        //         rejects the promise with a TypeError, as in other engines. Navigating to it makes no document.
+        if (!Fetch::Infrastructure::is_fetch_scheme(url.scheme()) || (url.scheme() == "file"sv && document->url().scheme() != "file"sv)) {
+            on_complete->function()(ServiceWorkerJobError::TypeError, {});
+            return;
+        }
+
+        // 3. HandleNavigate: Navigate browsingContext to url, using browsingContext's associated document, with
+        //    exceptionsEnabled true.
+        auto result = navigable->navigate({ .url = url, .source_document = document.ptr(), .exceptions_enabled = true });
+
+        // 4. If the algorithm steps invoked in the step labeled HandleNavigate throws an exception, queue a task to
+        //    reject promise with the exception, on serviceWorkerEventLoop using the DOM manipulation task source, and
+        //    abort these steps.
+        // NB: The exceptions that navigating throws are "SecurityError" DOMExceptions.
+        if (result.is_exception()) {
+            on_complete->function()(ServiceWorkerJobError::SecurityError, {});
+            return;
+        }
+
+        // AD-HOC: A navigation to a fragment is done once navigating returns, and resolves the promise with the window
+        //         client. A URL that navigating starts no navigation to, such as one that is handed off to external
+        //         software, rejects the promise with a TypeError, as in other engines.
+        if (!navigable->ongoing_navigation().template has<Utf16String>()) {
+            if (!document->is_active() || document->url() != url) {
+                on_complete->function()(ServiceWorkerJobError::TypeError, {});
+                return;
+            }
+            on_complete->function()({}, client_snapshot_of(HTML::relevant_settings_object(*document)));
+            return;
+        }
+
+        // AD-HOC: The UI process resolves the promise once the navigation makes a new document the navigable's active
+        //         document, with that document's window client, as in other engines. The steps that follow describe the
+        //         window client whose document was navigated away from.
+        on_complete->function()({}, {});
+    }));
 }
 
 void navigation_preload_settled(ServiceWorkerRequestId request_id, Optional<ServiceWorkerNavigationPreloadState> const& state)

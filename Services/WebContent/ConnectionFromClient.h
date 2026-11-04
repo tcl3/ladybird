@@ -366,6 +366,7 @@ private:
     virtual void service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration) override;
     virtual void navigation_preload_settled(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerNavigationPreloadState> state) override;
     virtual void request_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::HTML::EnvironmentId> client_ids) override;
+    virtual void navigate_service_worker_client(Web::PageId page_id, u64 navigation_id, Web::HTML::EnvironmentId client_id, URL::URL url) override;
     virtual void service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) override;
     virtual void service_worker_match_finished(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerControllerMatch> match) override;
     virtual void service_worker_controller_changed(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor controller) override;

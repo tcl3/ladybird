@@ -303,6 +303,18 @@ Optional<CanonicalEnvironmentSettingsObject const&> WebContentPage::hosted_envir
     return document->relevant_global_object().relevant_settings_object();
 }
 
+Optional<CanonicalNavigable&> WebContentPage::navigable_of_hosted_window(Web::HTML::EnvironmentId const& environment_id) const
+{
+    Optional<CanonicalNavigable&> found_navigable;
+    traversable().for_each_in_inclusive_subtree([&](CanonicalNavigable& navigable) {
+        if (!traversable().hosts(navigable, *this) || navigable.active_document().relevant_global_object().relevant_settings_object().id() != environment_id)
+            return IterationDecision::Continue;
+        found_navigable = navigable;
+        return IterationDecision::Break;
+    });
+    return found_navigable;
+}
+
 void WebContentPage::spoof_document_origin_for_testing(Web::HTML::EnvironmentId const& environment_id, URL::Origin origin)
 {
     if (auto document = document_with_hosted_environment(environment_id); document.has_value())

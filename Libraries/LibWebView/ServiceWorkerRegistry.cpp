@@ -15,6 +15,7 @@
 #include <LibWebView/CanonicalDocument.h>
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
 #include <LibWebView/CanonicalNavigable.h>
+#include <LibWebView/CanonicalWindow.h>
 #include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/WebContentClient.h>
 #include <LibWebView/WebWorkerClient.h>
@@ -2052,6 +2053,7 @@ void ServiceWorkerRegistry::service_worker_did_request_clients(Web::HTML::Worker
         .worker_id = worker->id,
         .request_id = request_id,
         .is_get = is_get,
+        .is_client_navigation = false,
         .window_clients = {},
         .worker_clients = {},
         .processes_waited_for = {},
@@ -2177,7 +2179,148 @@ void ServiceWorkerRegistry::finish_clients_request(u64 gather_id)
     auto worker = m_service_workers.get(request.worker_id);
     if (!worker.has_value() || !(*worker)->process)
         return;
+    if (request.is_client_navigation) {
+        Optional<ServiceWorkerClientSnapshot> window_client;
+        if (!clients.is_empty())
+            window_client = move(clients.first());
+        (*worker)->process->async_service_worker_client_navigated(request.request_id, {}, window_client);
+        return;
+    }
     (*worker)->process->async_service_worker_clients_matched(request.request_id, clients);
+}
+
+// https://w3c.github.io/ServiceWorker/#client-navigate
+void ServiceWorkerRegistry::service_worker_did_request_client_navigation(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id, String const& client_id, URL::URL const& url)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || !worker->process)
+        return;
+
+    // 4. If this's associated service worker client's active service worker is not this's relevant global object's
+    //    service worker, return a promise rejected with a TypeError.
+    // AD-HOC: Only a client in the partition of the worker's registration can be one the worker has a WindowClient
+    //         object for.
+    auto is_controlled_by_worker = any_of(m_controlled_clients, [&](ControlledClient const& client) {
+        return !client.is_reserved() && client.id.to_string() == client_id && client.active_service_worker == worker->id;
+    });
+    Optional<ClientNavigation> navigation;
+    if (is_controlled_by_worker) {
+        WebContentClient::for_each_client([&](WebContentClient& client) {
+            if (client.is_private() != m_is_private)
+                return IterationDecision::Continue;
+            client.for_each_page([&](WebContentPage& page) {
+                page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                    if (settings.id().to_string() != client_id || partition_of(settings, has_cross_site_ancestor) != worker->partition)
+                        return IterationDecision::Continue;
+                    auto navigable = page.navigable_of_hosted_window(settings.id());
+                    if (!navigable.has_value())
+                        return IterationDecision::Break;
+                    navigation = ClientNavigation {
+                        .id = ++m_next_client_navigation_id,
+                        .worker_id = worker->id,
+                        .request_id = request_id,
+                        .navigable = navigable->make_weak_ptr(),
+                        .client_process = ServiceWorkerClientConnection { client }.identity(),
+                        .worker_origin = worker->script_url.origin(),
+                    };
+                    client.async_navigate_service_worker_client(page.id(), navigation->id, settings.id(), url);
+                    return IterationDecision::Break;
+                });
+                return navigation.has_value() ? IterationDecision::Break : IterationDecision::Continue;
+            });
+            return navigation.has_value() ? IterationDecision::Break : IterationDecision::Continue;
+        });
+    }
+    if (!navigation.has_value()) {
+        worker->process->async_service_worker_client_navigated(request_id, ServiceWorkerJobError::TypeError, {});
+        return;
+    }
+    m_client_navigations.append(navigation.release_value());
+}
+
+void ServiceWorkerRegistry::client_did_navigate_service_worker_client(u64 navigation_id, ServiceWorkerClientConnection const& provider, Optional<ServiceWorkerJobError> error, Optional<ServiceWorkerClientSnapshot> client)
+{
+    // NB: Only the process that was asked to navigate the client answers.
+    auto navigation = m_client_navigations.find_if([&](auto const& navigation) { return navigation.id == navigation_id; });
+    if (navigation == m_client_navigations.end() || navigation->client_process != provider.identity())
+        return;
+
+    // NB: A navigation that started settles once a new document is the navigable's active document.
+    if (!error.has_value() && !client.has_value())
+        return;
+    finish_client_navigation(navigation_id, error, client);
+}
+
+void ServiceWorkerRegistry::navigable_did_activate_document(CanonicalNavigable const& navigable)
+{
+    auto const& document = navigable.active_document();
+    for (auto* registry : live_registries()) {
+        Vector<ClientNavigation> navigations;
+        registry->m_client_navigations.remove_all_matching([&](ClientNavigation& navigation) {
+            if (navigation.navigable && navigation.navigable.ptr() != &navigable)
+                return false;
+            navigations.append(move(navigation));
+            return true;
+        });
+        for (auto& navigation : navigations) {
+            auto worker = registry->m_service_workers.get(navigation.worker_id);
+            if (!worker.has_value() || !(*worker)->process)
+                continue;
+
+            // NB: A navigable that went away took the window client with it.
+            if (!navigation.navigable) {
+                (*worker)->process->async_service_worker_client_navigated(navigation.request_id, ServiceWorkerJobError::TypeError, {});
+                continue;
+            }
+
+            // https://w3c.github.io/ServiceWorker/#client-navigate
+            // 7.9.1. If browsingContext's Window object's environment settings object's creation URL's origin is not
+            //        the same as the service worker's origin, resolve promise with null and abort these steps.
+            auto host = document.host();
+            if (!document.creation_url().origin().is_same_origin(navigation.worker_origin) || !host) {
+                (*worker)->process->async_service_worker_client_navigated(navigation.request_id, {}, {});
+                continue;
+            }
+
+            // 7.9.2. Let windowClient be the result of running Create Window Client with this's service worker client,
+            //        frameType, visibilityState, focusState, and ancestorOriginsList.
+            // 7.9.3. Resolve promise with windowClient.
+            // NB: The process that hosts the document describes its window client.
+            auto window_id = document.relevant_global_object().relevant_settings_object().id();
+            ClientsRequest request {
+                .gather_id = ++registry->m_next_gather_id,
+                .worker_id = navigation.worker_id,
+                .request_id = navigation.request_id,
+                .is_get = true,
+                .is_client_navigation = true,
+                .window_clients = { window_id },
+                .worker_clients = {},
+                .processes_waited_for = { ServiceWorkerClientConnection { host->client() }.identity() },
+                .snapshots = {},
+                .timeout = {},
+            };
+            auto gather_id = request.gather_id;
+            request.timeout = Core::Timer::create_single_shot(AK::Duration::from_seconds(5), [weak_registry = registry->make_weak_ptr(), gather_id] {
+                if (auto* registry = weak_registry.ptr())
+                    registry->finish_clients_request(gather_id);
+            });
+            request.timeout->start();
+            host->client().async_request_service_worker_client_snapshots(host->id(), gather_id, Vector { window_id });
+            registry->m_clients_requests.append(move(request));
+        }
+    }
+}
+
+void ServiceWorkerRegistry::finish_client_navigation(u64 navigation_id, Optional<ServiceWorkerJobError> error, Optional<ServiceWorkerClientSnapshot> const& client)
+{
+    auto index = m_client_navigations.find_first_index_if([&](auto const& navigation) { return navigation.id == navigation_id; });
+    if (!index.has_value())
+        return;
+    auto navigation = m_client_navigations.take(*index);
+    auto worker = m_service_workers.get(navigation.worker_id);
+    if (!worker.has_value() || !(*worker)->process)
+        return;
+    (*worker)->process->async_service_worker_client_navigated(navigation.request_id, error, client);
 }
 
 // https://w3c.github.io/ServiceWorker/#terminate-service-worker

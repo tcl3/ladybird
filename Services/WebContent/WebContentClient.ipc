@@ -222,6 +222,7 @@ endpoint WebContentClient routed by Web::PageId page_id
     did_post_message_to_service_worker(Web::PageId page_id, Web::ServiceWorker::ServiceWorkerClientSnapshot source, u64 service_worker_id, Web::HTML::SerializedTransferRecord message) =|
     did_request_navigation_preload(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value) =|
     [NotRouted] did_provide_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) =|
+    [NotRouted] did_navigate_service_worker_client(Web::PageId page_id, u64 navigation_id, Optional<Web::ServiceWorker::ServiceWorkerJobError> error, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> client) =|
     did_request_service_worker_match(Web::PageId page_id, u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client) =|
     did_request_service_worker_fetch_channel(Web::PageId page_id, u64 request_id, Web::HTML::EnvironmentId client_id, u64 service_worker_id) =|
 

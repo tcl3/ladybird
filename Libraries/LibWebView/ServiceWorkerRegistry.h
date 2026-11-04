@@ -87,6 +87,9 @@ public:
 
     static void navigation_loader_will_be_destroyed(NavigationLoader const&);
 
+    // A document became the navigable's active document.
+    static void navigable_did_activate_document(CanonicalNavigable const&);
+
     // https://w3c.github.io/ServiceWorker/#control-and-use
     // A client whose creator or owner a service worker controls takes that worker as its active service worker, unless
     // its fetch went through HTTP fetch. Returns the active service worker it takes, if any.
@@ -114,6 +117,8 @@ public:
 
     void navigation_preload(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerRegistrationId, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation, ByteString header_value);
     void service_worker_did_request_claim(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
+    void service_worker_did_request_client_navigation(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId, String const& client_id, URL::URL const&);
+    void client_did_navigate_service_worker_client(u64 navigation_id, ServiceWorkerClientConnection const& provider, Optional<Web::ServiceWorker::ServiceWorkerJobError>, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot>);
     void connect_fetch_channel(ServiceWorkerClientConnection const& requester, Web::ServiceWorker::ServiceWorkerRequestId, Web::HTML::EnvironmentId const& client_id, Web::ServiceWorker::ServiceWorkerId);
     void service_worker_did_request_clients(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType);
     void client_did_provide_service_worker_client_snapshots(u64 gather_id, ServiceWorkerClientConnection const& provider, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot>);
@@ -252,6 +257,8 @@ private:
         Web::ServiceWorker::ServiceWorkerId worker_id { 0 };
         Web::ServiceWorker::ServiceWorkerRequestId request_id { 0 };
         bool is_get { false };
+        // NB: A request for the window client that a WindowClient.navigate() made, which settles the navigation.
+        bool is_client_navigation { false };
         Vector<Web::HTML::EnvironmentId> window_clients;
         Vector<Web::HTML::EnvironmentId> worker_clients;
         Vector<void const*> processes_waited_for;
@@ -384,6 +391,22 @@ private:
     void finish_clients_request(u64 gather_id);
     Vector<ClientsRequest> m_clients_requests;
     u64 m_next_gather_id { 0 };
+
+    // A WindowClient.navigate() of a worker, from when the client's process is asked to navigate the client until a new
+    // document is the navigable's active document.
+    // FIXME: Settle the navigation of a navigable whose navigation ends without a new document, such as one whose
+    //        response has a 204 status.
+    struct ClientNavigation {
+        u64 id { 0 };
+        Web::ServiceWorker::ServiceWorkerId worker_id { 0 };
+        Web::ServiceWorker::ServiceWorkerRequestId request_id { 0 };
+        WeakPtr<CanonicalNavigable> navigable;
+        void const* client_process { nullptr };
+        URL::Origin worker_origin;
+    };
+    void finish_client_navigation(u64 navigation_id, Optional<Web::ServiceWorker::ServiceWorkerJobError>, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> const&);
+    Vector<ClientNavigation> m_client_navigations;
+    u64 m_next_client_navigation_id { 0 };
 
     HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 

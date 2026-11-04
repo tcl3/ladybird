@@ -5,5 +5,5 @@ interface WindowClient : Client {
     readonly attribute boolean focused;
     [SameObject] readonly attribute FrozenArray<USVString> ancestorOrigins;
     [FIXME, NewObject] Promise<WindowClient> focus();
-    [FIXME, NewObject] Promise<WindowClient?> navigate(USVString url);
+    [NewObject] Promise<WindowClient?> navigate(USVString url);
 };

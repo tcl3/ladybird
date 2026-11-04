@@ -425,6 +425,12 @@ void WebWorkerClient::did_request_service_worker_claim(u64 request_id)
         registry->service_worker_did_request_claim(m_agent_id, request_id);
 }
 
+void WebWorkerClient::did_request_service_worker_client_navigation(u64 request_id, String client_id, URL::URL url)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_request_service_worker_client_navigation"sv))
+        registry->service_worker_did_request_client_navigation(m_agent_id, request_id, client_id, url);
+}
+
 void WebWorkerClient::did_change_service_worker_pending_events(bool has_pending_events)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_change_service_worker_pending_events"sv))

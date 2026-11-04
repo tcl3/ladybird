@@ -3882,6 +3882,14 @@ void ConnectionFromClient::request_service_worker_client_snapshots(Web::PageId p
     async_did_provide_service_worker_client_snapshots(page_id, gather_id, Web::ServiceWorker::service_worker_client_snapshots(client_ids));
 }
 
+void ConnectionFromClient::navigate_service_worker_client(Web::PageId page_id, u64 navigation_id, Web::HTML::EnvironmentId client_id, URL::URL url)
+{
+    Web::ServiceWorker::navigate_window_client(client_id, url, GC::create_function(GC::Heap::the(), GC::captures(make_weak_ptr<ConnectionFromClient>(), page_id, navigation_id), [](auto& weak_this, auto& page_id, auto& navigation_id, Optional<Web::ServiceWorker::ServiceWorkerJobError> error, Optional<Web::ServiceWorker::ServiceWorkerClientSnapshot> client) {
+        if (auto connection = weak_this.strong_ref())
+            connection->async_did_navigate_service_worker_client(page_id, navigation_id, error, move(client));
+    }));
+}
+
 void ConnectionFromClient::service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message)
 {
     Web::ServiceWorker::service_worker_message_to_client(client_id, move(source), origin, move(message));

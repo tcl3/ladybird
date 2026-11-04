@@ -2,8 +2,8 @@ Harness status: OK
 
 Found 302 tests
 
-296 Pass
-6 Fail
+297 Pass
+5 Fail
 Pass	idl_test setup
 Pass	idl_test validation
 Pass	Partial interface Navigator: original interface defined
@@ -179,7 +179,7 @@ Pass	WindowClient interface: attribute visibilityState
 Pass	WindowClient interface: attribute focused
 Pass	WindowClient interface: attribute ancestorOrigins
 Fail	WindowClient interface: operation focus()
-Fail	WindowClient interface: operation navigate(USVString)
+Pass	WindowClient interface: operation navigate(USVString)
 Pass	Clients interface: existence and properties of interface object
 Pass	Clients interface object length
 Pass	Clients interface object name

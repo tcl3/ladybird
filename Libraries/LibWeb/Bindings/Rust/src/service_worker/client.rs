@@ -131,6 +131,15 @@ impl Client {
         }
     }
 
+    pub(crate) fn realm(&self) -> Gc<Realm> {
+        self.realm
+    }
+
+    /// The id of the object's service worker client.
+    pub(crate) fn id_string(&self) -> String {
+        String::from_utf16_lossy(&self.id.to_utf16())
+    }
+
     // https://w3c.github.io/ServiceWorker/#create-client-algorithm
     pub(crate) fn create(vm: &Vm, realm: Gc<Realm>, client: &ServiceWorkerClientSnapshot) -> Ref<Self> {
         // 1. Let clientObject be a new Client object.

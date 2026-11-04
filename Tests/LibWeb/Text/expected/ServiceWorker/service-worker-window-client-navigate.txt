@@ -1,0 +1,8 @@
+navigate() to a URL in scope: WindowClient <second URL>, frameType nested, a new id: true
+The frame shows: Second
+The new document is controlled: true
+navigate() to about:blank: TypeError
+navigate() to an invalid URL: TypeError
+navigate() of a client the worker does not control: TypeError
+navigate() to a cross-origin URL: null
+unregister(): true

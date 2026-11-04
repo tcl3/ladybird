@@ -31,6 +31,9 @@ use crate::service_worker::service_worker_registration::{
     ServiceWorkerRegistrationSlot, ServiceWorkerUpdateViaCache, service_worker_registration_state_changed,
     service_worker_update_found,
 };
+use crate::service_worker::window_client::{
+    ClientNavigationError, ClientNavigationOutcome, service_worker_client_navigated,
+};
 use crate::service_worker::{ServiceWorkerDescriptor, ServiceWorkerRegistrationSnapshot};
 
 /// A Web::ServiceWorker::ServiceWorkerDescriptor that C++ lends, if `exists` is true.
@@ -382,6 +385,34 @@ pub unsafe extern "C" fn web_rust_service_worker_claim_finished(vm: *mut c_void,
     // SAFETY: The caller passes the live VM.
     let vm = unsafe { &*vm.cast::<Vm>() };
     service_worker_claim_finished(vm, request_id, succeeded);
+}
+
+/// The UI process's answer to a WindowClient.navigate() of this process's service worker: 0 and a null client for
+/// null, 0 and the client for a window client, or one more than a Web::ServiceWorker::ServiceWorkerJobError to reject
+/// with.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and `client` null or a client snapshot that is lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_client_navigated(
+    vm: *mut c_void,
+    request_id: u64,
+    error: u8,
+    client: *const FfiServiceWorkerClientSnapshot<'_>,
+) {
+    // SAFETY: The caller passes the live VM.
+    let vm = unsafe { &*vm.cast::<Vm>() };
+    let outcome = match error {
+        0 => {
+            // SAFETY: The caller lends the client, if there is one, for the call.
+            let client = unsafe { client.as_ref() }.map(client_snapshot_from_abi);
+            ClientNavigationOutcome::Navigated(client)
+        }
+        2 => ClientNavigationOutcome::Rejected(ClientNavigationError::SecurityError),
+        _ => ClientNavigationOutcome::Rejected(ClientNavigationError::TypeError),
+    };
+    service_worker_client_navigated(vm, request_id, outcome);
 }
 
 /// The Clients object of the service worker global scope whose realm this is.

@@ -53,4 +53,15 @@ WEB_API void service_worker_claim_finished(ServiceWorkerRequestId, bool succeede
 WEB_API Vector<ServiceWorkerClientSnapshot> service_worker_client_snapshots(Vector<HTML::EnvironmentId> const&);
 WEB_API void navigation_preload_settled(ServiceWorkerRequestId, Optional<ServiceWorkerNavigationPreloadState> const&);
 
+// https://w3c.github.io/ServiceWorker/#client-navigate
+// The UI process's answer to WindowClient.navigate(): an error to reject the promise with, or the window client to
+// resolve it with, or neither for null.
+WEB_API void service_worker_client_navigated(ServiceWorkerRequestId, Optional<ServiceWorkerJobError>, Optional<ServiceWorkerClientSnapshot> const&);
+
+// Runs the steps of WindowClient.navigate() that the window client's process runs, for the window client with the id.
+// Calls back with an error to reject the promise with, or with the window client to resolve it with, or with neither
+// once the navigation started.
+using WindowClientNavigationCallback = GC::Ref<GC::Function<void(Optional<ServiceWorkerJobError>, Optional<ServiceWorkerClientSnapshot>)>>;
+WEB_API void navigate_window_client(HTML::EnvironmentId const&, URL::URL const&, WindowClientNavigationCallback);
+
 }

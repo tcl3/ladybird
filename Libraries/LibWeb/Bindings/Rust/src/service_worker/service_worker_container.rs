@@ -133,13 +133,13 @@ impl GetTheParent for ServiceWorkerContainer {
 }
 
 /// What the methods of a container read of its service worker client.
-struct ServiceWorkerClient {
-    api_base_url: Url,
-    origin: Origin,
+pub(crate) struct ServiceWorkerClient {
+    pub(crate) api_base_url: Url,
+    pub(crate) origin: Origin,
 }
 
 // https://w3c.github.io/ServiceWorker/#serviceworkercontainer-service-worker-client
-fn service_worker_client(realm: Gc<Realm>) -> ServiceWorkerClient {
+pub(crate) fn service_worker_client(realm: Gc<Realm>) -> ServiceWorkerClient {
     unsafe extern "C" fn on_client(ctx: *mut c_void, api_base_url: ak::Span<'_, u8>, origin: *const FfiOrigin) {
         let api_base_url = core::str::from_utf8(api_base_url.as_slice()).expect("LibWeb lends a serialized URL");
         // SAFETY: ctx is the client below, and LibWeb lends the origin for the call.
@@ -159,7 +159,7 @@ fn service_worker_client(realm: Gc<Realm>) -> ServiceWorkerClient {
 }
 
 // https://url.spec.whatwg.org/#concept-url-parser
-fn parse_with_base(input: &UsvString, base: &Url) -> Option<Url> {
+pub(crate) fn parse_with_base(input: &UsvString, base: &Url) -> Option<Url> {
     basic_parse(url_input(input.units()), BasicParseOptions::new().base_url(base))
 }
 
@@ -186,6 +186,7 @@ pub(crate) enum ServiceWorkerRequestKind {
     ClientsGet,
     ClientsMatchAll,
     ClientsClaim,
+    ClientNavigate,
 }
 
 // SAFETY: A kind of request holds no cells.
