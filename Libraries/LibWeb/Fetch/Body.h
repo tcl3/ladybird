@@ -44,7 +44,7 @@ public:
     virtual GC::Ptr<Infrastructure::Body> body_impl() = 0;
     virtual GC::Ptr<Infrastructure::Body const> body_impl() const = 0;
 
-    [[nodiscard]] bool is_unusable() const;
+    [[nodiscard]] WEB_API bool is_unusable() const;
     [[nodiscard]] GC::Ptr<Streams::ReadableStream> body() const;
     [[nodiscard]] bool body_used() const;
 

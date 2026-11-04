@@ -1,0 +1,9 @@
+#include <LibWeb/ServiceWorker/FetchEventTypes.h>
+
+// The messages that the process of a service worker gets from a service worker client's process, on a channel the UI
+// process set up for that client.
+endpoint ServiceWorkerFetchServer {
+    dispatch_fetch_event(u64 fetch_id, Web::ServiceWorker::FetchEventRequest request) =|
+    allow_fetch_response_body(u64 fetch_id, u64 total_byte_count) =|
+    cancel_fetch(u64 fetch_id) =|
+}

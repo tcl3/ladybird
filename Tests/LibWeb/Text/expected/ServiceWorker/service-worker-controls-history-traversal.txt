@@ -1,0 +1,6 @@
+Navigations the worker handled before the traversal: 2
+The traversed-to document is the first one: true
+The worker handled the traversal: true
+The document is controlled: true
+The traversal's resulting client is the document: true
+unregister(): true

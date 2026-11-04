@@ -53,6 +53,18 @@ void CanonicalWindow::set_up_a_window_environment_settings_object(Optional<Web::
     m_relevant_settings_object = make<CanonicalWindowEnvironmentSettingsObject>(*this, id.release_value(), move(top_level_creation_url));
 }
 
+void CanonicalWindow::take_id_of_reserved_environment(Web::HTML::EnvironmentId id)
+{
+    VERIFY(m_relevant_settings_object);
+    if (m_relevant_settings_object->id() == id)
+        return;
+    auto top_level_creation_url = m_relevant_settings_object->top_level_creation_url().value();
+
+    // NB: The client of the initial about:blank document goes away with that document.
+    m_relevant_settings_object = nullptr;
+    m_relevant_settings_object = make<CanonicalWindowEnvironmentSettingsObject>(*this, move(id), move(top_level_creation_url));
+}
+
 CanonicalDocument const& CanonicalWindow::associated_document() const
 {
     VERIFY(m_associated_document);

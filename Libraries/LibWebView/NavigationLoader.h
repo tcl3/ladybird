@@ -53,6 +53,9 @@ public:
         Web::HTML::SandboxingFlagSet final_sandboxing_flag_set {};
         // The id of the window environment a process created the document with before the UI process heard of it.
         Optional<Web::HTML::EnvironmentId> environment_id;
+        // Whether a reused initial about:blank window takes that id too, as the id of a reserved environment that a
+        // service worker controls.
+        bool reused_window_takes_environment_id { false };
         Web::HTML::CrossProcessId document_id;
         // The permissions policy created for navigationParams in the UI process, if it handled them.
         Optional<Web::PermissionsPolicy::PermissionsPolicy> permissions_policy {};

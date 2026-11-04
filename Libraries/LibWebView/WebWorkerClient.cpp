@@ -411,6 +411,14 @@ void WebWorkerClient::did_request_service_worker_match(u64 request_id, Web::Serv
     session->service_worker_registry->match_reserved_client_of_worker(client_environment, request_id, reserved_client);
 }
 
+void WebWorkerClient::did_request_service_worker_fetch_channel(u64 request_id, Web::HTML::EnvironmentId client_id, u64 service_worker_id)
+{
+    auto session = m_session.strong_ref();
+    if (!session)
+        return;
+    session->service_worker_registry->connect_fetch_channel(ServiceWorkerClientConnection { *this }, request_id, client_id, service_worker_id);
+}
+
 void WebWorkerClient::did_request_service_worker_claim(u64 request_id)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_request_service_worker_claim"sv))

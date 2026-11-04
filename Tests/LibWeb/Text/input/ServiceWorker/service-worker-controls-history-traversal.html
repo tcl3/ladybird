@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A history traversal that fetches its document again is a navigation request that the active worker handles.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/traversal-worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `let navigations = 0;
+                self.addEventListener("fetch", event => {
+                    if (event.request.mode !== "navigate")
+                        return;
+                    ++navigations;
+                    const resultingClientId = event.resultingClientId;
+                    event.respondWith(new Response(
+                        "<!DOCTYPE html><p id=navigation>" + navigations + "</p><p id=client>" + resultingClientId + "</p>",
+                        { headers: { "Content-Type": "text/html", "Cache-Control": "no-store" } }));
+                });
+                self.addEventListener("message", async event => {
+                    const client = await self.clients.get(event.data);
+                    event.source.postMessage(client ? client.url : null);
+                });`,
+        });
+        const firstURL = new URL("traversal-first.html", script).href;
+        const secondURL = new URL("traversal-second.html", script).href;
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const frame = document.createElement("iframe");
+        const loadedOnce = () => new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        let loaded = loadedOnce();
+        frame.src = firstURL;
+        document.body.appendChild(frame);
+        await loaded;
+
+        loaded = loadedOnce();
+        frame.contentWindow.location.href = secondURL;
+        await loaded;
+        println(`Navigations the worker handled before the traversal: ${frame.contentDocument.getElementById("navigation").textContent}`);
+
+        loaded = loadedOnce();
+        frame.contentWindow.history.back();
+        await loaded;
+
+        const frameDocument = frame.contentDocument;
+        println(`The traversed-to document is the first one: ${frame.contentWindow.location.href === firstURL}`);
+        println(`The worker handled the traversal: ${frameDocument.getElementById("navigation").textContent === "3"}`);
+        println(`The document is controlled: ${frame.contentWindow.navigator.serviceWorker.controller !== null}`);
+
+        const clientURL = await new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage(frameDocument.getElementById("client").textContent);
+        });
+        println(`The traversal's resulting client is the document: ${clientURL === firstURL}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

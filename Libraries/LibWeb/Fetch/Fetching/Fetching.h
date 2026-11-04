@@ -24,6 +24,8 @@
 
 namespace Web::Fetch::Fetching {
 
+class NetworkBodyPump;
+
 // https://fetch.spec.whatwg.org/#document-accept-header-value
 // The document `Accept` header value is `text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8`.
 constexpr auto document_accept_header_value = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"sv;
@@ -63,6 +65,14 @@ GC::Ref<PendingResponse> cors_preflight_fetch(JS::Realm&, Infrastructure::FetchP
 GC::Ptr<Infrastructure::Body> adopt_navigation_response_body(JS::Realm&, Infrastructure::Response&, Optional<Utf16String> const& request_server_top_level_site, Requests::RequestTransferLeaseKey, RefPtr<Infrastructure::FetchTimingInfo>, GC::Ref<GC::Function<void(Optional<StringView> error)>> on_network_settled);
 // Stopping the transport also cancels the channel.
 WEB_API NonnullRefPtr<Engine::WholeBodyTransport> create_whole_body_transport(Engine::FetchBodyDeliveryGate&, Engine::FetchByteChannel&);
+
+// A response body whose bytes another process delivers, as RequestServer delivers a network body's.
+struct DeliveredResponseBody {
+    NonnullRefPtr<Engine::FetchByteChannel> channel;
+    NonnullRefPtr<Engine::FetchBodyDeliveryGate> delivery_gate;
+    GC::Ref<NetworkBodyPump> body_pump;
+};
+WEB_API DeliveredResponseBody create_delivered_response_body();
 void set_sec_fetch_dest_header(Infrastructure::Request&);
 void set_sec_fetch_mode_header(Infrastructure::Request&);
 void set_sec_fetch_site_header(Infrastructure::Request&);

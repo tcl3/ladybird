@@ -474,8 +474,15 @@ WebIDL::ExceptionOr<GC::Ref<Document>> Document::create_and_initialize(Type type
         //       above.
         // NB: The UI process gives navigationParams's reserved environment the window's active service worker.
         auto& settings_object = HTML::relevant_settings_object(*window);
-        if (navigation_params.reserved_environment)
+        if (navigation_params.reserved_environment) {
             settings_object.active_service_worker = navigation_params.reserved_environment->active_service_worker;
+
+            // AD-HOC: A reused window whose navigation's reserved environment a service worker controls takes the reserved
+            //         environment's id, which the fetch event named as its resulting client id, as in other engines.
+            // NB: The UI process gives the reserved environment the id the window keeps otherwise.
+            if (!navigation_params.reserved_environment->id.is_empty())
+                settings_object.id = navigation_params.reserved_environment->id;
+        }
 
         // AD-HOC: The reused window client is the client of the document that replaces the initial about:blank one, so
         //         its creation URL is the URL that document is created with, which Client.url exposes. This matches

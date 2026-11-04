@@ -24,6 +24,7 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/StructuredSerialize.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/Streams/ReadableStream.h>
 #include <LibWeb/WebIDL/DOMException.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
@@ -100,8 +101,9 @@ GC::Ref<WebIDL::Promise> fetch(JS::Realm& realm, RequestInfo const& input, Bindi
     // 5. Let globalObject be request’s client’s global object.
     auto& global_object = Fetching::resolve_client(request)->global_object();
 
-    // FIXME: 6. If globalObject is a ServiceWorkerGlobalScope object, then set request’s service-workers mode to "none".
-    (void)global_object;
+    // 6. If globalObject is a ServiceWorkerGlobalScope object, then set request’s service-workers mode to "none".
+    if (auto const* worker_global_scope = Bindings::worker_global_scope_from_global_object(global_object); worker_global_scope && is<ServiceWorker::ServiceWorkerGlobalScope>(*worker_global_scope))
+        request->set_service_workers_mode(Infrastructure::Request::ServiceWorkersMode::None);
 
     // 7. Let responseObject be null.
     auto response_object_holder = GC::Heap::the().allocate<ResponseObjectHolder>();

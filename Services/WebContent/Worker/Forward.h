@@ -11,6 +11,7 @@ namespace WebWorker {
 class ConnectionFromClient;
 class DedicatedWorkerThreadLink;
 class PageHost;
+class ServiceWorkerFetchConnection;
 class ServiceWorkerHost;
 class WorkerHost;
 

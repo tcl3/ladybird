@@ -279,6 +279,12 @@ void PageHost::page_did_request_service_worker_claim(Web::ServiceWorker::Service
     m_client.async_did_request_service_worker_claim(request_id);
 }
 
+bool PageHost::page_did_request_service_worker_fetch_channel(Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::HTML::EnvironmentId const& client, Web::ServiceWorker::ServiceWorkerId service_worker_id)
+{
+    m_client.async_did_request_service_worker_fetch_channel(request_id, client, service_worker_id);
+    return true;
+}
+
 void PageHost::did_change_service_worker_pending_events(bool has_pending_events)
 {
     m_client.async_did_change_service_worker_pending_events(has_pending_events);

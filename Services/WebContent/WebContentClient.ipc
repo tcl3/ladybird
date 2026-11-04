@@ -223,6 +223,7 @@ endpoint WebContentClient routed by Web::PageId page_id
     did_request_navigation_preload(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value) =|
     [NotRouted] did_provide_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) =|
     did_request_service_worker_match(Web::PageId page_id, u64 request_id, Web::ServiceWorker::ServiceWorkerReservedClient reserved_client) =|
+    did_request_service_worker_fetch_channel(Web::PageId page_id, u64 request_id, Web::HTML::EnvironmentId client_id, u64 service_worker_id) =|
 
     did_update_resource_count(Web::PageId page_id, i32 count_waiting) =|
     [NotRouted] did_request_new_web_view(Web::PageId page_id, Web::HTML::ActivateTab activate_tab, Web::HTML::WebViewHints hints, Web::HTML::CrossProcessId current_navigable_id, Utf16String name, bool no_opener, Optional<URL::URL> current_document_base_url) => (Optional<Web::PageId> new_page_id, Optional<Web::HTML::CrossProcessId> root_navigable_id, Optional<Web::HTML::SessionHistoryEntryDescriptor> initial_history_entry, Optional<Web::HTML::EnvironmentId> initial_environment_id, Optional<Web::HTML::CrossProcessId> initial_document_id, Optional<u64> browsing_context_group_id, Web::HTML::WindowType window_type, Web::HTML::VisibilityState system_visibility_state, String handle)

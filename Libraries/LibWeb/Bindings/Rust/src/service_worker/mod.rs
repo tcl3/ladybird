@@ -39,6 +39,7 @@ pub(crate) fn shut_down_service_workers_of_agent() {
     service_worker_registration::forget_registration_objects_of_agent();
     lifecycle_events::forget_lifecycle_event_of_agent();
     messages::forget_extended_events_of_agent();
+    fetch_event::forget_fetch_events_of_agent();
 }
 
 /// A service worker, https://w3c.github.io/ServiceWorker/#dfn-service-worker, as the UI process describes it.

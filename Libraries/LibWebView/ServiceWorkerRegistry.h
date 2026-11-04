@@ -74,7 +74,7 @@ public:
 
     // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
     // Handle Fetch's steps 9.5 to 9.8, for the reserved client of a navigation or of a worker's script fetch.
-    void match_reserved_client_of_navigation(ServiceWorkerClientConnection const&, CanonicalNavigable const&, NavigationLoader const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&);
+    void match_reserved_client_of_navigation(ServiceWorkerClientConnection const&, CanonicalNavigable const&, NavigationLoader const*, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&);
     void match_reserved_client_of_worker(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&);
 
     // Whether a registry recorded the reserved client as the one the navigation's fetch matched a registration for,
@@ -104,6 +104,7 @@ public:
 
     void navigation_preload(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerRegistrationId, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation, ByteString header_value);
     void service_worker_did_request_claim(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
+    void connect_fetch_channel(ServiceWorkerClientConnection const& requester, Web::ServiceWorker::ServiceWorkerRequestId, Web::HTML::EnvironmentId const& client_id, Web::ServiceWorker::ServiceWorkerId);
     void service_worker_did_request_clients(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType);
     void client_did_provide_service_worker_client_snapshots(u64 gather_id, ServiceWorkerClientConnection const& provider, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot>);
 
@@ -197,9 +198,14 @@ private:
         Web::HTML::EnvironmentId id;
         Web::ServiceWorker::ServiceWorkerId active_service_worker { 0 };
 
-        // NB: The navigation whose reserved client this is, until the window the navigation creates takes the reserved
-        //     client's id. Only compared, never dereferenced.
+        // NB: The navigable whose navigation's reserved client this is, until the window the navigation creates takes
+        //     the reserved client's id. The navigation's loader, which a history traversal has only once its fetch is
+        //     done, and the process that runs the fetch are only compared, never dereferenced.
+        Optional<Web::HTML::CrossProcessId> reserving_navigable;
         NavigationLoader const* reserving_navigation { nullptr };
+        void const* reserving_process { nullptr };
+
+        bool is_reserved() const { return reserving_navigable.has_value(); }
     };
 
     // The timer that stops the running workers of a partition whose last client went away.
@@ -280,7 +286,8 @@ private:
         URL::URL creation_url;
     };
 
-    void match_reserved_client(ServiceWorkerClientConnection const&, Optional<Partition> const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&, NavigationLoader const* reserving_navigation);
+    void match_reserved_client(ServiceWorkerClientConnection const&, Optional<Partition> const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&, Optional<Web::HTML::CrossProcessId> reserving_navigable, NavigationLoader const* reserving_navigation);
+    void forget_reserved_clients_of_navigable(Web::HTML::CrossProcessId, Optional<Web::HTML::EnvironmentId const&> except);
     bool is_using(ControlledClient const&, Registration const&) const;
     bool any_service_worker_client_is_using(Registration const&) const;
     void handle_service_worker_client_unload(Web::HTML::EnvironmentId const&);

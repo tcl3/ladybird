@@ -369,6 +369,7 @@ private:
     virtual void service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) override;
     virtual void service_worker_match_finished(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerControllerMatch> match) override;
     virtual void service_worker_controller_changed(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor controller) override;
+    virtual void service_worker_fetch_channel_ready(u64 request_id, Optional<IPC::TransportHandle> handle) override;
     virtual void did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) override;
     virtual void did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) override;
     virtual void did_worker_agent_close(Web::HTML::WorkerAgentOwnerToken owner_token) override;

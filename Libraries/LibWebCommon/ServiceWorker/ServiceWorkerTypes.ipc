@@ -91,4 +91,5 @@ struct Web::ServiceWorker::ServiceWorkerStartRequest {
     Optional<URL::Origin> top_level_origin;
     Web::ServiceWorker::ServiceWorkerScriptFetchParameters script_fetch;
     Vector<Web::ServiceWorker::ServiceWorkerScriptResource> stored_scripts;
+    u64 extendable_event_timeout_ms;
 }

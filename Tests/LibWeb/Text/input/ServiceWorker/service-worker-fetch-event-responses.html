@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A service worker can respond to a navigation, and to a subresource with a streamed or large body.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("fetch", event => {
+                const url = new URL(event.request.url);
+                const kind = url.searchParams.get("kind");
+                if (kind === "page") {
+                    event.respondWith(new Response("<!DOCTYPE html><p id=from>" + event.request.mode + " " + event.clientId.length + " " + event.resultingClientId + "</p>", { headers: { "Content-Type": "text/html" } }));
+                } else if (kind === "whoami") {
+                    event.respondWith(new Response(event.clientId + " " + event.resultingClientId.length));
+                } else if (kind === "stream") {
+                    let count = 0;
+                    event.respondWith(new Response(new ReadableStream({
+                        pull(controller) {
+                            if (count === 3) {
+                                controller.close();
+                                return;
+                            }
+                            return new Promise(resolve => setTimeout(resolve, 10)).then(() => controller.enqueue(new TextEncoder().encode("chunk" + (count++) + ";")));
+                        },
+                    })));
+                } else if (kind === "large") {
+                    const bytes = new Uint8Array(3 * 1024 * 1024 + 7);
+                    for (let i = 0; i < bytes.length; ++i)
+                        bytes[i] = i % 251;
+                    event.respondWith(new Response(bytes));
+                }
+            });`,
+        });
+        const frameURL = await server.echoURL("/frame.html");
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = `${frameURL}?kind=page`;
+        document.body.appendChild(frame);
+        await loaded;
+
+        const [mode, clientIdLength, resultingClientId] = frame.contentDocument.getElementById("from").textContent.split(" ");
+        println(`The navigation's fetch event: mode ${mode}, clientId length ${clientIdLength}`);
+        const whoami = await (await frame.contentWindow.fetch(`${frameURL}?kind=whoami`)).text();
+        const [clientId, resultingClientIdLength] = whoami.split(" ");
+        println(`The frame's fetches name it by the navigation's resultingClientId: ${clientId === resultingClientId}`);
+        println(`A subresource's resultingClientId length: ${resultingClientIdLength}`);
+        println(`The frame is controlled: ${frame.contentWindow.navigator.serviceWorker.controller !== null}`);
+
+        const streamed = await frame.contentWindow.fetch(`${frameURL}?kind=stream`);
+        println(`Streamed body: ${await streamed.text()}`);
+
+        const large = await frame.contentWindow.fetch(`${frameURL}?kind=large`);
+        const bytes = new Uint8Array(await large.arrayBuffer());
+        let intact = true;
+        for (let i = 0; i < bytes.length; ++i) {
+            if (bytes[i] !== i % 251) {
+                intact = false;
+                break;
+            }
+        }
+        println(`Large body: ${bytes.length} bytes, intact: ${intact}`);
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

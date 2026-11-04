@@ -1328,6 +1328,13 @@ void CanonicalTraversable::did_not_receive_reply(OwedReply const& owed)
     VERIFY_NOT_REACHED();
 }
 
+RefPtr<NavigationLoader> CanonicalTraversable::population_loader_of_changing_job(Web::HTML::CrossProcessId operation_id, Web::HTML::CrossProcessId navigable_id)
+{
+    auto* operation = find_history_operation(operation_id);
+    auto* changing_navigable = operation ? operation->pending_changing_job(navigable_id) : nullptr;
+    return changing_navigable ? changing_navigable->population_loader() : nullptr;
+}
+
 HistoryOperation* CanonicalTraversable::find_history_operation(Web::HTML::CrossProcessId operation_id)
 {
     auto operation = m_history_operations.find(operation_id);
@@ -2139,6 +2146,7 @@ void CanonicalTraversable::did_attempt_to_populate_the_history_entry_document(We
         .embedder_policy = navigable->active_document().embedder_policy(),
         .final_sandboxing_flag_set = navigable->active_document().active_sandboxing_flag_set(),
         .environment_id = parameters.environment_id,
+        .reused_window_takes_environment_id = false,
         .document_id = *parameters.document_id,
     };
 

@@ -35,6 +35,7 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/ImageCodecPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
+#include <LibWeb/ServiceWorker/FetchChannel.h>
 #include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/WebRTC/RTCEncodedAudioFrame.h>
@@ -454,6 +455,17 @@ void ConnectionFromClient::service_worker_controller_changed(Web::HTML::Environm
 void ConnectionFromClient::service_worker_claim_finished(u64 request_id, bool succeeded)
 {
     Web::ServiceWorker::service_worker_claim_finished(request_id, succeeded);
+}
+
+void ConnectionFromClient::service_worker_fetch_channel_ready(u64 request_id, Optional<IPC::TransportHandle> handle)
+{
+    Web::ServiceWorker::service_worker_fetch_channel_ready(request_id, move(handle));
+}
+
+void ConnectionFromClient::connect_service_worker_fetch_channel(IPC::TransportHandle handle, Web::HTML::EnvironmentId client_id)
+{
+    if (m_service_worker_host)
+        m_service_worker_host->connect_fetch_channel(move(handle), move(client_id));
 }
 
 void ConnectionFromClient::rtc_transform_init(u64 transform_id, Web::HTML::SerializedTransferRecord options_record)

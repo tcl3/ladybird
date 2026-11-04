@@ -1,0 +1,7 @@
+The navigation's fetch event: mode navigate, clientId length 0
+The frame's fetches name it by the navigation's resultingClientId: true
+A subresource's resultingClientId length: 0
+The frame is controlled: true
+Streamed body: chunk0;chunk1;chunk2;
+Large body: 3145735 bytes, intact: true
+unregister(): true

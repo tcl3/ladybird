@@ -1043,6 +1043,8 @@ public:
     // Returns whether the UI process was asked, and so will answer.
     virtual bool page_did_request_service_worker_match([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] ServiceWorker::ServiceWorkerReservedClient const& reserved_client) { return false; }
     virtual void page_did_request_service_worker_claim([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id) { }
+    // Returns whether the UI process was asked, and so will answer.
+    virtual bool page_did_request_service_worker_fetch_channel([[maybe_unused]] ServiceWorker::ServiceWorkerRequestId request_id, [[maybe_unused]] HTML::EnvironmentId const& client, [[maybe_unused]] ServiceWorker::ServiceWorkerId service_worker_id) { return false; }
 
     struct StartedWorkerAgent {
         HTML::WorkerAgentId agent_id { 0 };

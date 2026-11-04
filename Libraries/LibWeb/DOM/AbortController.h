@@ -18,7 +18,7 @@ class AbortController final : public Bindings::GCAllocatedWrappable {
 
 public:
     static constexpr size_t signal_offset() { return offsetof(AbortController, m_signal); }
-    static GC::Ref<AbortController> create();
+    WEB_API static GC::Ref<AbortController> create();
 
     virtual ~AbortController() override;
 

@@ -764,6 +764,7 @@ set(SOURCES
     ServiceWorker/Cache.cpp
     ServiceWorker/CacheStorage.cpp
     ServiceWorker/EventNames.cpp
+    ServiceWorker/FetchChannel.cpp
     ServiceWorker/HandleFetch.cpp
     ServiceWorker/NameToCacheMap.cpp
     ServiceWorker/RustIntegration.cpp
@@ -1022,6 +1023,10 @@ generate_css_implementation()
 generate_html_implementation()
 
 generate_picture_in_picture_implementation()
+
+compile_ipc(ServiceWorker/FetchEventTypes.ipc ServiceWorker/FetchEventTypesCodecs.h)
+compile_ipc(ServiceWorker/ServiceWorkerFetchClient.ipc ServiceWorker/ServiceWorkerFetchClientEndpoint.h)
+compile_ipc(ServiceWorker/ServiceWorkerFetchServer.ipc ServiceWorker/ServiceWorkerFetchServerEndpoint.h)
 
 set(GENERATED_SOURCES
     CSS/DefaultStyleSheetSource.cpp

@@ -2718,6 +2718,12 @@ static void tear_down_network_body(Engine::FetchBodyDeliveryGate& delivery_gate,
     VERIFY_NOT_REACHED();
 }
 
+DeliveredResponseBody create_delivered_response_body()
+{
+    auto network_body = create_network_body(nullptr, Engine::FetchBodyDeliveryGate::NavigationHold::None, nullptr);
+    return { move(network_body.channel), move(network_body.delivery_gate), network_body.body_pump };
+}
+
 NonnullRefPtr<Engine::WholeBodyTransport> create_whole_body_transport(Engine::FetchBodyDeliveryGate& delivery_gate, Engine::FetchByteChannel& channel)
 {
     auto transport = Engine::WholeBodyTransport::create();

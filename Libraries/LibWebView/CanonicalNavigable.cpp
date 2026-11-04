@@ -425,6 +425,11 @@ NonnullRefPtr<CanonicalDocument> CanonicalNavigable::create_and_initialize_a_doc
     if (browsing_context->active_document()->is_initial_about_blank()
         && browsing_context->active_document()->origin().is_same_origin_domain(navigation_params.origin)) {
         window = browsing_context->active_window();
+
+        // AD-HOC: A reused window whose navigation's reserved environment a service worker controls takes the reserved
+        //         environment's id, which the fetch event named as its resulting client id, as in other engines.
+        if (navigation_params.reused_window_takes_environment_id)
+            window->take_id_of_reserved_environment(*navigation_params.environment_id);
     }
     // 7. Otherwise:
     else {
@@ -1187,6 +1192,7 @@ void CanonicalNavigable::did_create_populated_document_with_an_origin_of_its_own
         .embedder_policy = {},
         .final_sandboxing_flag_set = populated_document->document->active_sandboxing_flag_set(),
         .environment_id = environment_id,
+        .reused_window_takes_environment_id = false,
         .document_id = document_id,
     };
     auto document = create_and_initialize_a_document(response_document);

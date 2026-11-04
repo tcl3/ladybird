@@ -1,0 +1,42 @@
+// Copyright (c) 2026-present, the Ladybird developers.
+
+// NB: The IPC compiler cannot check that each struct here lists every field of its C++ type. A field left out
+//     here does not cross IPC.
+
+#include <LibWeb/ServiceWorker/FetchEventTypes.h>
+
+[ExistingCpp]
+struct Web::ServiceWorker::FetchEventRequest {
+    ByteString method;
+    Vector<URL::URL> url_list;
+    Vector<HTTP::Header> header_list;
+    Optional<ByteBuffer> body;
+    Optional<Web::Fetch::Infrastructure::Request::Destination> destination;
+    Web::Fetch::Infrastructure::Request::Mode mode;
+    Web::Fetch::Infrastructure::Request::CredentialsMode credentials_mode;
+    HTTP::CacheMode cache_mode;
+    Web::Fetch::Infrastructure::Request::RedirectMode redirect_mode;
+    Web::Fetch::Infrastructure::RequestReferrerType referrer;
+    Web::ReferrerPolicy::ReferrerPolicy referrer_policy;
+    String integrity_metadata;
+    bool keepalive;
+    bool reload_navigation;
+    bool history_navigation;
+    Optional<String> client_id;
+    String replaces_client_id;
+}
+
+[ExistingCpp]
+struct Web::ServiceWorker::FetchEventResponse {
+    Web::Fetch::Infrastructure::Response::Type type;
+    u16 status;
+    ByteString status_message;
+    Vector<HTTP::Header> header_list;
+    Vector<URL::URL> url_list;
+    Vector<ByteString> cors_exposed_header_name_list;
+    bool range_requested;
+    bool request_includes_credentials;
+    bool timing_allow_passed;
+    Web::Fetch::Infrastructure::RedirectTaint redirect_taint;
+    bool has_body;
+}

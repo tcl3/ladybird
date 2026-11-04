@@ -58,6 +58,7 @@ public:
     virtual void page_did_request_service_worker_clients(Web::ServiceWorker::ServiceWorkerRequestId, String client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType) override;
     virtual bool page_did_request_service_worker_match(Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerReservedClient const&) override;
     virtual void page_did_request_service_worker_claim(Web::ServiceWorker::ServiceWorkerRequestId) override;
+    virtual bool page_did_request_service_worker_fetch_channel(Web::ServiceWorker::ServiceWorkerRequestId, Web::HTML::EnvironmentId const& client, Web::ServiceWorker::ServiceWorkerId) override;
     virtual void request_file(Web::FileRequest) override;
     virtual URL::BlobURLEntry::Token page_did_add_blob_url_entry(Web::HTML::EnvironmentSettingsObject const&, Utf16String const& url, Web::FileAPI::SerializedBlobURLEntry const&) override;
     virtual void page_did_remove_blob_url_entries(Web::HTML::EnvironmentSettingsObject const&, Vector<Utf16String> const& urls) override;

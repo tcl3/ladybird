@@ -64,6 +64,7 @@ Optional<NavigationLoader::ResponseDocument> NavigationLoader::response_document
             .embedder_policy = {},
             .final_sandboxing_flag_set = {},
             .environment_id = {},
+            .reused_window_takes_environment_id = false,
             .document_id = {},
         };
     }
@@ -111,7 +112,8 @@ Optional<NavigationLoader::ResponseDocument> NavigationLoader::response_document
         .opener_policy = fetched_navigation_params.opener_policy,
         .embedder_policy = fetched_navigation_params.policy_container.embedder_policy,
         .final_sandboxing_flag_set = fetched_navigation_params.final_sandboxing_flag_set,
-        .environment_id = move(environment_id),
+        .environment_id = environment_id,
+        .reused_window_takes_environment_id = environment_id.has_value(),
         .document_id = {},
         .permissions_policy = fetched_navigation_params.permissions_policy,
         .requests_oac = requests_oac,

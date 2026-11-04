@@ -15,6 +15,7 @@
 #include <LibWeb/Bindings/RustSerialization.h>
 #include <LibWeb/Bindings/Wrappable.h>
 #include <LibWeb/DOM/Document.h>
+#include <LibWeb/Fetch/Response.h>
 #include <LibWeb/HTML/DOMStringList.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/LocalNavigable.h>
@@ -80,6 +81,7 @@ void* web_service_worker_container_of_realm(void* realm);
 void web_service_worker_request_navigation_preload(void* realm, u64 request_id, u64 registration_id, u8 operation, ReadonlyBytes header_value);
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type);
 bool web_service_worker_claim(void* realm, u64 request_id);
+bool web_service_worker_is_response_object(void* object);
 
 // Defined on the Rust side.
 void* web_rust_service_worker_create_container(JSVM*, void* realm);
@@ -277,6 +279,11 @@ void web_service_worker_request_navigation_preload(void* realm, u64 request_id, 
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type)
 {
     Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_clients(request_id, String::from_utf8_without_validation(client_id), is_get, include_uncontrolled, static_cast<Bindings::ClientType>(type));
+}
+
+bool web_service_worker_is_response_object(void* object)
+{
+    return Bindings::impl_from<Fetch::Response>(static_cast<JS::Object*>(object)) != nullptr;
 }
 
 bool web_service_worker_claim(void* realm, u64 request_id)

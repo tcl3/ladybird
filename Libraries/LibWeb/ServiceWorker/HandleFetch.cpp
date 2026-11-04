@@ -12,6 +12,7 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/WindowOrWorkerGlobalScope.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/ServiceWorker/FetchChannel.h>
 #include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
 
@@ -36,35 +37,102 @@ static HashMap<ServiceWorkerRequestId, PendingMatch>& pending_matches()
 // NB: A request ID only has to be unique among the requests of its agent, whose connection the answer comes back on.
 static thread_local ServiceWorkerRequestId s_next_match_request_id { 0 };
 
+// NB: Whether a service worker's set of event types to handle contains "fetch", as the UI process said when it matched
+//     a registration whose active worker it is.
+static HashMap<ServiceWorkerId, bool>& service_workers_handling_fetch_events()
+{
+    // NB: Each agent learns this from the matches of its own fetches.
+    static thread_local NeverDestroyed<HashMap<ServiceWorkerId, bool>> service_workers;
+    return *service_workers;
+}
+
 void forget_pending_matches_of_this_agent()
 {
     pending_matches().clear();
+    service_workers_handling_fetch_events().clear();
+}
+
+// https://w3c.github.io/ServiceWorker/#should-skip-event-algorithm
+static bool should_skip_event(ServiceWorkerDescriptor const& service_worker)
+{
+    // 1. If serviceWorker's set of event types to handle does not contain eventName, then the user agent may return
+    //    true.
+    // NB: Only the set of a worker whose registration a reserved client matched is known here.
+    if (service_workers_handling_fetch_events().get(service_worker.id) == false)
+        return true;
+
+    // 2. Return false.
+    return false;
+}
+
+// https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+static void create_fetch_event_and_dispatch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> const& request, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, HandleFetchCallback on_complete)
+{
+    // 1. Let response be null.
+    // 2. Let eventCanceled be false.
+    // 3. Let client be request's client.
+    // 4. Let activeWorker be registration's active worker.
+    // 5. Let eventHandled be null.
+    // 6. Let handleFetchFailed be false.
+    // 7. Let respondWithEntered be false.
+    // 8. Let networkError be a network error.
+    // FIXME: 9. If raceResponse is not null:
+    // FIXME: 10. Let shouldSoftUpdate be true if any of the following are true, and false otherwise:
+
+    // 11. If the result of running the Should Skip Event algorithm with "fetch" and activeWorker is true, then:
+    if (should_skip_event(active_worker)) {
+        // FIXME: 1. If shouldSoftUpdate is true, then in parallel run the Soft Update algorithm with registration.
+        // 2. Return null.
+        on_complete->function()(nullptr);
+        return;
+    }
+
+    // FIXME: 12. If activeWorker's all fetch listeners are empty flag is set:
+    // FIXME: 13. If useHighResPerformanceTimers is true, then set useHighResPerformanceTimers to activeWorker's global
+    //            object's cross-origin isolated capability.
+    // FIXME: 14. Let timingInfo's start time be the coarsened shared current time given useHighResPerformanceTimers.
+
+    // 15. If activeWorker's state is "activating", wait for activeWorker's state to become "activated".
+    // 16. If the result of running the Run Service Worker algorithm with activeWorker is failure, then set
+    //     handleFetchFailed to true.
+    // 17. Else:
+    //     1. Set workerRealm to the relevant realm of the activeWorker's global object.
+    //     2. Set eventHandled to a new promise in workerRealm.
+    //     3. If raceResponse is not null, set activeWorker's global object's race response map[request] to raceResponse.
+    //     4. Queue a task task to run the following substeps:
+    // 18. Wait for task to have executed or for handleFetchFailed to be true.
+    // NB: The UI process runs the worker, and the worker's process waits for it to be activated and runs the task. That
+    //     process runs the steps that follow too, and reports what they return.
+    // FIXME: 19. If shouldSoftUpdate is true, then in parallel run the Soft Update algorithm with registration.
+    dispatch_fetch_event(page, client, active_worker, *request, on_complete);
 }
 
 // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
 // NB: The steps after the registration and its active worker are known.
-static void handle_fetch_with_registration(Page&, NonnullRefPtr<Fetch::Infrastructure::Request> const&, GC::Ref<Fetch::Infrastructure::FetchController>, bool, ServiceWorkerDescriptor const&, HandleFetchCallback on_complete)
+static void handle_fetch_with_registration(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> const& request, HTML::EnvironmentId const& client, ServiceWorkerDescriptor const& active_worker, HandleFetchCallback on_complete)
 {
-    // FIXME: 11. Let activeWorker be registration's active worker.
+    // 11. Let activeWorker be registration's active worker.
     // FIXME: 12. Let shouldSoftUpdate be true if any of the following are true, and false otherwise:
     //            - request is a non-subresource request.
     //            - request is a subresource request and registration is stale.
     // FIXME: 13. If activeWorker's list of router rules is not empty:
-    // FIXME: 14. Let responseForAutoPreload be null.
+    // 14. Let responseForAutoPreload be null.
     // FIXME: 15. If request is a navigation request, request's method is `GET`, registration's active worker's set of
-    //            event types to handle contains fetch, and registration's active worker's all fetch listeners are empty
-    //            flag is not set then:
-    // FIXME: 16. Else, resolve preloadResponse with undefined.
-    // FIXME: 17. Let fetchResult be the result of Create Fetch Event and Dispatch with request, registration,
-    //            useHighResPerformanceTimers, timingInfo, workerRealm, reservedClient, preloadResponse, and
-    //            responseForAutoPreload.
+    //            event types to handle contains fetch, and registration's active worker's all fetch listeners are
+    //            empty flag is not set then:
+    // 16. Else, resolve preloadResponse with undefined.
+    // NB: The worker's process creates the fetch event's preloadResponse.
+
+    // 17. Let fetchResult be the result of Create Fetch Event and Dispatch with request, registration,
+    //     useHighResPerformanceTimers, timingInfo, workerRealm, reservedClient, preloadResponse, and
+    //     responseForAutoPreload.
     // FIXME: 18. If timingInfo's worker final router source is not an empty string:
-    // FIXME: 19. Return fetchResult.
-    on_complete->function()(nullptr);
+    // 19. Return fetchResult.
+    create_fetch_event_and_dispatch(page, request, client, active_worker, on_complete);
 }
 
 // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
-void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> request, GC::Ref<Fetch::Infrastructure::FetchController> fetch_controller, bool use_high_res_performance_timers, HandleFetchCallback on_complete)
+void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> request, GC::Ref<Fetch::Infrastructure::FetchController>, bool, HandleFetchCallback on_complete)
 {
     using Destination = Fetch::Infrastructure::Request::Destination;
 
@@ -154,7 +222,7 @@ void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> requ
         //     client's creation URL and of the navigable or worker it is for.
         auto request_id = ++s_next_match_request_id;
         auto is_report = request->destination() == Destination::Report;
-        auto on_match = GC::create_function(page.heap(), GC::captures(GC::Ref { page }, request, fetch_controller, use_high_res_performance_timers, on_complete, reserved_settings_object, is_report), [](auto& page, auto& request, auto& fetch_controller, auto& use_high_res_performance_timers, auto& on_complete, auto& reserved_settings_object, auto& is_report, Optional<ServiceWorkerControllerMatch> match) {
+        auto on_match = GC::create_function(page.heap(), GC::captures(GC::Ref { page }, request, on_complete, reserved_client->id, reserved_settings_object, is_report), [](auto& page, auto& request, auto& on_complete, auto& reserved_client_id, auto& reserved_settings_object, auto& is_report, Optional<ServiceWorkerControllerMatch> match) {
             // 7. If registration is null or registration's active worker is null, return null.
             if (!match.has_value()) {
                 on_complete->function()(nullptr);
@@ -169,10 +237,11 @@ void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> requ
                 if (auto settings_object = HTML::environment_settings_object_at(*reserved_settings_object))
                     settings_object->active_service_worker = match->active_worker;
             }
+            service_workers_handling_fetch_events().set(match->active_worker.id, match->handles_fetch_events);
 
             // NOTE: From this point, the service worker client starts to use its active service worker's containing
             //       service worker registration.
-            handle_fetch_with_registration(*page, request, fetch_controller, use_high_res_performance_timers, match->active_worker, on_complete);
+            handle_fetch_with_registration(*page, request, reserved_client_id, match->active_worker, on_complete);
         });
         pending_matches().set(request_id, PendingMatch { GC::make_root(on_match) });
         if (!page.client().page_did_request_service_worker_match(request_id, reserved_client_to_match)) {
@@ -190,7 +259,7 @@ void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> requ
         auto client = Fetch::Fetching::resolve_client(*request);
         if (client && client->active_service_worker.has_value()) {
             auto active_service_worker = *client->active_service_worker;
-            handle_fetch_with_registration(page, request, fetch_controller, use_high_res_performance_timers, active_service_worker, on_complete);
+            handle_fetch_with_registration(page, request, client->id, active_service_worker, on_complete);
             return;
         }
 

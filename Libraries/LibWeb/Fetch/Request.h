@@ -33,7 +33,11 @@ class Request final
 
 public:
     [[nodiscard]] static GC::Ref<Request> create(NonnullRefPtr<Infrastructure::Request>);
-    [[nodiscard]] static GC::Ref<Request> create(NonnullRefPtr<Infrastructure::Request>, Headers::Guard, GC::Ref<DOM::AbortSignal>);
+    [[nodiscard]] WEB_API static GC::Ref<Request> create(NonnullRefPtr<Infrastructure::Request>, Headers::Guard, GC::Ref<DOM::AbortSignal>);
+
+    // A Request object created from a request whose body holds bytes reads them through a body made in the settings
+    // object's realm.
+    WEB_API void create_body_over_request_body_bytes(HTML::EnvironmentSettingsObject&);
     static WebIDL::ExceptionOr<GC::Ref<Request>> create_for_constructor(JS::Object&, RequestInfo const& input, Bindings::RequestInit const& init = {});
     static WebIDL::ExceptionOr<GC::Ref<Request>> create_with_settings(HTML::EnvironmentSettingsObject&, RequestInfo const& input, Bindings::RequestInit const& init = {});
 

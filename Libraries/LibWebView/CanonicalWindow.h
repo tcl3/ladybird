@@ -34,6 +34,10 @@ public:
     CanonicalEnvironmentSettingsObject const& relevant_settings_object() const;
     void set_up_a_window_environment_settings_object(Optional<Web::HTML::EnvironmentId> id, URL::URL top_level_creation_url);
 
+    // A reused initial about:blank window whose navigation's reserved environment a service worker controls takes the
+    // reserved environment's id.
+    void take_id_of_reserved_environment(Web::HTML::EnvironmentId);
+
     bool has_associated_document() const { return m_associated_document; }
     CanonicalDocument const& associated_document() const;
     void set_associated_document(Badge<CanonicalDocument>, CanonicalDocument&);

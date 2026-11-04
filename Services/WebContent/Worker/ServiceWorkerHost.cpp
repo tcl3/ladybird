@@ -4,15 +4,23 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/NeverDestroyed.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/Timer.h>
 #include <LibGC/Heap.h>
+#include <LibHTTP/HeaderList.h>
 #include <LibJS/HostClassBuilder.h>
 #include <LibJS/Runtime/ConsoleObject.h>
 #include <LibJS/Runtime/VM.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/Bindings/ServiceWorkerGlobalScope.h>
 #include <LibWeb/Bindings/Wrappable.h>
+#include <LibWeb/Bindings/WrapperWorld.h>
+#include <LibWeb/DOM/AbortController.h>
+#include <LibWeb/Fetch/Infrastructure/HTTP/Bodies.h>
+#include <LibWeb/Fetch/Infrastructure/HTTP/ResponseView.h>
+#include <LibWeb/Fetch/Request.h>
+#include <LibWeb/Fetch/Response.h>
 #include <LibWeb/FileAPI/BlobURLStore.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/MessagePort.h>
@@ -25,19 +33,31 @@
 #include <LibWeb/HighResolutionTime/TimeOrigin.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/ServiceWorker/Update.h>
+#include <LibWeb/Streams/ReadableStreamDefaultReader.h>
 #include <WebContent/Worker/PageHost.h>
+#include <WebContent/Worker/ServiceWorkerFetchConnection.h>
 #include <WebContent/Worker/ServiceWorkerHost.h>
 
 extern "C" {
 void web_rust_service_worker_dispatch_lifecycle_event(JSVM*, void* realm, Web::DOM::EventTarget* global, u8 kind, void* ctx, void (*on_finished)(void*, bool failed));
 void web_rust_service_worker_time_out_lifecycle_event(JSVM*);
+u64 web_rust_service_worker_dispatch_fetch_event(JSVM*, void* realm, Web::DOM::EventTarget* global, void* request, ReadonlyBytes client_id, ReadonlyBytes resulting_client_id, ReadonlyBytes replaces_client_id, void* ctx, void (*on_settled)(void*, u8 outcome, void* response), void* pending_events_ctx, void (*on_pending_events_changed)(void*, bool));
 }
 
 namespace WebWorker {
 
+// NB: A process runs one service worker, whose host the fetch events it dispatches settle with.
+static WeakPtr<ServiceWorkerHost>& fetch_event_host()
+{
+    // NB: A worker's thread runs one service worker.
+    static thread_local NeverDestroyed<WeakPtr<ServiceWorkerHost>> host;
+    return *host;
+}
+
 ServiceWorkerHost::ServiceWorkerHost(Web::ServiceWorker::ServiceWorkerStartRequest request)
     : m_request(move(request))
 {
+    fetch_event_host() = make_weak_ptr();
 }
 
 ServiceWorkerHost::~ServiceWorkerHost() = default;
@@ -95,6 +115,14 @@ void ServiceWorkerHost::run_closing_steps()
     for (auto& [event_id, timer] : m_extended_event_deadline_timers)
         timer->stop();
     m_extended_event_deadline_timers.clear();
+
+    // NB: A fetch event in flight holds the reader of its response's body. The channels of clients close with the
+    //     worker, as their sockets are watched by this thread.
+    m_fetch_events.clear();
+    fetch_event_host() = nullptr;
+    auto fetch_connections = move(m_fetch_connections);
+    for (auto& connection : fetch_connections)
+        connection->shutdown();
 
     // NB: The roots have to go before the heap does.
     m_page = nullptr;
@@ -324,13 +352,19 @@ void ServiceWorkerHost::run_service_worker(GC::Ref<Web::Page> page, GC::Ref<Web:
     //     scripts once it has run. Scripts that the install event imports reach the UI process once it ends.
     if (!evaluation_status.is_abrupt() && !m_restarted_from_stored_scripts)
         record_scripts();
-    host.did_run_service_worker(!evaluation_status.is_abrupt(), move(event_types_to_handle));
+    m_is_running = !evaluation_status.is_abrupt();
+    host.did_run_service_worker(m_is_running, move(event_types_to_handle));
+    dispatch_waiting_fetch_events();
 }
 
 void ServiceWorkerHost::service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor const& worker)
 {
     if (m_global_scope)
         m_global_scope->service_worker_state_changed(worker);
+    if (worker.id != m_request.worker.id)
+        return;
+    m_request.worker.state = worker.state;
+    dispatch_waiting_fetch_events();
 }
 
 void ServiceWorkerHost::registration_state_changed(Web::ServiceWorker::ServiceWorkerRegistrationId registration_id, Web::ServiceWorker::ServiceWorkerRegistrationSlot target, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> const& source)
@@ -428,6 +462,340 @@ void ServiceWorkerHost::skip_waiting_finished(Web::ServiceWorker::ServiceWorkerR
 {
     if (m_global_scope)
         m_global_scope->skip_waiting_finished(request_id);
+}
+
+void ServiceWorkerHost::connect_fetch_channel(IPC::TransportHandle handle, Web::HTML::EnvironmentId client)
+{
+    auto transport = handle.create_transport();
+    if (transport.is_error()) {
+        dbgln("Unable to take up a service worker fetch channel: {}", transport.error());
+        return;
+    }
+    m_fetch_connections.append(ServiceWorkerFetchConnection::construct(transport.release_value(), *this, move(client)));
+}
+
+void ServiceWorkerHost::fetch_connection_closed(ServiceWorkerFetchConnection& connection)
+{
+    // NB: A client that went away reads none of the bodies of its fetch events.
+    m_fetch_events.remove_all_matching([&](auto const& fetch_event) {
+        if (fetch_event->connection.ptr() != &connection)
+            return false;
+        if (fetch_event->body_reader)
+            Web::Fetch::Infrastructure::cancel_incremental_read(*fetch_event->body_reader);
+        return true;
+    });
+
+    // NB: The connection is closing, so it is let go once it has.
+    Core::deferred_invoke([protected_this = NonnullRefPtr { *this }, connection = NonnullRefPtr { connection }] {
+        protected_this->m_fetch_connections.remove_all_matching([&](auto const& fetch_connection) { return fetch_connection == connection; });
+    });
+}
+
+ServiceWorkerHost::FetchEventInFlight* ServiceWorkerHost::fetch_event_in_flight(ServiceWorkerFetchConnection const& connection, Web::ServiceWorker::FetchEventId fetch_id)
+{
+    for (auto& fetch_event : m_fetch_events) {
+        if (fetch_event->connection.ptr() == &connection && fetch_event->fetch_id == fetch_id)
+            return fetch_event.ptr();
+    }
+    return nullptr;
+}
+
+ServiceWorkerHost::FetchEventInFlight* ServiceWorkerHost::fetch_event_with_dispatch_id(u64 dispatch_id)
+{
+    for (auto& fetch_event : m_fetch_events) {
+        if (fetch_event->dispatch_id == dispatch_id)
+            return fetch_event.ptr();
+    }
+    return nullptr;
+}
+
+void ServiceWorkerHost::forget_fetch_event(FetchEventInFlight const& fetch_event)
+{
+    m_fetch_events.remove_first_matching([&](auto const& in_flight) { return in_flight.ptr() == &fetch_event; });
+}
+
+// https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+bool ServiceWorkerHost::can_dispatch_fetch_events() const
+{
+    // 15. If activeWorker's state is "activating", wait for activeWorker's state to become "activated".
+    // 16. If the result of running the Run Service Worker algorithm with activeWorker is failure, then set
+    //     handleFetchFailed to true.
+    // NB: The UI process runs the worker, which runs once its script has been evaluated.
+    return m_is_running && m_request.worker.state == Web::ServiceWorker::ServiceWorkerState::Activated;
+}
+
+void ServiceWorkerHost::dispatch_fetch_event(ServiceWorkerFetchConnection& connection, Web::ServiceWorker::FetchEventId fetch_id, Web::ServiceWorker::FetchEventRequest request)
+{
+    if (fetch_event_in_flight(connection, fetch_id)) {
+        connection.did_misbehave("A client sent a fetch event twice");
+        return;
+    }
+    auto fetch_event = make<FetchEventInFlight>();
+    fetch_event->connection = connection.make_weak_ptr<ServiceWorkerFetchConnection>();
+    fetch_event->fetch_id = fetch_id;
+    fetch_event->dispatch_id = ++m_next_fetch_dispatch_id;
+    fetch_event->request_waiting_for_dispatch = move(request);
+    auto& in_flight = *fetch_event;
+    m_fetch_events.append(move(fetch_event));
+    if (can_dispatch_fetch_events())
+        run_fetch_event_task(in_flight);
+}
+
+void ServiceWorkerHost::dispatch_waiting_fetch_events()
+{
+    // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+    // 16. If the result of running the Run Service Worker algorithm with activeWorker is failure, then set
+    //     handleFetchFailed to true.
+    // 22.2. Return networkError.
+    if ((m_settings_object && !m_is_running && !m_lifecycle_event_in_flight.has_value() && m_request.worker.state != Web::ServiceWorker::ServiceWorkerState::Parsed)
+        || m_request.worker.state == Web::ServiceWorker::ServiceWorkerState::Redundant) {
+        m_fetch_events.remove_all_matching([](auto const& fetch_event) {
+            if (!fetch_event->request_waiting_for_dispatch.has_value())
+                return false;
+            if (auto connection = fetch_event->connection.strong_ref())
+                connection->async_fetch_event_settled(fetch_event->fetch_id, Web::ServiceWorker::FetchEventOutcome::NetworkError, {});
+            return true;
+        });
+        return;
+    }
+    if (!can_dispatch_fetch_events())
+        return;
+    for (auto& fetch_event : m_fetch_events) {
+        if (fetch_event->request_waiting_for_dispatch.has_value())
+            run_fetch_event_task(*fetch_event);
+    }
+}
+
+// https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+// 17.3.1. Let requestObject be the result of creating a Request object, given request, [...]
+// NB: What the client's process says of request.
+static NonnullRefPtr<Web::Fetch::Infrastructure::Request> request_from(Web::ServiceWorker::FetchEventRequest&& descriptor)
+{
+    auto request = Web::Fetch::Infrastructure::Request::create();
+    request->set_method(move(descriptor.method));
+    request->set_url_list(move(descriptor.url_list));
+    request->set_header_list(HTTP::HeaderList::create(move(descriptor.header_list)));
+    if (descriptor.body.has_value())
+        request->set_body(Web::Fetch::Infrastructure::FetchBody::from_bytes(Core::ImmutableBytes::adopt(descriptor.body.release_value())));
+    request->set_destination(descriptor.destination);
+    request->set_mode(descriptor.mode);
+    request->set_credentials_mode(descriptor.credentials_mode);
+    request->set_cache_mode(descriptor.cache_mode);
+    request->set_redirect_mode(descriptor.redirect_mode);
+    request->set_referrer(move(descriptor.referrer));
+    request->set_referrer_policy(descriptor.referrer_policy);
+    request->set_integrity_metadata(Utf16String::from_utf8(descriptor.integrity_metadata));
+    request->set_keepalive(descriptor.keepalive);
+    request->set_reload_navigation(descriptor.reload_navigation);
+    request->set_history_navigation(descriptor.history_navigation);
+    return request;
+}
+
+static void fetch_event_settled(void* ctx, u8 outcome, void* response);
+
+void ServiceWorkerHost::run_fetch_event_task(FetchEventInFlight& fetch_event)
+{
+    auto descriptor = fetch_event.request_waiting_for_dispatch.release_value();
+    auto connection = fetch_event.connection.strong_ref();
+    if (!connection) {
+        forget_fetch_event(fetch_event);
+        return;
+    }
+
+    // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+    // 17.4.9. If request is a non-subresource request, request's destination is not "report", and reservedClient is
+    //         not null, initialize e's resultingClientId attribute to reservedClient's id.
+    // NB: The channel carries the fetch events of its client: the reserved client of a non-subresource request, and the
+    //     client of a subresource request.
+    auto client_id = descriptor.client_id.value_or({});
+    auto replaces_client_id = move(descriptor.replaces_client_id);
+    auto request = request_from(move(descriptor));
+    String resulting_client_id;
+    if (request->is_non_subresource_request() && request->destination() != Web::Fetch::Infrastructure::Request::Destination::Report)
+        resulting_client_id = connection->client().to_string();
+    else
+        client_id = connection->client().to_string();
+
+    // 17.4. Queue a task task to run the following substeps:
+    //       The task must use activeWorker's event loop and the handle fetch task source.
+    auto dispatch_id = fetch_event.dispatch_id;
+    Web::HTML::queue_global_task(Web::HTML::Task::Source::HandleFetch, Web::HTML::relevant_global_object(*m_global_scope), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id, request, move(client_id), move(resulting_client_id), move(replaces_client_id)), [](auto& protected_this, auto& dispatch_id, auto& request, auto& client_id, auto& resulting_client_id, auto& replaces_client_id) {
+        if (!protected_this->fetch_event_with_dispatch_id(dispatch_id))
+            return;
+        auto& realm = protected_this->m_settings_object->realm();
+
+        // 2. Let abortController be a new AbortController object with workerRealm.
+        auto abort_controller = Web::DOM::AbortController::create();
+
+        // 3. Let requestObject be the result of creating a Request object, given request, a new Headers object's guard
+        //    which is "immutable", abortController's signal, and workerRealm.
+        auto request_object = Web::Fetch::Request::create(request, Web::Fetch::Headers::Guard::Immutable, abort_controller->signal());
+        request_object->create_body_over_request_body_bytes(*protected_this->m_settings_object);
+        auto request_wrapper = Web::Bindings::wrap(Web::Bindings::host_defined_wrapper_world(realm), realm, request_object);
+
+        // 1. Let e be the result of creating an event with FetchEvent.
+        // [...]
+        // 14. Invoke Update Service Worker Extended Events Set with activeWorker and e.
+        // NB: The service worker's Rust bindings run these substeps, and the steps after the task.
+        auto extended_event_id = web_rust_service_worker_dispatch_fetch_event(
+            JS::HostABI::vm_to_abi(realm.vm()), &realm, protected_this->m_global_scope.ptr(), JS::HostABI::object_to_abi(request_wrapper.ptr()),
+            client_id.bytes(), resulting_client_id.bytes(), replaces_client_id.bytes(),
+            bit_cast<void*>(static_cast<FlatPtr>(dispatch_id)), fetch_event_settled,
+            protected_this.ptr(), [](void* ctx, bool has_pending_events) {
+                static_cast<ServiceWorkerHost*>(ctx)->pending_events_changed(has_pending_events);
+            });
+        if (extended_event_id == 0)
+            return;
+
+        // NB: An extendable event's timed out flag "is set after an optional user agent imposed delay if the pending
+        //     promises count is greater than zero", which this is.
+        auto timer = Core::Timer::create_single_shot(AK::Duration::from_milliseconds(protected_this->m_request.extendable_event_timeout_ms), [protected_this, extended_event_id] {
+            Web::ServiceWorker::time_out_extended_event(extended_event_id);
+
+            // NB: The timer outlives its own handler.
+            Core::deferred_invoke([protected_this, extended_event_id] {
+                protected_this->m_extended_event_deadline_timers.remove(extended_event_id);
+            });
+        });
+        timer->start();
+        protected_this->m_extended_event_deadline_timers.set(extended_event_id, move(timer));
+    }));
+}
+
+static void fetch_event_settled(void* ctx, u8 outcome, void* response)
+{
+    auto dispatch_id = static_cast<u64>(bit_cast<FlatPtr>(ctx));
+    if (auto host = fetch_event_host().strong_ref())
+        host->fetch_event_did_settle(dispatch_id, static_cast<Web::ServiceWorker::FetchEventOutcome>(outcome), static_cast<JS::Object*>(response));
+}
+
+// https://fetch.spec.whatwg.org/#concept-response
+// NB: What the client's process makes potentialResponse from: its type, and the fields of its internal response.
+static Web::ServiceWorker::FetchEventResponse describe_response(Web::Fetch::Infrastructure::ResponseView const& response)
+{
+    auto const& record = *response.record();
+    auto const* filtered_response = as_if<Web::Fetch::Infrastructure::FilteredResponse>(record);
+    auto const& internal_response = filtered_response ? *filtered_response->internal_response() : record;
+    return Web::ServiceWorker::FetchEventResponse {
+        .type = record.type(),
+        .status = internal_response.status(),
+        .status_message = internal_response.status_message(),
+        .header_list = internal_response.header_list()->headers(),
+        .url_list = internal_response.url_list(),
+        .cors_exposed_header_name_list = internal_response.cors_exposed_header_name_list(),
+        .range_requested = internal_response.range_requested(),
+        .request_includes_credentials = internal_response.request_includes_credentials(),
+        .timing_allow_passed = internal_response.timing_allow_passed(),
+        .redirect_taint = internal_response.redirect_taint(),
+        // NB: An opaque filtered response has no body, but the client reads the body of its internal response, as
+        //     importScripts() does.
+        .has_body = internal_response.body().has_value(),
+    };
+}
+
+void ServiceWorkerHost::fetch_event_did_settle(u64 dispatch_id, Web::ServiceWorker::FetchEventOutcome outcome, JS::Object* response_wrapper)
+{
+    auto* fetch_event = fetch_event_with_dispatch_id(dispatch_id);
+    if (!fetch_event)
+        return;
+    auto connection = fetch_event->connection.strong_ref();
+    if (!connection) {
+        forget_fetch_event(*fetch_event);
+        return;
+    }
+
+    auto* response_object = response_wrapper ? Web::Bindings::impl_from<Web::Fetch::Response>(response_wrapper) : nullptr;
+
+    // AD-HOC: A response whose body was already read or locked gives nothing to read, so the fetch gets a network
+    //         error, as in other engines.
+    if (outcome == Web::ServiceWorker::FetchEventOutcome::Response && (!response_object || response_object->is_unusable()))
+        outcome = Web::ServiceWorker::FetchEventOutcome::NetworkError;
+    if (outcome != Web::ServiceWorker::FetchEventOutcome::Response) {
+        connection->async_fetch_event_settled(fetch_event->fetch_id, outcome, {});
+        forget_fetch_event(*fetch_event);
+        return;
+    }
+
+    auto response = response_object->response();
+    auto descriptor = describe_response(*response);
+    connection->async_fetch_event_settled(fetch_event->fetch_id, outcome, descriptor);
+    if (!descriptor.has_body) {
+        forget_fetch_event(*fetch_event);
+        return;
+    }
+
+    // https://w3c.github.io/ServiceWorker/#fetch-event-respondwith
+    // 10.2.5.1. Let reader be the result of getting a reader from response's body's stream.
+    // 10.2.5.8. Run these subsubsteps repeatedly in parallel while done is false:
+    // NB: The worker reads the body here, and delivers its bytes to the client's process as far as that process allows.
+    //     It reads the body of an opaque filtered response's internal response, which the client needs.
+    auto& realm = m_settings_object->realm();
+    auto on_chunk = GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id), [](auto& protected_this, auto& dispatch_id, ByteBuffer bytes) {
+        auto* fetch_event = protected_this->fetch_event_with_dispatch_id(dispatch_id);
+        if (!fetch_event)
+            return;
+        fetch_event->unsent_body_bytes.append(bytes);
+        protected_this->send_response_body_bytes(*fetch_event);
+    });
+    auto on_end = GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id), [](auto& protected_this, auto& dispatch_id) {
+        auto* fetch_event = protected_this->fetch_event_with_dispatch_id(dispatch_id);
+        if (!fetch_event)
+            return;
+        fetch_event->body_end = true;
+        protected_this->send_response_body_bytes(*fetch_event);
+    });
+    auto on_error = GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, dispatch_id), [](auto& protected_this, auto& dispatch_id, JS::Value) {
+        auto* fetch_event = protected_this->fetch_event_with_dispatch_id(dispatch_id);
+        if (!fetch_event)
+            return;
+        fetch_event->body_end = false;
+        protected_this->send_response_body_bytes(*fetch_event);
+    });
+    fetch_event->body_reader = GC::make_root(response->unsafe_response()->body()->incrementally_read(realm, on_chunk, on_end, on_error, GC::Ref { realm.global_object() }));
+}
+
+void ServiceWorkerHost::send_response_body_bytes(FetchEventInFlight& fetch_event)
+{
+    auto connection = fetch_event.connection.strong_ref();
+    if (!connection) {
+        if (fetch_event.body_reader)
+            Web::Fetch::Infrastructure::cancel_incremental_read(*fetch_event.body_reader);
+        forget_fetch_event(fetch_event);
+        return;
+    }
+
+    if (!fetch_event.unsent_body_bytes.is_empty() && fetch_event.sent_byte_count < fetch_event.allowed_byte_count) {
+        auto byte_count = min(fetch_event.unsent_body_bytes.size(), fetch_event.allowed_byte_count - fetch_event.sent_byte_count);
+        connection->async_fetch_response_body_data(fetch_event.fetch_id, fetch_event.unsent_body_bytes.bytes().trim(byte_count));
+        fetch_event.unsent_body_bytes = MUST(ByteBuffer::copy(fetch_event.unsent_body_bytes.bytes().slice(byte_count)));
+        fetch_event.sent_byte_count += byte_count;
+    }
+
+    // NB: An errored body ends at once. One that closed ends once the client has all of its bytes.
+    if (fetch_event.body_end == false || (fetch_event.body_end == true && fetch_event.unsent_body_bytes.is_empty())) {
+        connection->async_fetch_response_body_end(fetch_event.fetch_id, *fetch_event.body_end);
+        forget_fetch_event(fetch_event);
+    }
+}
+
+void ServiceWorkerHost::allow_fetch_response_body(ServiceWorkerFetchConnection& connection, Web::ServiceWorker::FetchEventId fetch_id, u64 total_byte_count)
+{
+    auto* fetch_event = fetch_event_in_flight(connection, fetch_id);
+    if (!fetch_event)
+        return;
+    fetch_event->allowed_byte_count = max(fetch_event->allowed_byte_count, total_byte_count);
+    send_response_body_bytes(*fetch_event);
+}
+
+void ServiceWorkerHost::cancel_fetch(ServiceWorkerFetchConnection& connection, Web::ServiceWorker::FetchEventId fetch_id)
+{
+    auto* fetch_event = fetch_event_in_flight(connection, fetch_id);
+    if (!fetch_event)
+        return;
+    // FIXME: Signal abort on the fetch event's request's abortController.
+    if (fetch_event->body_reader)
+        Web::Fetch::Infrastructure::cancel_incremental_read(*fetch_event->body_reader);
+    forget_fetch_event(*fetch_event);
 }
 
 }

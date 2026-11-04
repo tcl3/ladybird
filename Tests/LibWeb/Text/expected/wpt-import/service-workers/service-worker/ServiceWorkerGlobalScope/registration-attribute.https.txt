@@ -1,0 +1,7 @@
+Harness status: OK
+
+Found 2 tests
+
+2 Pass
+Pass	Verify registration attributes on ServiceWorkerGlobalScope
+Pass	Verify registration attributes on ServiceWorkerGlobalScope of the newer worker

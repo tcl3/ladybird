@@ -176,6 +176,9 @@ struct ServiceWorkerStartRequest {
     // NB: An installed worker runs from the scripts that its process recorded when it was installed, which a new
     //     worker fetches instead.
     Vector<ServiceWorkerScriptResource> stored_scripts;
+
+    // NB: How long a functional event that the worker's process dispatches on its own may stay active.
+    u64 extendable_event_timeout_ms { 0 };
 };
 
 using ServiceWorkerScriptFetchResult = Optional<ServiceWorkerJobError>;

@@ -711,6 +711,11 @@ bool WebContentPage::take_owed_reply(OwedReply owed)
     return m_owed_replies.remove(owed);
 }
 
+bool WebContentPage::owes_reply_for_navigable(OwedReply::Kind kind, Web::HTML::CrossProcessId navigable_id) const
+{
+    return any_of(m_owed_replies, [&](OwedReply const& owed) { return owed.kind == kind && owed.navigable_id == navigable_id; });
+}
+
 static bool may_navigate_to_a_local_file(WebContentClient& requesting_client);
 
 void WebContentPage::did_request_navigation_of_navigable(Web::HTML::CrossProcessId navigable_id, Web::HTML::CrossProcessId source_navigable_id, Web::HTML::CrossProcessId source_document_id, Web::HTML::PreparedNavigationDescriptor navigation)
@@ -3540,12 +3545,27 @@ void WebContentPage::did_request_service_worker_match(u64 request_id, Web::Servi
         reply_with_no_match();
         return;
     }
+    // NB: A navigation's loader exists from its admission, and a history traversal's from the start of its population
+    //     steps, which create its navigation params.
     auto navigation = navigable->uncommitted_navigation();
-    if (!navigation || !navigation->state.has<CanonicalNavigation::CreatingNavigationParams>() || navigation->worker().ptr() != this) {
-        reply_with_no_match();
+    if (navigation && navigation->state.has<CanonicalNavigation::CreatingNavigationParams>() && navigation->worker().ptr() == this) {
+        client().session().service_worker_registry->match_reserved_client_of_navigation(ServiceWorkerClientConnection { client() }, *navigable, navigation->loader().ptr(), request_id, reserved_client);
         return;
     }
-    client().session().service_worker_registry->match_reserved_client_of_navigation(ServiceWorkerClientConnection { client() }, *navigable, *navigation->loader(), request_id, reserved_client);
+    for (auto const& owed : m_owed_replies) {
+        if (owed.kind != OwedReply::Kind::ChangingJob || owed.navigable_id != *reserved_client.navigable_id)
+            continue;
+        if (auto loader = traversable().population_loader_of_changing_job(owed.id, owed.navigable_id)) {
+            client().session().service_worker_registry->match_reserved_client_of_navigation(ServiceWorkerClientConnection { client() }, *navigable, loader.ptr(), request_id, reserved_client);
+            return;
+        }
+    }
+    reply_with_no_match();
+}
+
+void WebContentPage::did_request_service_worker_fetch_channel(u64 request_id, Web::HTML::EnvironmentId client_id, u64 service_worker_id)
+{
+    client().session().service_worker_registry->connect_fetch_channel(ServiceWorkerClientConnection { client() }, request_id, client_id, service_worker_id);
 }
 
 void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)

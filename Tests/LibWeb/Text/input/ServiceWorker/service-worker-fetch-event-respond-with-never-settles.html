@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A fetch event whose respondWith() promise never settles ends with a network error at its deadline.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const channelName = "service-worker-fetch-event-respond-with-never-settles";
+        const script = await server.createEcho("GET", "/respond-with-never-settles/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `const channel = new BroadcastChannel("${channelName}");
+            self.addEventListener("fetch", event => {
+                if (!new URL(event.request.url).searchParams.has("never-settles"))
+                    return;
+                event.respondWith(new Promise(() => {}));
+                event.handled.then(() => channel.postMessage("fulfilled"), error => channel.postMessage(error.name));
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/respond-with-never-settles/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html>",
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = frameURL;
+        document.body.appendChild(frame);
+        await loaded;
+        println(`The frame is controlled: ${frame.contentWindow.navigator.serviceWorker.controller !== null}`);
+
+        const handled = new Promise(resolve => {
+            new BroadcastChannel(channelName).onmessage = event => resolve(event.data);
+        });
+        try {
+            await frame.contentWindow.fetch(`${frameURL}?never-settles`);
+            println("fetch() fulfilled");
+        } catch (error) {
+            println(`fetch() rejected with ${error.name}`);
+        }
+        println(`The fetch event's handled promise: ${await handled}`);
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

@@ -1785,6 +1785,12 @@ bool PageClient::page_did_request_service_worker_match(Web::ServiceWorker::Servi
     return true;
 }
 
+bool PageClient::page_did_request_service_worker_fetch_channel(Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::HTML::EnvironmentId const& client_id, Web::ServiceWorker::ServiceWorkerId service_worker_id)
+{
+    client().async_did_request_service_worker_fetch_channel(m_id, request_id, client_id, service_worker_id);
+    return true;
+}
+
 void PageClient::page_did_post_message_to_service_worker(Web::ServiceWorker::ServiceWorkerClientSnapshot source, Web::ServiceWorker::ServiceWorkerId service_worker_id, Web::HTML::SerializedTransferRecord message)
 {
     client().async_did_post_message_to_service_worker(m_id, source, service_worker_id, move(message));

@@ -104,6 +104,9 @@ public:
         // https://storage.spec.whatwg.org/#task-source
         Storage,
 
+        // https://w3c.github.io/ServiceWorker/#dfn-handle-fetch-task-source
+        HandleFetch,
+
         // !!! IMPORTANT: Keep this field last!
         // This serves as the base value of all unique task sources.
         // Some elements, such as the HTMLMediaElement, must have a unique task source per instance.

@@ -31,13 +31,14 @@ use crate::service_worker::extendable_event::{
 use crate::service_worker::extendable_message_event::{
     ClientOrServiceWorkerOrMessagePort, ExtendableMessageEvent, ExtendableMessageEventFields,
 };
+use crate::service_worker::fetch_event::time_out_fetch_event;
 use crate::service_worker::service_worker::get_the_service_worker_object;
 use crate::service_worker::window_client::WindowClient;
 use crate::service_worker::{ServiceWorkerDescriptor, exports};
 
 /// Called with the context that the dispatch was given, whenever the set of extended events becomes empty or stops
 /// being empty: with true when the worker has pending events, and false when it has none.
-type OnPendingEventsChanged = unsafe extern "C" fn(*mut c_void, bool);
+pub(crate) type OnPendingEventsChanged = unsafe extern "C" fn(*mut c_void, bool);
 
 struct ExtendedEvent {
     id: u64,
@@ -73,6 +74,14 @@ pub(crate) fn forget_extended_events_of_agent() {
     });
 }
 
+/// Remembers what a dispatch was given to report whether the worker has pending events.
+pub(crate) fn set_on_pending_events_changed(ctx: *mut c_void, on_pending_events_changed: OnPendingEventsChanged) {
+    SET_OF_EXTENDED_EVENTS.with(|set| {
+        set.on_pending_events_changed
+            .set(Some((ctx, on_pending_events_changed)));
+    });
+}
+
 fn report_pending_events(has_pending_events: bool) {
     let Some((ctx, on_pending_events_changed)) = SET_OF_EXTENDED_EVENTS.with(|set| set.on_pending_events_changed.get())
     else {
@@ -97,7 +106,7 @@ fn extended_event_is_not_active(_: &Vm, lifetime: ExtendableEventLifetimeRef) {
 
 // https://w3c.github.io/ServiceWorker/#update-service-worker-extended-events-set-algorithm
 /// Returns the id of the event if the event is in the set afterwards, which the event's deadline names it by.
-fn update_service_worker_extended_events_set(vm: &Vm, lifetime: ExtendableEventLifetimeRef) -> Option<u64> {
+pub(crate) fn update_service_worker_extended_events_set(vm: &Vm, lifetime: ExtendableEventLifetimeRef) -> Option<u64> {
     // 1. Assert: event's dispatch flag is unset.
     assert!(!lifetime.dispatch_flag());
 
@@ -278,10 +287,7 @@ pub unsafe extern "C" fn web_rust_service_worker_dispatch_message_event(
             OwnedSerializedTransferRecord::from_raw(record),
         )
     };
-    SET_OF_EXTENDED_EVENTS.with(|set| {
-        set.on_pending_events_changed
-            .set(Some((ctx, on_pending_events_changed)));
-    });
+    set_on_pending_events_changed(ctx, on_pending_events_changed);
     let origin = UsvString::from_utf8(&String::from_utf8_lossy(origin.as_slice()));
     dispatch_message_event(vm, realm, global, source, origin, record).unwrap_or(0)
 }
@@ -305,4 +311,5 @@ pub unsafe extern "C" fn web_rust_service_worker_time_out_extended_event(vm: *mu
     if let Some(lifetime) = lifetime {
         ExtendableEventLifetime::time_out(lifetime, vm);
     }
+    time_out_fetch_event(vm, id);
 }

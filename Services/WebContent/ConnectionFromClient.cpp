@@ -96,6 +96,7 @@
 #include <LibWeb/Platform/FontPlugin.h>
 #include <LibWeb/Platform/RemoteImageCodecPlugin.h>
 #include <LibWeb/Selection/Selection.h>
+#include <LibWeb/ServiceWorker/FetchChannel.h>
 #include <LibWeb/ServiceWorker/HandleFetch.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/UIEvents/InputTypes.h>
@@ -3899,6 +3900,11 @@ void ConnectionFromClient::service_worker_match_finished(u64 request_id, Optiona
 void ConnectionFromClient::service_worker_controller_changed(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor controller)
 {
     Web::ServiceWorker::service_worker_controller_changed(client_id, move(controller));
+}
+
+void ConnectionFromClient::service_worker_fetch_channel_ready(u64 request_id, Optional<IPC::TransportHandle> handle)
+{
+    Web::ServiceWorker::service_worker_fetch_channel_ready(request_id, move(handle));
 }
 
 void ConnectionFromClient::did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token)

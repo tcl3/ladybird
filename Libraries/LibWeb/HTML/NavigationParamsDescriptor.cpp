@@ -294,6 +294,12 @@ static ErrorOr<GC::Ref<Fetch::Infrastructure::ResponseView>> create_navigation_r
         auto bytes = Core::ImmutableBytes::adopt(move(descriptor.body.get<ByteBuffer>()));
         response->set_body(Fetch::Infrastructure::ResponseBody::from_bytes(move(bytes)));
     }
+
+    // AD-HOC: A response that a service worker made for the navigation can have a null body, which the document is
+    //         loaded from as an empty one.
+    else if (!response->is_network_error()) {
+        response->set_body(Fetch::Infrastructure::ResponseBody::from_bytes({}));
+    }
     return Fetch::Infrastructure::ResponseView::create(realm, response);
 }
 

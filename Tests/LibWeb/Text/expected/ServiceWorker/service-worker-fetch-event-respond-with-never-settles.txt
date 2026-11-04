@@ -1,0 +1,4 @@
+The frame is controlled: true
+fetch() rejected with TypeError
+The fetch event's handled promise: NetworkError
+unregister(): true

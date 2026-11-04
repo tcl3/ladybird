@@ -8,6 +8,7 @@
 #include <LibCore/EventLoop.h>
 #include <LibCore/System.h>
 #include <LibCore/Timer.h>
+#include <LibIPC/TransportHandle.h>
 #include <LibURL/Site.h>
 #include <LibWebCommon/SecureContexts/AbstractOperations.h>
 #include <LibWebView/Application.h>
@@ -254,7 +255,7 @@ void ServiceWorkerRegistry::notify_controller_change(Web::HTML::EnvironmentId co
     connection->visit_open_connection([&](auto& process) { process.async_service_worker_controller_changed(client, controller); });
 }
 
-void ServiceWorkerRegistry::match_reserved_client_of_navigation(ServiceWorkerClientConnection const& connection, CanonicalNavigable const& navigable, NavigationLoader const& navigation, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client)
+void ServiceWorkerRegistry::match_reserved_client_of_navigation(ServiceWorkerClientConnection const& connection, CanonicalNavigable const& navigable, NavigationLoader const* navigation, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client)
 {
     // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
     // 9.5. Let storage key be the result of running obtain a storage key given reservedClient.
@@ -287,17 +288,17 @@ void ServiceWorkerRegistry::match_reserved_client_of_navigation(ServiceWorkerCli
     if (names_an_environment)
         partition = {};
 
-    match_reserved_client(connection, partition, request_id, reserved_client, &navigation);
+    match_reserved_client(connection, partition, request_id, reserved_client, navigable.id(), navigation);
 }
 
 void ServiceWorkerRegistry::match_reserved_client_of_worker(ServiceWorkerClientEnvironment const& client, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client)
 {
     // NB: A worker's reserved client is the worker's own environment settings object.
-    match_reserved_client(client.connection, partition_of(client.settings, client.has_cross_site_ancestor), request_id, reserved_client, nullptr);
+    match_reserved_client(client.connection, partition_of(client.settings, client.has_cross_site_ancestor), request_id, reserved_client, {}, nullptr);
 }
 
 // https://w3c.github.io/ServiceWorker/#on-fetch-request-algorithm
-void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection const& connection, Optional<Partition> const& partition, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client, NavigationLoader const* reserving_navigation)
+void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection const& connection, Optional<Partition> const& partition, ServiceWorkerRequestId request_id, ServiceWorkerReservedClient const& reserved_client, Optional<Web::HTML::CrossProcessId> reserving_navigable, NavigationLoader const* reserving_navigation)
 {
     auto reply = [&](Optional<ServiceWorkerControllerMatch> const& match) {
         connection.visit_open_connection([&](auto& client) { client.async_service_worker_match_finished(request_id, match); });
@@ -309,6 +310,11 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
         reply({});
         return;
     }
+
+    // NB: A navigable has one navigation at a time, which discards a reserved client of another origin than the one its
+    //     fetch redirects to. Only the newest reserved client of a navigable is its navigation's.
+    if (reserving_navigable.has_value())
+        forget_reserved_clients_of_navigable(*reserving_navigable, reserved_client.id);
 
     // 9.6. Set registration to the result of running Match Service Worker Registration given storage key and request's
     //      url.
@@ -326,8 +332,8 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
     // NB: Nothing fetches with the "report" destination.
     auto existing_client = m_controlled_clients.find_if([&](ControlledClient const& client) { return client.id == reserved_client.id; });
     if (existing_client != m_controlled_clients.end()) {
-        // NB: A reserved client is the reserved client of one request only.
-        if (existing_client->reserving_navigation != reserving_navigation) {
+        // NB: A reserved client is the reserved client of one navigable's navigation only.
+        if (existing_client->reserving_navigable != reserving_navigable) {
             reply({});
             return;
         }
@@ -336,7 +342,9 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
         m_controlled_clients.append(ControlledClient {
             .id = reserved_client.id,
             .active_service_worker = active_worker.id,
+            .reserving_navigable = reserving_navigable,
             .reserving_navigation = reserving_navigation,
+            .reserving_process = reserving_navigable.has_value() ? connection.identity() : nullptr,
         });
     }
 
@@ -349,11 +357,18 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
     });
 }
 
+static bool is_reserved_client_of(auto const& client, NavigationLoader const& navigation, Web::HTML::EnvironmentId const& reserved_client_id)
+{
+    return client.id == reserved_client_id
+        && client.reserving_navigable == navigation.request().navigable_id
+        && (!client.reserving_navigation || client.reserving_navigation == &navigation);
+}
+
 bool ServiceWorkerRegistry::has_reserved_client_of_navigation(NavigationLoader const& navigation, Web::HTML::EnvironmentId const& reserved_client_id)
 {
     return any_of(live_registries(), [&](ServiceWorkerRegistry* registry) {
         return any_of(registry->m_controlled_clients, [&](ControlledClient const& client) {
-            return client.id == reserved_client_id && client.reserving_navigation == &navigation;
+            return is_reserved_client_of(client, navigation, reserved_client_id);
         });
     });
 }
@@ -362,16 +377,21 @@ Optional<ServiceWorkerDescriptor> ServiceWorkerRegistry::reserved_client_became_
 {
     for (auto* registry : live_registries()) {
         for (auto& client : registry->m_controlled_clients) {
-            if (client.id != reserved_client_id || client.reserving_navigation != &navigation)
+            if (!is_reserved_client_of(client, navigation, reserved_client_id))
                 continue;
 
             // https://html.spec.whatwg.org/multipage/nav-history-apis.html#set-up-a-window-environment-settings-object
             // 4.1. Set settings object's id to reservedEnvironment's id, target browsing context to reservedEnvironment's
             //      target browsing context, and active service worker to reservedEnvironment's active service worker.
             // NB: A navigation that reuses the initial about:blank document's window keeps that window's id.
+            auto navigable_id = *client.reserving_navigable;
+            auto active_service_worker = client.active_service_worker;
             client.id = window_id;
+            client.reserving_navigable = {};
             client.reserving_navigation = nullptr;
-            return registry->descriptor_of(client.active_service_worker);
+            client.reserving_process = nullptr;
+            registry->forget_reserved_clients_of_navigable(navigable_id, window_id);
+            return registry->descriptor_of(active_service_worker);
         }
     }
     return {};
@@ -388,7 +408,18 @@ void ServiceWorkerRegistry::forget_reserved_clients_of(NavigationLoader const& n
 {
     Vector<Web::HTML::EnvironmentId> reserved_clients;
     for (auto const& client : m_controlled_clients) {
-        if (client.reserving_navigation == &navigation)
+        if (client.is_reserved() && client.reserving_navigation == &navigation)
+            reserved_clients.append(client.id);
+    }
+    for (auto const& reserved_client : reserved_clients)
+        handle_service_worker_client_unload(reserved_client);
+}
+
+void ServiceWorkerRegistry::forget_reserved_clients_of_navigable(Web::HTML::CrossProcessId navigable_id, Optional<Web::HTML::EnvironmentId const&> except)
+{
+    Vector<Web::HTML::EnvironmentId> reserved_clients;
+    for (auto const& client : m_controlled_clients) {
+        if (client.reserving_navigable == navigable_id && client.id != except)
             reserved_clients.append(client.id);
     }
     for (auto const& reserved_client : reserved_clients)
@@ -815,6 +846,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
             .force_bypass_cache = job.force_bypass_cache,
         },
         .stored_scripts = {},
+        .extendable_event_timeout_ms = static_cast<u64>(lifecycle_event_deadline().to_milliseconds()),
     };
     agent.value().client->async_start_service_worker(start_request);
 
@@ -1478,6 +1510,7 @@ bool ServiceWorkerRegistry::run_service_worker(ServiceWorkerRecord& worker)
         .top_level_origin = client.top_level_origin,
         .script_fetch = ServiceWorkerScriptFetchParameters { .job_client = client, .force_bypass_cache = false },
         .stored_scripts = worker.script_resources,
+        .extendable_event_timeout_ms = static_cast<u64>(lifecycle_event_deadline().to_milliseconds()),
     });
 
     // 10. Wait for serviceWorker to be running, or for startFailed to be true.
@@ -1695,6 +1728,51 @@ void ServiceWorkerRegistry::navigation_preload(ServiceWorkerClientEnvironment co
 }
 
 // https://w3c.github.io/ServiceWorker/#clients-matchall
+// https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+void ServiceWorkerRegistry::connect_fetch_channel(ServiceWorkerClientConnection const& requester, ServiceWorkerRequestId request_id, Web::HTML::EnvironmentId const& client_id, ServiceWorkerId worker_id)
+{
+    auto reply = [&](Optional<IPC::TransportHandle> handle) {
+        requester.visit_open_connection([&](auto& client) { client.async_service_worker_fetch_channel_ready(request_id, move(handle)); });
+    };
+
+    // AD-HOC: A channel carries the fetch events of one client whose active service worker the worker is, from the
+    //         process that hosts the client, or that reserved it for a navigation's fetch. A client's controller may
+    //         have changed since it asked.
+    auto client = m_controlled_clients.find_if([&](ControlledClient const& client) { return client.id == client_id; });
+    if (client == m_controlled_clients.end() || client->active_service_worker != worker_id) {
+        reply({});
+        return;
+    }
+    bool requester_has_client = client->reserving_process && client->reserving_process == requester.identity();
+    if (!requester_has_client && !client->is_reserved()) {
+        for_each_hosted_client([&](HostedClient const& hosted_client) {
+            requester_has_client = hosted_client.settings.id() == client_id && hosted_client.connection.identity() == requester.identity();
+            return requester_has_client ? IterationDecision::Break : IterationDecision::Continue;
+        });
+    }
+    if (!requester_has_client) {
+        reply({});
+        return;
+    }
+
+    // 16. If the result of running the Run Service Worker algorithm with activeWorker is failure, then set
+    //     handleFetchFailed to true.
+    auto worker = m_service_workers.get(worker_id);
+    if (!worker.has_value() || !run_service_worker(**worker)) {
+        reply({});
+        return;
+    }
+
+    auto channel = IPC::TransportHandle::create_pair();
+    if (channel.is_error()) {
+        dbgln("Unable to create a service worker fetch channel: {}", channel.error());
+        reply({});
+        return;
+    }
+    (*worker)->process->async_connect_service_worker_fetch_channel(move(channel.value().first), client_id);
+    reply(move(channel.value().second));
+}
+
 // https://w3c.github.io/ServiceWorker/#clients-claim
 void ServiceWorkerRegistry::service_worker_did_request_claim(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id)
 {
@@ -1759,7 +1837,9 @@ void ServiceWorkerRegistry::service_worker_did_request_claim(Web::HTML::WorkerAg
         m_controlled_clients.append(ControlledClient {
             .id = client,
             .active_service_worker = worker_id,
+            .reserving_navigable = {},
             .reserving_navigation = nullptr,
+            .reserving_process = nullptr,
         });
 
         // 3. Invoke Notify Controller Change algorithm with client as the argument.

@@ -1,0 +1,8 @@
+respondWith(Response): 201 Made service-worker "Hello from the service worker, GET data.txt"
+No respondWith(): 200 OK null "From the network"
+respondWith(Response.error()): TypeError
+respondWith() a rejected promise: TypeError
+respondWith() something else: TypeError
+preventDefault() without respondWith(): TypeError
+respondWith() with the request's body: 200  null "Body was: posted text"
+unregister(): true

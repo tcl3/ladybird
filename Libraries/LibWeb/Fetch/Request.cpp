@@ -277,6 +277,17 @@ GC::Ref<Request> Request::create(NonnullRefPtr<Infrastructure::Request> request,
     return request_object;
 }
 
+void Request::create_body_over_request_body_bytes(HTML::EnvironmentSettingsObject& settings_object)
+{
+    Optional<Core::ImmutableBytes> bytes;
+    m_request->body().visit(
+        [](Empty) { },
+        [&](ByteBuffer const& buffer) { bytes = MUST(Core::ImmutableBytes::copy(buffer.bytes())); },
+        [&](Infrastructure::FetchBody const& fetch_body) { bytes = fetch_body.source(); });
+    if (bytes.has_value())
+        m_body = Infrastructure::Body::create_over_bytes(settings_object.realm(), bytes.release_value());
+}
+
 WebIDL::ExceptionOr<GC::Ref<Request>> Request::create_for_constructor(JS::Object& relevant_global_object, RequestInfo const& input, Bindings::RequestInit const& init)
 {
     return create_with_settings(HTML::relevant_settings_object(relevant_global_object), input, init);

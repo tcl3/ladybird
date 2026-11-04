@@ -191,6 +191,10 @@ public:
 
     static StringView browser_history_traversal_stage_to_string(BrowserHistoryTraversalDiagnostic::Stage);
 
+    // The loader of the navigable's history traversal, which exists once the job's population steps create its
+    // navigation params.
+    RefPtr<NavigationLoader> population_loader_of_changing_job(Web::HTML::CrossProcessId operation_id, Web::HTML::CrossProcessId navigable_id);
+
 private:
     ViewImplementation* m_view { nullptr };
     void session_history_changed();
