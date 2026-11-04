@@ -71,6 +71,8 @@ public:
     virtual void did_fail_loading_worker_script() override;
     virtual void did_report_outside_settings_content_security_policy_violation(u64 policy_index, String effective_directive, URL::URL resource) override;
     virtual Messages::WebWorkerClient::DidRequestCookieResponse did_request_cookie(URL::URL, HTTP::Cookie::Source) override;
+    virtual Messages::WebWorkerClient::DidRequestAllCookiesCookiestoreResponse did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId environment_id, URL::URL url) override;
+    virtual void did_set_cookie(Web::HTML::EnvironmentId environment_id, URL::URL url, HTTP::Cookie::ParsedCookie cookie) override;
     virtual Messages::WebWorkerClient::DidAddBlobUrlEntryResponse did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry entry) override;
     virtual void did_remove_blob_url_entries(Web::HTML::EnvironmentId environment_id, Vector<Utf16String> urls) override;
     virtual Messages::WebWorkerClient::DidRequestBlobUrlEntryResponse did_request_blob_url_entry(Utf16String url, Optional<URL::BlobURLEntry::Token> token) override;
@@ -112,6 +114,8 @@ private:
     virtual void die() override;
 
     ServiceWorkerRegistry* service_worker_registry_of_this_service_worker(StringView message_name);
+
+    Optional<HTTP::Cookie::PartitionContext> cookie_partition_context_for(URL::URL const&) const;
 
     IsPrivate m_is_private { IsPrivate::No };
     WeakPtr<BrowsingSession> m_session;

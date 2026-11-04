@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A service worker sets, reads and deletes the cookies of its origin through the Cookie Store API, and shares them
+    // with its clients. The API sets only Secure cookies, which an http: page cannot store, so the worker runs on an
+    // https: origin of a site of its own.
+    asyncTest(async done => {
+        const server = httpTestServer();
+        const secureHost = `service-worker-cookie-store-${uniqueID()}.not-localhost.localhost`;
+        const onSecureHost = url => {
+            const result = new URL(url);
+            result.protocol = "https:";
+            result.hostname = secureHost;
+            result.port = internals.getHttpsEchoServerPort();
+            return result.href;
+        };
+        const echo = async (name, contentType, body) =>
+            onSecureHost(await server.createEcho("GET", `/service-worker-cookie-store/${name}`, { status: 200, headers: { "Content-Type": contentType }, body }));
+
+        const script = await echo("worker.js", "text/javascript", `
+            self.addEventListener("message", async event => {
+                if (event.data === "set") {
+                    await cookieStore.set("from-worker", "1");
+                    event.source.postMessage({
+                        own: (await cookieStore.get("from-worker"))?.value ?? null,
+                        page: (await cookieStore.get("from-page"))?.value ?? null,
+                        all: (await cookieStore.getAll()).map(cookie => cookie.name).sort().join(","),
+                    });
+                } else if (event.data === "delete") {
+                    await cookieStore.delete("from-worker");
+                    event.source.postMessage({ afterDelete: (await cookieStore.get("from-worker"))?.value ?? null });
+                }
+            });
+        `);
+        const pageURL = await echo("page.html", "text/html", `<!DOCTYPE html><script>
+            const nextMessage = () => new Promise(resolve => {
+                navigator.serviceWorker.onmessage = event => resolve(event.data);
+            });
+            (async () => {
+                await cookieStore.set("from-page", "2");
+                const registration = await navigator.serviceWorker.register("${script}");
+                const worker = registration.installing ?? registration.waiting ?? registration.active;
+
+                let message = nextMessage();
+                worker.postMessage("set");
+                const results = await message;
+                results.pageSeesWorkerCookie = (await cookieStore.get("from-worker"))?.value ?? null;
+
+                message = nextMessage();
+                worker.postMessage("delete");
+                Object.assign(results, await message);
+
+                await registration.unregister();
+                opener.postMessage(results, "*");
+            })();
+        <\/script>`);
+
+        const results = new Promise(resolve => addEventListener("message", event => resolve(event.data), { once: true }));
+        const popup = window.open(pageURL);
+        const { own, page, all, pageSeesWorkerCookie, afterDelete } = await results;
+        popup.close();
+
+        println(`Worker reads the cookie it set: ${own}`);
+        println(`Worker reads the page's cookie: ${page}`);
+        println(`Worker lists the cookies: ${all}`);
+        println(`Page reads the worker's cookie: ${pageSeesWorkerCookie}`);
+        println(`Worker reads its cookie after deleting it: ${afterDelete}`);
+        done();
+    });
+</script>

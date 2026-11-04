@@ -139,6 +139,20 @@ Messages::WebWorkerClient::DidRequestPermissionSnapshotResponse WebWorkerClient:
     return session->permission_manager->snapshot_for(m_permission_origins);
 }
 
+// A worker reaches only the cookies of its own origin, in the partition of the top-level site it runs for. This is
+// that partition, or nothing if the worker may not use the cookies of url.
+Optional<HTTP::Cookie::PartitionContext> WebWorkerClient::cookie_partition_context_for(URL::URL const& url) const
+{
+    if (!m_inside_settings || !m_inside_settings->may_use_cookies_of(url))
+        return {};
+
+    auto top_level_site = network_isolation_top_level_site(*m_inside_settings);
+    if (!top_level_site.has_value())
+        return {};
+
+    return HTTP::Cookie::PartitionContext { top_level_site.release_value(), m_inside_settings->has_cross_site_ancestor() };
+}
+
 Messages::WebWorkerClient::DidRequestCookieResponse WebWorkerClient::did_request_cookie(URL::URL url, HTTP::Cookie::Source source)
 {
     // RequestServer handles the cookies of HTTP requests itself, so a worker has no use for HttpOnly cookies.
@@ -147,18 +161,41 @@ Messages::WebWorkerClient::DidRequestCookieResponse WebWorkerClient::did_request
         return HTTP::Cookie::VersionedCookie {};
     }
 
-    if (!m_inside_settings || !m_inside_settings->may_use_cookies_of(url))
+    auto partition_context = cookie_partition_context_for(url);
+    if (!partition_context.has_value())
         return HTTP::Cookie::VersionedCookie {};
 
-    auto top_level_site = network_isolation_top_level_site(*m_inside_settings);
-    if (!top_level_site.has_value())
-        return HTTP::Cookie::VersionedCookie {};
-
-    HTTP::Cookie::PartitionContext partition_context { top_level_site.release_value(), m_inside_settings->has_cross_site_ancestor() };
     HTTP::Cookie::VersionedCookie cookie;
     if (auto session = m_session.strong_ref())
-        cookie.cookie = session->cookie_jar->get_cookie(url, source, partition_context, HTTP::Cookie::non_http_same_site_context(partition_context));
+        cookie.cookie = session->cookie_jar->get_cookie(url, source, partition_context, HTTP::Cookie::non_http_same_site_context(*partition_context));
     return cookie;
+}
+
+Messages::WebWorkerClient::DidRequestAllCookiesCookiestoreResponse WebWorkerClient::did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId environment_id, URL::URL url)
+{
+    auto session = m_session.strong_ref();
+    if (!session || !hosted_environment(environment_id).has_value())
+        return Vector<HTTP::Cookie::Cookie> {};
+
+    auto partition_context = cookie_partition_context_for(url);
+    if (!partition_context.has_value())
+        return Vector<HTTP::Cookie::Cookie> {};
+
+    return session->cookie_jar->get_all_cookies_cookiestore(url, partition_context, HTTP::Cookie::non_http_same_site_context(*partition_context));
+}
+
+// A worker sets only the cookies script may set, so every cookie it sends is stored as a non-HTTP one.
+void WebWorkerClient::did_set_cookie(Web::HTML::EnvironmentId environment_id, URL::URL url, HTTP::Cookie::ParsedCookie cookie)
+{
+    auto session = m_session.strong_ref();
+    if (!session || !hosted_environment(environment_id).has_value())
+        return;
+
+    auto partition_context = cookie_partition_context_for(url);
+    if (!partition_context.has_value())
+        return;
+
+    session->cookie_jar->set_cookie(url, cookie, HTTP::Cookie::Source::NonHttp, partition_context, HTTP::Cookie::non_http_same_site_context(*partition_context));
 }
 
 Messages::WebWorkerClient::DidAddBlobUrlEntryResponse WebWorkerClient::did_add_blob_url_entry(Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry entry)

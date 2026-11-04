@@ -102,12 +102,29 @@ Optional<Web::Permissions::PermissionSnapshot> PageHost::page_did_request_permis
 
 // NB: The sync requests here fail once the worker is terminated or the UI process is gone. The script that made one no
 //     longer runs by then, so what it gets back here does not matter, but it has to get something.
+Vector<HTTP::Cookie::Cookie> PageHost::page_did_request_all_cookies_cookiestore(Web::HTML::EnvironmentId const& environment_id, URL::URL const& url)
+{
+    auto response = m_client.send_sync_but_allow_failure<Messages::WebWorkerClient::DidRequestAllCookiesCookiestore>(environment_id, url);
+    if (!response)
+        return {};
+    return response->take_cookies();
+}
+
 HTTP::Cookie::VersionedCookie PageHost::page_did_request_cookie(Optional<Web::HTML::EnvironmentId> const&, URL::URL const& url, HTTP::Cookie::Source source)
 {
     auto response = m_client.send_sync_but_allow_failure<Messages::WebWorkerClient::DidRequestCookie>(url, source);
     if (!response)
         return {};
     return response->take_cookie();
+}
+
+// NB: A worker sets cookies only through the Cookie Store API, as non-HTTP cookies of its own environment. The UI
+//     process stores them before replying, so a request made after the set observes the cookie.
+void PageHost::page_did_set_cookie(Optional<Web::HTML::EnvironmentId> const& environment_id, URL::URL const& url, HTTP::Cookie::ParsedCookie const& cookie, HTTP::Cookie::Source source)
+{
+    if (!environment_id.has_value() || source != HTTP::Cookie::Source::NonHttp)
+        return;
+    (void)m_client.send_sync_but_allow_failure<Messages::WebWorkerClient::DidSetCookie>(*environment_id, url, cookie);
 }
 
 bool PageHost::page_did_is_known_hsts_host(String const& domain)

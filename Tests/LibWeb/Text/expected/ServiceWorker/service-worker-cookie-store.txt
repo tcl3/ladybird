@@ -1,0 +1,5 @@
+Worker reads the cookie it set: 1
+Worker reads the page's cookie: 2
+Worker lists the cookies: from-page,from-worker
+Page reads the worker's cookie: 1
+Worker reads its cookie after deleting it: null
