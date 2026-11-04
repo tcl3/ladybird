@@ -1,0 +1,7 @@
+The worker sees the imported module's version 1; importScripts() throws: TypeError
+update() of unchanged modules installs no worker: true
+update() after the imported module changed installs a worker: true
+The new worker sees version 2
+After it restarts, the worker sees version 2
+unregister(): true
+A worker whose graph uses top-level await: TypeError

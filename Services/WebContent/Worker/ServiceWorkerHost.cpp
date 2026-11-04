@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <AK/AnyOf.h>
 #include <AK/NeverDestroyed.h>
 #include <LibCore/EventLoop.h>
 #include <LibCore/Timer.h>
@@ -11,6 +12,7 @@
 #include <LibHTTP/HeaderList.h>
 #include <LibJS/HostClassBuilder.h>
 #include <LibJS/Runtime/ConsoleObject.h>
+#include <LibJS/Runtime/Promise.h>
 #include <LibJS/Runtime/VM.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/Bindings/ServiceWorkerGlobalScope.h>
@@ -27,6 +29,8 @@
 #include <LibWeb/HTML/PolicyContainers.h>
 #include <LibWeb/HTML/Scripting/ClassicScript.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
+#include <LibWeb/HTML/Scripting/Fetching.h>
+#include <LibWeb/HTML/Scripting/ModuleScript.h>
 #include <LibWeb/HTML/Scripting/RemoteEnvironmentSettings.h>
 #include <LibWeb/HTML/Scripting/WorkerEnvironmentSettingsObject.h>
 #include <LibWeb/HTML/WorkerDebugConsoleClient.h>
@@ -239,13 +243,14 @@ void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
         .force_bypass_cache = m_request.script_fetch.force_bypass_cache,
         .newest_worker_is_stale = m_request.newest_worker_script_url.has_value() && m_request.registration_is_stale,
     };
-    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Core::ImmutableBytes body, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
+    Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Core::ImmutableBytes body, Vector<Web::ServiceWorker::ServiceWorkerScriptResource> imported_module_scripts, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
         if (!script || !response) {
             as<PageHost>(page->client()).did_fetch_service_worker_script(rejection.value_or(Web::ServiceWorker::ServiceWorkerJobError::TypeError));
             return;
         }
         host->m_main_script_response = response;
         host->m_main_script_body = move(body);
+        host->m_imported_module_scripts = move(imported_module_scripts);
         host->check_for_updated_resources(page, *script, *response);
     }));
 }
@@ -266,6 +271,21 @@ void ServiceWorkerHost::check_for_updated_resources(GC::Ref<Web::Page> page, GC:
     if (!has_updated_resources) {
         auto stored_script = m_request.newest_worker_scripts.find_if([&](auto const& resource) { return resource.url == script_url; });
         has_updated_resources = stored_script == m_request.newest_worker_scripts.end() || stored_script->body.bytes() != m_main_script_body.bytes();
+    }
+    // AD-HOC: An update also finds the scripts of a module worker updated if the module scripts that its script imports
+    //         are not byte-for-byte identical with the newest worker's, as in other engines.
+    if (!has_updated_resources && m_request.worker_type == Web::HTML::WorkerType::Module) {
+        has_updated_resources = m_imported_module_scripts.size() + 1 != m_request.newest_worker_scripts.size()
+            || any_of(m_imported_module_scripts, [&](auto const& module_script) {
+                   auto stored_script = m_request.newest_worker_scripts.find_if([&](auto const& resource) { return resource.url == module_script.url; });
+                   return stored_script == m_request.newest_worker_scripts.end() || stored_script->body != module_script.body;
+               });
+        if (!has_updated_resources) {
+            // 9. If hasUpdatedResources is false, then:
+            // NB: The UI process runs the substeps, and stops this process.
+            as<PageHost>(page->client()).did_find_service_worker_scripts_up_to_date();
+            return;
+        }
     }
     if (has_updated_resources) {
         run_service_worker(page, script, response);
@@ -312,6 +332,12 @@ void ServiceWorkerHost::run_stored_scripts(GC::Ref<Web::Page> page)
         return;
     }
 
+    if (m_request.worker_type == Web::HTML::WorkerType::Module) {
+        m_imported_module_scripts = move(imported_scripts);
+        run_stored_module_scripts(page, main_script.release_value());
+        return;
+    }
+
     m_global_scope->restore_imported_script_resources(imported_scripts);
     auto response = Web::ServiceWorker::response_from_script_resource(*main_script);
     auto source_text = Utf16String::from_utf8_with_replacement_character(StringView { main_script->body.bytes() });
@@ -319,6 +345,40 @@ void ServiceWorkerHost::run_stored_scripts(GC::Ref<Web::Page> page)
     m_main_script_response = response;
     m_main_script_body = Core::ImmutableBytes::adopt(move(main_script->body));
     run_service_worker(page, script, response);
+}
+
+// https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
+// NB: A module worker's script resource is a module script, whose graph the worker's process creates again from the
+//     scripts that it recorded.
+void ServiceWorkerHost::run_stored_module_scripts(GC::Ref<Web::Page> page, Web::ServiceWorker::ServiceWorkerScriptResource main_script)
+{
+    auto response = Web::ServiceWorker::response_from_script_resource(main_script);
+    m_main_script_response = response;
+    m_main_script_body = Core::ImmutableBytes::adopt(move(main_script.body));
+
+    Web::HTML::PerformTheFetchHook perform_the_fetch_hook = GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }), [](auto& host, NonnullRefPtr<Web::Fetch::Infrastructure::Request> request, Web::HTML::TopLevelModule top_level, Web::HTML::ProcessCustomFetchResponse process_custom_fetch_response) -> Web::WebIDL::ExceptionOr<void> {
+        if (top_level == Web::HTML::TopLevelModule::Yes) {
+            process_custom_fetch_response->function()(*host->m_main_script_response, host->m_main_script_body);
+            return {};
+        }
+        auto stored_script = host->m_imported_module_scripts.find_if([&](auto const& resource) { return resource.url == request->url(); });
+        if (stored_script == host->m_imported_module_scripts.end()) {
+            process_custom_fetch_response->function()(Web::Fetch::Infrastructure::ResponseView::network_error("The service worker did not record this module script"_string), Empty {});
+            return {};
+        }
+        process_custom_fetch_response->function()(Web::ServiceWorker::response_from_script_resource(*stored_script), MUST(Core::ImmutableBytes::copy(stored_script->body)));
+        return {};
+    });
+    Web::HTML::OnFetchScriptComplete on_complete = GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script) -> void {
+        if (!script) {
+            as<PageHost>(page->client()).did_run_service_worker(false, {});
+            return;
+        }
+        host->run_service_worker(page, *script, *host->m_main_script_response);
+    });
+    auto job_client = Web::HTML::RemoteEnvironmentSettings::create(m_request.script_fetch.job_client);
+    if (Web::HTML::fetch_module_worker_script_graph(m_request.worker.script_url, job_client, Web::Fetch::Infrastructure::Request::Destination::ServiceWorker, *m_settings_object, perform_the_fetch_hook, on_complete).is_error())
+        as<PageHost>(page->client()).did_run_service_worker(false, {});
 }
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
@@ -358,15 +418,32 @@ void ServiceWorkerHost::run_service_worker(GC::Ref<Web::Page> page, GC::Ref<Web:
     //    1. Set evaluationStatus to the result of running the classic script script.
     //    2. If evaluationStatus.[[Value]] is empty, this means the script was not evaluated. Set startFailed to true and
     //       abort these steps.
-    // 5. Otherwise, if script is a module script, then:
-    // FIXME: Run module scripts.
-    auto* classic_script = as_if<Web::HTML::ClassicScript>(*script);
-    if (!classic_script) {
-        host.did_run_service_worker(false, {});
-        return;
-    }
     m_settings_object->execution_ready = true;
-    auto evaluation_status = classic_script->run();
+    JS::Completion evaluation_status;
+    if (auto* classic_script = as_if<Web::HTML::ClassicScript>(*script)) {
+        evaluation_status = classic_script->run();
+    }
+    // 5. Otherwise, if script is a module script, then:
+    else {
+        // 1. Let evaluationPromise be the result of running the module script script, with report errors set to false.
+        auto evaluation_promise = as<Web::HTML::ModuleScript>(*script).run(Web::HTML::ModuleScript::PreventErrorReporting::Yes);
+
+        // 2. Assert: evaluationPromise.[[PromiseState]] is not "pending".
+        // NB: A null evaluationPromise is that of a script whose error to rethrow is not null.
+        auto const* promise = evaluation_promise ? &as<JS::Promise>(*evaluation_promise->promise()) : nullptr;
+        VERIFY(!promise || promise->state() != JS::Promise::State::Pending);
+
+        // 3. If evaluationPromise.[[PromiseState]] is "rejected":
+        if (!promise || promise->state() == JS::Promise::State::Rejected) {
+            // 1. Set evaluationStatus to ThrowCompletion(evaluationPromise.[[PromiseResult]]).
+            evaluation_status = JS::throw_completion(promise ? promise->result() : JS::js_undefined());
+        }
+        // 4. Otherwise:
+        else {
+            // 1. Set evaluationStatus to NormalCompletion(undefined).
+            evaluation_status = JS::normal_completion(JS::js_undefined());
+        }
+    }
 
     // 6. If the script was aborted by the Terminate Service Worker algorithm, set startFailed to true and abort these
     //    steps.
@@ -499,6 +576,7 @@ void ServiceWorkerHost::record_scripts()
     Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts;
     scripts.append(Web::ServiceWorker::script_resource_from_response(m_request.worker.script_url, *m_main_script_response, m_main_script_body.bytes()));
     scripts.extend(m_global_scope->imported_script_resources());
+    scripts.extend(m_imported_module_scripts);
     as<PageHost>(m_page->client()).did_record_service_worker_scripts(move(scripts));
 }
 

@@ -6,6 +6,7 @@
  */
 
 #include <LibGC/Heap.h>
+#include <LibJS/SourceTextModule.h>
 #include <LibTextCodec/Decoder.h>
 #include <LibWeb/DOMURL/DOMURL.h>
 #include <LibWeb/Fetch/Fetching/Fetching.h>
@@ -16,7 +17,10 @@
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/Fetching.h>
+#include <LibWeb/HTML/Scripting/ModuleMap.h>
+#include <LibWeb/HTML/Scripting/ModuleScript.h>
 #include <LibWeb/HTML/Scripting/Script.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/ServiceWorker/Update.h>
 
 namespace Web::ServiceWorker {
@@ -79,10 +83,19 @@ public:
     Core::ImmutableBytes const& body() const { return m_body; }
     void set_body(Core::ImmutableBytes body) { m_body = move(body); }
 
+    Vector<ServiceWorkerScriptResource> take_imported_module_scripts() { return move(m_imported_module_scripts); }
+    void record_imported_module_script(ServiceWorkerScriptResource resource)
+    {
+        auto recorded = m_imported_module_scripts.find_if([&](auto const& recorded) { return recorded.url == resource.url; });
+        if (recorded == m_imported_module_scripts.end())
+            m_imported_module_scripts.append(move(resource));
+    }
+
 private:
     Optional<ServiceWorkerJobError> m_rejection;
     GC::Ptr<Fetch::Infrastructure::ResponseView> m_response;
     Core::ImmutableBytes m_body;
+    Vector<ServiceWorkerScriptResource> m_imported_module_scripts;
 };
 
 // NB: The result of the processResponse steps of a job's top-level script fetch, which the perform the fetch hook
@@ -96,6 +109,59 @@ struct ProcessResponseCompletionResult : RefCounted<ProcessResponseCompletionRes
 
     Optional<WebIDL::ExceptionOr<void>> value;
 };
+
+// https://w3c.github.io/ServiceWorker/#is-async-module
+// AD-HOC: The algorithm takes a module script, whose record and base URL are the algorithm's record and base. Each
+//         requested module's specifier is resolved against its own referring script, against which it was resolved
+//         when the module was fetched.
+static bool is_async_module(HTML::ModuleScript& script, HTML::ModuleMap const& module_map, Vector<URL::URL>& seen)
+{
+    // 1. If record is not a Cyclic Module Record, then:
+    auto record = script.record();
+    auto const* cyclic_module = record.get_pointer<GC::Ref<JS::SourceTextModule>>();
+    if (!cyclic_module) {
+        // 1. Return false.
+        return false;
+    }
+
+    // 2. If record.[[Async]] is true, then:
+    if ((*cyclic_module)->has_top_level_await()) {
+        // 1. Return true.
+        return true;
+    }
+
+    // 3. For each string requested of record.[[RequestedModules]]:
+    for (auto const& requested : (*cyclic_module)->requested_modules()) {
+        // 1. Let url be the result of resolving a module specifier given base and requested.
+        // 2. Assert: url is never failure, because resolving a module specifier must have been previously successful
+        //    with these same two arguments.
+        auto url = MUST(HTML::resolve_module_specifier(script, requested.module_specifier));
+
+        // 3. If seen does not contain url, then:
+        if (seen.contains_slow(url))
+            continue;
+
+        // 1. Append url to seen.
+        seen.append(url);
+
+        // 2. If moduleMap[url] does not have a record, then:
+        auto entry = module_map.get(url, HTML::module_type_from_module_request(requested));
+        auto const* module_script = entry.has_value() ? entry->get_pointer<GC::Ref<HTML::ModuleScript>>() : nullptr;
+        if (!module_script || (*module_script)->record().has<Empty>()) {
+            // 1. Return false.
+            return false;
+        }
+
+        // 3. If Is Async Module for moduleMap[url]'s record, moduleMap, base, and seen is true, then:
+        if (is_async_module(**module_script, module_map, seen)) {
+            // 1. Return true.
+            return true;
+        }
+    }
+
+    // 4. Return false.
+    return false;
+}
 
 static GC::Ref<Fetch::Infrastructure::FetchController> fetch_job_script(HTML::EnvironmentSettingsObject& settings_object, Fetch::Infrastructure::Request& request, Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input, GC::Ref<ScriptFetchConsumeBody> consume_body)
 {
@@ -142,9 +208,17 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         request->set_service_workers_mode(Fetch::Infrastructure::Request::ServiceWorkersMode::None);
 
         Web::Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input { Web::Fetch::Engine::BodyIntent::ConsumeForCallback };
-        auto consume_body = ScriptFetchConsumeBody::create(GC::create_function(GC::Heap::the(), GC::captures(state, top_level, process_custom_fetch_response), [](auto& state, auto top_level, auto& process_custom_fetch_response, GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) {
-            if (auto const* body = body_bytes.get_pointer<Core::ImmutableBytes>(); body && top_level == HTML::TopLevelModule::Yes)
-                state->set_body(*body);
+        auto consume_body = ScriptFetchConsumeBody::create(GC::create_function(GC::Heap::the(), GC::captures(state, top_level, request->url(), process_custom_fetch_response), [](auto& state, auto& top_level, auto& url, auto& process_custom_fetch_response, GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) {
+            if (auto const* body = body_bytes.get_pointer<Core::ImmutableBytes>()) {
+                if (top_level == HTML::TopLevelModule::Yes) {
+                    state->set_body(*body);
+                } else if (!response->is_network_error()) {
+                    // AD-HOC: The module scripts that a module worker's script imports go into the worker's script
+                    //         resource map, against which an update checks them byte for byte, as in other engines.
+                    //         The worker's process restarts the worker from them.
+                    state->record_imported_module_script(script_resource_from_response(url, response, body->bytes()));
+                }
+            }
             process_custom_fetch_response->function()(response, move(body_bytes));
         }));
 
@@ -295,8 +369,18 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
     });
 
     // When the algorithm asynchronously completes, continue the rest of these steps, with script being the asynchronous completion value.
-    HTML::OnFetchScriptComplete on_fetch_complete = GC::create_function(GC::Heap::the(), GC::captures(state, on_complete), [](auto& state, auto& on_complete, GC::Ptr<HTML::Script> script) -> void {
-        on_complete->function()(script, state->response(), state->body(), state->rejection());
+    HTML::OnFetchScriptComplete on_fetch_complete = GC::create_function(GC::Heap::the(), GC::captures(state, GC::Ref { settings_object }, on_complete), [](auto& state, auto& settings_object, auto& on_complete, GC::Ptr<HTML::Script> script) -> void {
+        // 8. If script is null or Is Async Module with script's record, script's base URL, and « » is true, then:
+        //    1. Invoke Reject Job Promise with job and TypeError.
+        // NB: The UI process runs the rest of the substeps for a null script.
+        if (auto* module_script = as_if<HTML::ModuleScript>(script.ptr())) {
+            Vector<URL::URL> seen;
+            if (is_async_module(*module_script, settings_object->module_map(), seen)) {
+                state->reject_job_promise(ServiceWorkerJobError::TypeError);
+                script = nullptr;
+            }
+        }
+        on_complete->function()(script, state->response(), state->body(), state->take_imported_module_scripts(), state->rejection());
     });
 
     // 7. Switching on job's worker type, run these substeps with the following options:

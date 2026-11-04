@@ -31,8 +31,9 @@ struct UpdateScriptFetch {
     bool newest_worker_is_stale { false };
 };
 
-// NB: The body is that of the main script's response, which the worker's process records once the worker installs.
-using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Core::ImmutableBytes body, Optional<ServiceWorkerJobError>)>>;
+// NB: The body is that of the main script's response, which the worker's process records once the worker installs,
+//     with the module scripts that a module worker's script imports.
+using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Core::ImmutableBytes body, Vector<ServiceWorkerScriptResource> imported_module_scripts, Optional<ServiceWorkerJobError>)>>;
 
 WEB_API void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_client, HTML::EnvironmentSettingsObject& settings_object, UpdateScriptFetch, OnUpdateScriptFetchComplete);
 

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A module service worker runs its module graph. An update checks the modules it imports, and a graph that uses
+    // top-level await is rejected.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const defineScript = (path, body) => server.createEcho("GET", path, { status: 200, headers: javascript, body, replace: true });
+        const imported = await defineScript("/imported.mjs", "export const version = 1;");
+        const script = await defineScript("/worker.mjs", `import { version } from "${imported}";
+            let importScriptsError = "none";
+            try {
+                importScripts("${imported}");
+            } catch (error) {
+                importScriptsError = error.name;
+            }
+            self.addEventListener("message", event => event.source.postMessage({ version, importScriptsError }));`);
+
+        const registration = await navigator.serviceWorker.register(script, { type: "module" });
+        const firstWorker = registration.installing;
+        await waitForCondition(() => firstWorker.state === "activated");
+
+        const ask = worker => new Promise(resolve => {
+            navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true });
+            worker.postMessage("version?");
+        });
+        const reply = await ask(firstWorker);
+        println(`The worker sees the imported module's version ${reply.version}; importScripts() throws: ${reply.importScriptsError}`);
+
+        await registration.update();
+        println(`update() of unchanged modules installs no worker: ${registration.installing === null && registration.waiting === null}`);
+
+        await defineScript("/imported.mjs", "export const version = 2;");
+        await registration.update();
+        const secondWorker = registration.installing;
+        println(`update() after the imported module changed installs a worker: ${secondWorker !== null}`);
+        await waitForCondition(() => secondWorker.state === "activated");
+        println(`The new worker sees version ${(await ask(secondWorker)).version}`);
+
+        // A worker that restarts runs the module scripts that it installed with, not the ones the server now has.
+        await defineScript("/imported.mjs", "export const version = 3;");
+        internals.terminateServiceWorker(secondWorker);
+        println(`After it restarts, the worker sees version ${(await ask(secondWorker)).version}`);
+        println(`unregister(): ${await registration.unregister()}`);
+
+        const asyncImported = await defineScript("/async-imported.mjs", "await Promise.resolve(); export const ready = true;");
+        const asyncScript = await defineScript("/async-worker.mjs", `import { ready } from "${asyncImported}";`);
+        try {
+            await navigator.serviceWorker.register(asyncScript, { type: "module" });
+            println("A worker whose graph uses top-level await registered");
+        } catch (error) {
+            println(`A worker whose graph uses top-level await: ${error.name}`);
+        }
+    });
+</script>

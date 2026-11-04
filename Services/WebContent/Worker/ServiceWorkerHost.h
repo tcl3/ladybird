@@ -54,6 +54,7 @@ private:
     void set_up_service_worker_global_scope(GC::Ref<Web::Page>);
     void fetch_script(GC::Ref<Web::Page>);
     void run_stored_scripts(GC::Ref<Web::Page>);
+    void run_stored_module_scripts(GC::Ref<Web::Page>, Web::ServiceWorker::ServiceWorkerScriptResource main_script);
     bool finish_setting_up_service_worker_global_scope(GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void check_for_updated_resources(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void run_service_worker(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
@@ -69,6 +70,7 @@ private:
     GC::Root<Web::HTML::WorkerEnvironmentSettingsObject> m_settings_object;
     GC::Root<Web::Fetch::Infrastructure::ResponseView> m_main_script_response;
     Core::ImmutableBytes m_main_script_body;
+    Vector<Web::ServiceWorker::ServiceWorkerScriptResource> m_imported_module_scripts;
     bool m_restarted_from_stored_scripts { false };
 
     // A fetch event of a client, from when the client's process sends it until the worker's response body ends.
