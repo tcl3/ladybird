@@ -23,6 +23,11 @@ Vector<ModuleRequest> CyclicModule::requested_modules() const
     return requests;
 }
 
+bool CyclicModule::has_top_level_await() const
+{
+    return js_module_has_top_level_await(module_to_abi(*this));
+}
+
 GC::Ref<Module> CyclicModule::get_imported_module(ModuleRequest const& request)
 {
     ModuleRequestForABI abi_request { request };

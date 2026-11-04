@@ -20,6 +20,7 @@ namespace JS {
 class JS_API CyclicModule : public Module {
 public:
     Vector<ModuleRequest> requested_modules() const;
+    bool has_top_level_await() const;
 
 protected:
     // 16.2.1.7 GetImportedModule ( referrer, request ), https://tc39.es/ecma262/#sec-GetImportedModule

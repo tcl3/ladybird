@@ -299,6 +299,14 @@ pub unsafe extern "C" fn js_module_requested_module_count(module: *mut JSModule)
     cyclic_module_of(&module).requested_modules().len()
 }
 
+/// A Cyclic Module Record's [[HasTLA]]. Main thread only.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn js_module_has_top_level_await(module: *mut JSModule) -> bool {
+    // SAFETY: See the module documentation.
+    let module = unsafe { cell_from_abi::<JSModule>(module) };
+    cyclic_module_of(&module).has_top_level_await()
+}
+
 /// The module request at `index` of a Cyclic Module Record's [[RequestedModules]], which the module lends for as long
 /// as it lives. Main thread only.
 #[unsafe(no_mangle)]
