@@ -408,6 +408,21 @@ void ConnectionFromClient::service_worker_skip_waiting_finished(u64 request_id)
         m_service_worker_host->skip_waiting_finished(request_id);
 }
 
+void ConnectionFromClient::navigation_preload_settled(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerNavigationPreloadState> state)
+{
+    Web::ServiceWorker::navigation_preload_settled(request_id, state);
+}
+
+void ConnectionFromClient::request_service_worker_client_snapshots(u64 gather_id, Vector<Web::HTML::EnvironmentId> client_ids)
+{
+    async_did_provide_service_worker_client_snapshots(gather_id, Web::ServiceWorker::service_worker_client_snapshots(client_ids));
+}
+
+void ConnectionFromClient::service_worker_clients_matched(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> clients)
+{
+    Web::ServiceWorker::service_worker_clients_matched(request_id, clients);
+}
+
 // NB: The answer shows the UI process that the worker's event loop runs.
 void ConnectionFromClient::service_worker_heartbeat(u64 heartbeat_id)
 {

@@ -25,6 +25,7 @@
 #include <LibWeb/HTML/WorkerGlobalScope.h>
 #include <LibWeb/HTML/WorkerNavigator.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/ServiceWorker/Clients.h>
 #include <LibWeb/ServiceWorker/ServiceWorker.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
@@ -76,6 +77,8 @@ void web_service_worker_request_ready(void* realm, u64 request_id);
 void web_service_worker_post_message_to_service_worker(void* realm, u64 service_worker_id, HTML::SerializedTransferRecord* record);
 void web_service_worker_post_message_to_client(void* realm, ReadonlyBytes client_id, HTML::SerializedTransferRecord* record);
 void* web_service_worker_container_of_realm(void* realm);
+void web_service_worker_request_navigation_preload(void* realm, u64 request_id, u64 registration_id, u8 operation, ReadonlyBytes header_value);
+void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type);
 
 // Defined on the Rust side.
 void* web_rust_service_worker_create_container(JSVM*, void* realm);
@@ -90,6 +93,9 @@ void web_rust_service_worker_enable_client_message_queue(JSVM*, void* realm);
 u64 web_rust_service_worker_dispatch_message_event(JSVM*, void* realm, DOM::EventTarget* global, FfiServiceWorkerClientSnapshot const*, FfiServiceWorkerDescriptor const*, ReadonlyBytes origin, HTML::SerializedTransferRecord* record, void* ctx, void (*on_pending_events_changed)(void*, bool));
 void web_rust_service_worker_time_out_extended_event(JSVM*, u64 event_id);
 u64 web_rust_service_worker_id(ServiceWorker const*);
+void web_rust_service_worker_navigation_preload_settled(JSVM*, u64 request_id, bool succeeded, bool enabled, ReadonlyBytes header_value);
+void web_rust_service_worker_clients_matched(JSVM*, u64 request_id, ReadonlySpan<FfiServiceWorkerClientSnapshot>);
+void* web_rust_service_worker_create_clients(JSVM*, void* realm);
 void* web_rust_service_worker_registration_object(JSVM*, void* realm, FfiServiceWorkerRegistrationSnapshot const*);
 void* web_rust_service_worker_service_worker_object(JSVM*, void* realm, FfiServiceWorkerDescriptor const*);
 }
@@ -257,6 +263,17 @@ void web_service_worker_post_message_to_client(void* realm, ReadonlyBytes client
 {
     auto message = adopt_own(*record);
     Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_post_message_to_service_worker_client(String::from_utf8_without_validation(client_id), move(*message));
+}
+
+void web_service_worker_request_navigation_preload(void* realm, u64 request_id, u64 registration_id, u8 operation, ReadonlyBytes header_value)
+{
+    auto& settings = relevant_settings_object_of(realm);
+    Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_navigation_preload(settings.id, request_id, registration_id, static_cast<ServiceWorkerNavigationPreloadOperation>(operation), ByteString { header_value });
+}
+
+void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type)
+{
+    Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_clients(request_id, String::from_utf8_without_validation(client_id), is_get, include_uncontrolled, static_cast<Bindings::ClientType>(type));
 }
 
 void* web_service_worker_container_of_realm(void* realm)
@@ -441,6 +458,85 @@ void time_out_extended_event(u64 event_id)
 ServiceWorkerId service_worker_id(ServiceWorker const& worker)
 {
     return web_rust_service_worker_id(&worker);
+}
+
+GC::Ref<Clients> create_clients(JS::Realm& realm)
+{
+    return *static_cast<Clients*>(web_rust_service_worker_create_clients(JS::HostABI::vm_to_abi(realm.vm()), &realm));
+}
+
+// The strings that the FFI form of client snapshots refers to.
+struct SerializedClientSnapshotStrings {
+    String url;
+    Vector<ReadonlyBytes> ancestor_origins;
+};
+
+static FfiServiceWorkerClientSnapshot client_snapshot_to_ffi(ServiceWorkerClientSnapshot const& client, SerializedClientSnapshotStrings& strings)
+{
+    strings.url = client.url.serialize();
+    for (auto const& ancestor_origin : client.ancestor_origins)
+        strings.ancestor_origins.append(ancestor_origin.bytes());
+    return FfiServiceWorkerClientSnapshot {
+        .id = client.id.to_string().bytes(),
+        .url = strings.url.bytes(),
+        .type = to_underlying(client.type),
+        .frame_type = to_underlying(client.frame_type),
+        .visibility_state = to_underlying(client.visibility_state),
+        .focused = client.focused,
+        .ancestor_origins = strings.ancestor_origins.span(),
+    };
+}
+
+void service_worker_clients_matched(ServiceWorkerRequestId request_id, Vector<ServiceWorkerClientSnapshot> const& clients)
+{
+    Vector<SerializedClientSnapshotStrings> strings;
+    strings.resize(clients.size());
+    Vector<FfiServiceWorkerClientSnapshot> ffi_clients;
+    for (size_t i = 0; i < clients.size(); ++i)
+        ffi_clients.append(client_snapshot_to_ffi(clients[i], strings[i]));
+    web_rust_service_worker_clients_matched(JS::HostABI::vm_to_abi(JS::VM::the()), request_id, ffi_clients.span());
+}
+
+// https://w3c.github.io/ServiceWorker/#clients-matchall
+Vector<ServiceWorkerClientSnapshot> service_worker_client_snapshots(Vector<HTML::EnvironmentId> const& client_ids)
+{
+    Vector<ServiceWorkerClientSnapshot> snapshots;
+    for (auto const& client_id : client_ids) {
+        auto settings = HTML::environment_settings_object_with_id(client_id);
+
+        // 2.2.1. If client's execution ready flag is unset or client's discarded flag is set, continue.
+        if (!settings || !settings->execution_ready)
+            continue;
+
+        // 2.2.2. If client is not a secure context, continue.
+        if (HTML::is_non_secure_context(*settings))
+            continue;
+
+        // 2.5.1.6.2. If client is a window client and client's associated document is not browsingContext's active
+        //            document, then set isClientEnumerable to false and abort these steps.
+        if (auto* window = HTML::window_from_global_object(settings->global_object()); window && !window->associated_document().is_active())
+            continue;
+
+        // 2.5.1.6.3. Set windowData["frameType"] to the result of running Get Frame Type with browsingContext.
+        // 2.5.1.6.4. Set windowData["visibilityState"] to browsingContext's active document's visibilityState
+        //            attribute value.
+        // 2.5.1.6.5. Set windowData["focusState"] to the result of running the has focus steps with browsingContext's
+        //            active document as the argument.
+        // 2.5.1.6.6. If client is a window client, then set windowData["ancestorOriginsList"] to browsingContext's
+        //            active document's ancestor origins list's associated list.
+        snapshots.append(client_snapshot_of(*settings));
+    }
+    return snapshots;
+}
+
+void navigation_preload_settled(ServiceWorkerRequestId request_id, Optional<ServiceWorkerNavigationPreloadState> const& state)
+{
+    auto* vm = JS::HostABI::vm_to_abi(JS::VM::the());
+    if (!state.has_value()) {
+        web_rust_service_worker_navigation_preload_settled(vm, request_id, false, false, {});
+        return;
+    }
+    web_rust_service_worker_navigation_preload_settled(vm, request_id, true, state->enabled, state->header_value.bytes());
 }
 
 }

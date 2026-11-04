@@ -92,6 +92,9 @@ private:
     virtual void dispatch_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, u64 timeout_ms) override;
     virtual void service_worker_skip_waiting_finished(u64 request_id) override;
     virtual void service_worker_heartbeat(u64 heartbeat_id) override;
+    virtual void navigation_preload_settled(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerNavigationPreloadState> state) override;
+    virtual void request_service_worker_client_snapshots(u64 gather_id, Vector<Web::HTML::EnvironmentId> client_ids) override;
+    virtual void service_worker_clients_matched(u64 request_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> clients) override;
     virtual void dispatch_service_worker_message_event(Web::ServiceWorker::ServiceWorkerMessageSource source, URL::Origin origin, Web::HTML::SerializedTransferRecord message, u64 timeout_ms) override;
     virtual void service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) override;
 

@@ -92,6 +92,9 @@ public:
     virtual void did_change_service_worker_pending_events(bool has_pending_events) override;
     virtual void did_record_service_worker_scripts(Vector<Web::ServiceWorker::ServiceWorkerScriptResource> scripts) override;
     virtual void did_respond_to_service_worker_heartbeat(u64 heartbeat_id) override;
+    virtual void did_request_navigation_preload(Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value) override;
+    virtual void did_request_service_worker_clients(u64 request_id, String client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type) override;
+    virtual void did_provide_service_worker_client_snapshots(u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) override;
     virtual void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult) override;
     virtual void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) override;
     virtual void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded) override;

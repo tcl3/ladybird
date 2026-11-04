@@ -359,6 +359,37 @@ void WebWorkerClient::did_respond_to_service_worker_heartbeat(u64 heartbeat_id)
         registry->service_worker_did_respond_to_heartbeat(m_agent_id, heartbeat_id);
 }
 
+void WebWorkerClient::did_request_navigation_preload(Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value)
+{
+    auto session = m_session.strong_ref();
+    auto settings = hosted_environment(environment_id);
+    if (!session || !settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { *this },
+        .settings = *settings,
+        .has_cross_site_ancestor = static_cast<CanonicalWorkerEnvironmentSettingsObject const&>(*settings).has_cross_site_ancestor(),
+    };
+    session->service_worker_registry->navigation_preload(client_environment, request_id, registration_id, operation, move(header_value));
+}
+
+void WebWorkerClient::did_request_service_worker_clients(u64 request_id, String client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type)
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_request_service_worker_clients"sv))
+        registry->service_worker_did_request_clients(m_agent_id, request_id, client_id, is_get, include_uncontrolled, type);
+}
+
+void WebWorkerClient::did_provide_service_worker_client_snapshots(u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots)
+{
+    auto session = m_session.strong_ref();
+    if (!session)
+        return;
+
+    // NB: A worker describes only the clients that it hosts.
+    snapshots.remove_all_matching([&](auto const& snapshot) { return !hosted_environment(snapshot.id).has_value(); });
+    session->service_worker_registry->client_did_provide_service_worker_client_snapshots(gather_id, ServiceWorkerClientConnection { *this }, move(snapshots));
+}
+
 void WebWorkerClient::did_change_service_worker_pending_events(bool has_pending_events)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_change_service_worker_pending_events"sv))

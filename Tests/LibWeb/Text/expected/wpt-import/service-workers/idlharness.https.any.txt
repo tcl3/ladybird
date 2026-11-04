@@ -2,8 +2,8 @@ Harness status: OK
 
 Found 175 tests
 
-161 Pass
-14 Fail
+173 Pass
+2 Fail
 Pass	idl_test setup
 Pass	idl_test validation
 Pass	Partial interface Navigator: original interface defined
@@ -63,7 +63,7 @@ Pass	ServiceWorkerRegistration interface: existence and properties of interface 
 Pass	ServiceWorkerRegistration interface: attribute installing
 Pass	ServiceWorkerRegistration interface: attribute waiting
 Pass	ServiceWorkerRegistration interface: attribute active
-Fail	ServiceWorkerRegistration interface: attribute navigationPreload
+Pass	ServiceWorkerRegistration interface: attribute navigationPreload
 Pass	ServiceWorkerRegistration interface: attribute scope
 Pass	ServiceWorkerRegistration interface: attribute updateViaCache
 Fail	ServiceWorkerRegistration interface: operation update()
@@ -74,7 +74,7 @@ Pass	Stringification of registrationInstance
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "installing" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "waiting" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "active" with the proper type
-Fail	ServiceWorkerRegistration interface: registrationInstance must inherit property "navigationPreload" with the proper type
+Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "navigationPreload" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "scope" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "updateViaCache" with the proper type
 Fail	ServiceWorkerRegistration interface: registrationInstance must inherit property "update()" with the proper type
@@ -108,16 +108,16 @@ Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit prop
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "oncontrollerchange" with the proper type
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessage" with the proper type
 Pass	ServiceWorkerContainer interface: navigator.serviceWorker must inherit property "onmessageerror" with the proper type
-Fail	NavigationPreloadManager interface: existence and properties of interface object
-Fail	NavigationPreloadManager interface object length
-Fail	NavigationPreloadManager interface object name
-Fail	NavigationPreloadManager interface: existence and properties of interface prototype object
-Fail	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
-Fail	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
-Fail	NavigationPreloadManager interface: operation enable()
-Fail	NavigationPreloadManager interface: operation disable()
-Fail	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
-Fail	NavigationPreloadManager interface: operation getState()
+Pass	NavigationPreloadManager interface: existence and properties of interface object
+Pass	NavigationPreloadManager interface object length
+Pass	NavigationPreloadManager interface object name
+Pass	NavigationPreloadManager interface: existence and properties of interface prototype object
+Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's "constructor" property
+Pass	NavigationPreloadManager interface: existence and properties of interface prototype object's @@unscopables property
+Pass	NavigationPreloadManager interface: operation enable()
+Pass	NavigationPreloadManager interface: operation disable()
+Pass	NavigationPreloadManager interface: operation setHeaderValue(ByteString)
+Pass	NavigationPreloadManager interface: operation getState()
 Pass	ServiceWorkerGlobalScope interface: existence and properties of interface object
 Pass	Client interface: existence and properties of interface object
 Pass	WindowClient interface: existence and properties of interface object

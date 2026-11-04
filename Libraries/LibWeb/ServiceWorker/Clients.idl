@@ -2,8 +2,8 @@
 [Exposed=ServiceWorker, ImplementedIn=Rust]
 interface Clients {
     // The objects returned will be new instances every time
-    [FIXME, NewObject] Promise<(Client or undefined)> get(DOMString id);
-    [FIXME, NewObject] Promise<FrozenArray<Client>> matchAll(optional ClientQueryOptions options = {});
+    [NewObject] Promise<(Client or undefined)> get(DOMString id);
+    [NewObject] Promise<FrozenArray<Client>> matchAll(optional ClientQueryOptions options = {});
     [FIXME, NewObject] Promise<WindowClient?> openWindow(USVString url);
     [FIXME, NewObject] Promise<undefined> claim();
 };

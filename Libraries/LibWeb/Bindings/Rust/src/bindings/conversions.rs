@@ -27,6 +27,43 @@ use crate::bindings::promise::WebIdlPromise;
 use crate::bindings::services::web_bindings_object_implements_interface;
 use crate::bindings::{CallContext, WebIdlResult};
 
+/// A ByteString, a sequence of bytes, https://webidl.spec.whatwg.org/#idl-ByteString
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ByteString(pub(crate) Vec<u8>);
+
+impl ByteString {
+    pub(crate) fn from_ascii(string: &[u8]) -> Self {
+        Self(string.to_vec())
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+/// A JS value converted to a ByteString, https://webidl.spec.whatwg.org/#es-ByteString
+pub(crate) fn to_byte_string(vm: &Vm, value: Value) -> ThrowCompletionOr<ByteString> {
+    // 1. Let x be ? ToString(V).
+    let x = to_dom_string(vm, value)?;
+
+    // 2. If the value of any element of x is greater than 255, then throw a TypeError.
+    // 3. Return an IDL ByteString value whose length is the length of x, and where the value of each element is the
+    //    value of the corresponding element of x.
+    let mut bytes = Vec::with_capacity(x.length_in_code_units());
+    for (index, &code_unit) in x.to_utf16().iter().enumerate() {
+        let Ok(byte) = u8::try_from(code_unit) else {
+            return vm.throw_completion_with_message(
+                ErrorKind::TypeError,
+                format!(
+                    "Invalid byte 0x{code_unit:X} at index {index}, must be an integer no less than 0 and no greater than 0xFF"
+                ),
+            );
+        };
+        bytes.push(byte);
+    }
+    Ok(ByteString(bytes))
+}
+
 /// A USVString, a string without lone surrogates. Its UTF-16 code units are always well-formed.
 #[derive(Clone, Eq, PartialEq, Trace)]
 #[gc(crate = libjs_rust)]
@@ -1142,6 +1179,12 @@ impl ToJs for Gc<FunctionObject> {
 impl ToJs for Utf16String {
     fn to_js(self, cx: &CallContext) -> ThrowCompletionOr<Value> {
         Ok(Value::from_string(PrimitiveString::create(cx.vm(), self)))
+    }
+}
+
+impl ToJs for ByteString {
+    fn to_js(self, cx: &CallContext) -> ThrowCompletionOr<Value> {
+        Utf16String::from_latin1(&self.0).to_js(cx)
     }
 }
 

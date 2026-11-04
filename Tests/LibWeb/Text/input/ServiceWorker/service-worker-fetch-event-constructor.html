@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("message", async event => {
+                const results = {};
+                const exceptionName = steps => { try { steps(); return "no exception"; } catch (error) { return error.name; } };
+                const request = new Request("https://example.com/resource");
+                const fetchEvent = new FetchEvent("fetch", { request, clientId: "client" });
+                results["request is the one it was created with"] = fetchEvent.request === request;
+                results["request is the same object each time"] = fetchEvent.request === fetchEvent.request;
+                results["clientId"] = fetchEvent.clientId;
+                results["resultingClientId"] = JSON.stringify(fetchEvent.resultingClientId);
+                results["preloadResponse resolves with"] = String(await fetchEvent.preloadResponse);
+                results["handled is pending"] = await Promise.race([fetchEvent.handled.then(() => false), Promise.resolve(true)]);
+                results["is an ExtendableEvent"] = fetchEvent instanceof ExtendableEvent;
+                results["constructor without a request"] = exceptionName(() => new FetchEvent("fetch", {}));
+                results["respondWith() outside dispatch"] = exceptionName(() => fetchEvent.respondWith(Promise.resolve()));
+                let duringDispatch;
+                self.addEventListener("synthetic", synthetic => { duringDispatch = exceptionName(() => synthetic.respondWith(Promise.resolve())); });
+                self.dispatchEvent(new FetchEvent("synthetic", { request }));
+                results["respondWith() on an event that the user agent did not dispatch"] = duringDispatch;
+                event.source.postMessage(results);
+            });`,
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        const reply = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        worker.postMessage("report");
+        for (const [name, value] of Object.entries(await reply))
+            println(`${name}: ${value}`);
+    });
+</script>

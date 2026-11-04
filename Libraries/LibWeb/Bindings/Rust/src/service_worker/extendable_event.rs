@@ -175,7 +175,11 @@ impl ExtendableEvent {
 }
 
 // https://w3c.github.io/ServiceWorker/#extendableevent-add-lifetime-promise
-fn add_lifetime_promise(vm: &Vm, event: ExtendableEventLifetimeRef, promise: WebIdlPromise) -> WebIdlResult<()> {
+pub(crate) fn add_lifetime_promise(
+    vm: &Vm,
+    event: ExtendableEventLifetimeRef,
+    promise: WebIdlPromise,
+) -> WebIdlResult<()> {
     // 1. If event's isTrusted attribute is false, throw an "InvalidStateError" DOMException.
     if !event.event.is_trusted() {
         return Err(Exception::Dom(

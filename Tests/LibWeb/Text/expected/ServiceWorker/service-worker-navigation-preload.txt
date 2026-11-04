@@ -1,0 +1,11 @@
+navigationPreload is the same object each time: true
+State before the worker is active: enabled false, header value "true"
+enable() before the worker is active: InvalidStateError
+enable(): resolved
+setHeaderValue(" custom\t"): resolved
+State: enabled true, header value "custom"
+setHeaderValue() of a value with a newline: TypeError
+setHeaderValue() of a value that is not a ByteString: TypeError
+State in the worker: enabled true, header value "custom"
+disable(): resolved
+State: enabled false, header value "custom"

@@ -3870,6 +3870,16 @@ void ConnectionFromClient::service_worker_ready(u64 request_id, Web::ServiceWork
     Web::ServiceWorker::service_worker_ready(request_id, move(registration));
 }
 
+void ConnectionFromClient::navigation_preload_settled(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerNavigationPreloadState> state)
+{
+    Web::ServiceWorker::navigation_preload_settled(request_id, state);
+}
+
+void ConnectionFromClient::request_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::HTML::EnvironmentId> client_ids)
+{
+    async_did_provide_service_worker_client_snapshots(page_id, gather_id, Web::ServiceWorker::service_worker_client_snapshots(client_ids));
+}
+
 void ConnectionFromClient::service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message)
 {
     Web::ServiceWorker::service_worker_message_to_client(client_id, move(source), origin, move(message));

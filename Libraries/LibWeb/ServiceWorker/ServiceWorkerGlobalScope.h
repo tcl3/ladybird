@@ -47,6 +47,7 @@ public:
     GC::Ref<WebIDL::Promise> skip_waiting();
     void skip_waiting_finished(ServiceWorkerRequestId);
 
+    GC::Ref<Clients> clients();
     GC::Ref<ServiceWorkerRegistration> registration();
     GC::Ref<ServiceWorker> service_worker();
 
@@ -68,6 +69,7 @@ private:
     virtual void visit_edges(Cell::Visitor&) override;
 
     GC::Ptr<CookieStore::CookieStore> m_cookie_store;
+    GC::Ptr<Clients> m_clients;
 
     // https://w3c.github.io/ServiceWorker/#serviceworkerglobalscope-service-worker
     // NB: The UI process holds the service worker and its containing registration, and describes them here.

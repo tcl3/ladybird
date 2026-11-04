@@ -258,6 +258,16 @@ void PageHost::page_did_post_message_to_service_worker_client(String client_id, 
     m_client.async_did_post_message_to_service_worker_client(client_id, move(message));
 }
 
+void PageHost::page_did_request_navigation_preload(Web::HTML::EnvironmentId const& environment_id, Web::ServiceWorker::ServiceWorkerRequestId request_id, Web::ServiceWorker::ServiceWorkerRegistrationId registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value)
+{
+    m_client.async_did_request_navigation_preload(environment_id, request_id, registration_id, operation, header_value);
+}
+
+void PageHost::page_did_request_service_worker_clients(Web::ServiceWorker::ServiceWorkerRequestId request_id, String client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type)
+{
+    m_client.async_did_request_service_worker_clients(request_id, client_id, is_get, include_uncontrolled, type);
+}
+
 void PageHost::did_change_service_worker_pending_events(bool has_pending_events)
 {
     m_client.async_did_change_service_worker_pending_events(has_pending_events);

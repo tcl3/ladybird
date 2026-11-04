@@ -1,0 +1,13 @@
+// https://w3c.github.io/ServiceWorker/#navigationpreloadmanager
+[SecureContext, Exposed=(Window,Worker), Experimental, ImplementedIn=Rust]
+interface NavigationPreloadManager {
+    Promise<undefined> enable();
+    Promise<undefined> disable();
+    Promise<undefined> setHeaderValue(ByteString value);
+    Promise<NavigationPreloadState> getState();
+};
+
+dictionary NavigationPreloadState {
+    boolean enabled = false;
+    ByteString headerValue;
+};

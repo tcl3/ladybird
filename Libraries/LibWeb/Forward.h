@@ -1066,6 +1066,7 @@ namespace Web::ServiceWorker {
 
 class Cache;
 class CacheStorage;
+class Clients;
 class ServiceWorker;
 class ServiceWorkerContainer;
 class ServiceWorkerRegistration;

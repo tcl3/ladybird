@@ -80,9 +80,10 @@ ALLOWED_REALM_MENTIONS = {
     "SVG": (2, 8, "SVG length objects still store/use realms for detached/reflected JS/CSS materialization"),
     "ServiceWorker": (
         6,
-        39,
+        41,
         "caches still materialize results in selected realms, and the C++ glue of the Rust interfaces reads the "
-        "settings object of a realm's global and gets the realm's objects for a service worker and its registration",
+        "settings object of a realm's global and gets the realm's objects for a service worker, its registration and "
+        "its clients",
     ),
     "StorageAPI": (2, 3, "the C++ glue of the Rust StorageManager creates one in a realm"),
     "Streams": (7, 17, "the C++ facade of the Rust streams creates streams and promises in caller-selected realms"),

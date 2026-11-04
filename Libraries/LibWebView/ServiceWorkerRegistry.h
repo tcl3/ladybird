@@ -34,6 +34,9 @@ public:
     explicit ServiceWorkerClientConnection(WebContentClient&);
     explicit ServiceWorkerClientConnection(WebWorkerClient&);
 
+    // The connection's process, which tells connections to one process apart.
+    void const* identity() const;
+
     template<typename Callback>
     void visit_open_connection(Callback callback) const
     {
@@ -56,7 +59,7 @@ struct ServiceWorkerClientEnvironment {
     bool has_cross_site_ancestor { false };
 };
 
-// https://w3c.github.io/ServiceWorker/#dfn-registration-map
+// https://w3c.github.io/ServiceWorker/#dfn-scope-to-registration-map
 class WEBVIEW_API ServiceWorkerRegistry : public Weakable<ServiceWorkerRegistry> {
     AK_MAKE_NONCOPYABLE(ServiceWorkerRegistry);
     AK_MAKE_NONMOVABLE(ServiceWorkerRegistry);
@@ -84,6 +87,10 @@ public:
     void service_worker_did_record_scripts(Web::HTML::WorkerAgentId, Vector<Web::ServiceWorker::ServiceWorkerScriptResource>);
     void service_worker_did_respond_to_heartbeat(Web::HTML::WorkerAgentId, u64 heartbeat_id);
     void terminate_service_worker_for_testing(Web::ServiceWorker::ServiceWorkerId, bool kill_process);
+
+    void navigation_preload(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, Web::ServiceWorker::ServiceWorkerRegistrationId, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation, ByteString header_value);
+    void service_worker_did_request_clients(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType);
+    void client_did_provide_service_worker_client_snapshots(u64 gather_id, ServiceWorkerClientConnection const& provider, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot>);
 
     void post_message_to_service_worker(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerClientSnapshot, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
     void service_worker_did_post_message_to_service_worker(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerId, Web::HTML::SerializedTransferRecord);
@@ -185,6 +192,25 @@ private:
         Optional<Web::ServiceWorker::ServiceWorkerId> installing_worker;
         Optional<Web::ServiceWorker::ServiceWorkerId> waiting_worker;
         Optional<Web::ServiceWorker::ServiceWorkerId> active_worker;
+
+        // https://w3c.github.io/ServiceWorker/#service-worker-registration-navigation-preload-enabled-flag
+        bool navigation_preload_enabled { false };
+
+        // https://w3c.github.io/ServiceWorker/#service-worker-registration-navigation-preload-header-value
+        ByteString navigation_preload_header_value { "true"sv };
+    };
+
+    // The clients that a Clients object of a worker asked for, which the processes that host them describe.
+    struct ClientsRequest {
+        u64 gather_id { 0 };
+        Web::ServiceWorker::ServiceWorkerId worker_id { 0 };
+        Web::ServiceWorker::ServiceWorkerRequestId request_id { 0 };
+        bool is_get { false };
+        Vector<Web::HTML::EnvironmentId> window_clients;
+        Vector<Web::HTML::EnvironmentId> worker_clients;
+        Vector<void const*> processes_waited_for;
+        Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots;
+        RefPtr<Core::Timer> timeout;
     };
 
     struct JobClient {
@@ -285,6 +311,10 @@ private:
 
     Vector<PartitionTermination> m_partition_terminations;
     u64 m_next_heartbeat_id { 0 };
+
+    void finish_clients_request(u64 gather_id);
+    Vector<ClientsRequest> m_clients_requests;
+    u64 m_next_gather_id { 0 };
 
     HashMap<Web::ServiceWorker::ServiceWorkerId, NonnullOwnPtr<ServiceWorkerRecord>> m_service_workers;
 

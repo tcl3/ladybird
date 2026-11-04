@@ -1,0 +1,10 @@
+request is the one it was created with: true
+request is the same object each time: true
+clientId: client
+resultingClientId: ""
+preloadResponse resolves with: undefined
+handled is pending: true
+is an ExtendableEvent: true
+constructor without a request: TypeError
+respondWith() outside dispatch: InvalidStateError
+respondWith() on an event that the user agent did not dispatch: InvalidStateError

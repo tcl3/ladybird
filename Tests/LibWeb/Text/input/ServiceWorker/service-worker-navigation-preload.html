@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `let finishInstall;
+            self.addEventListener("install", event => event.waitUntil(new Promise(resolve => (finishInstall = resolve))));
+            self.addEventListener("message", async event => {
+                if (event.data === "finish install") {
+                    finishInstall();
+                    return;
+                }
+                event.source.postMessage(await self.registration.navigationPreload.getState());
+            });`,
+        });
+        const describe = state => `enabled ${state.enabled}, header value "${state.headerValue}"`;
+        const settle = async promise => {
+            try {
+                await promise;
+                return "resolved";
+            } catch (error) {
+                return error.name;
+            }
+        };
+
+        // NB: The worker's install event waits until the page lets it finish.
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        const manager = registration.navigationPreload;
+        println(`navigationPreload is the same object each time: ${manager === registration.navigationPreload}`);
+        println(`State before the worker is active: ${describe(await manager.getState())}`);
+        println(`enable() before the worker is active: ${await settle(manager.enable())}`);
+
+        worker.postMessage("finish install");
+        await waitForCondition(() => worker.state === "activated");
+        println(`enable(): ${await settle(manager.enable())}`);
+        println(`setHeaderValue(" custom\\t"): ${await settle(manager.setHeaderValue(" custom\t"))}`);
+        println(`State: ${describe(await manager.getState())}`);
+        println(`setHeaderValue() of a value with a newline: ${await settle(manager.setHeaderValue("a\nb"))}`);
+        println(`setHeaderValue() of a value that is not a ByteString: ${await settle(manager.setHeaderValue("Ā"))}`);
+
+        const fromWorker = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        worker.postMessage("report");
+        println(`State in the worker: ${describe(await fromWorker)}`);
+
+        println(`disable(): ${await settle(manager.disable())}`);
+        println(`State: ${describe(await manager.getState())}`);
+    });
+</script>

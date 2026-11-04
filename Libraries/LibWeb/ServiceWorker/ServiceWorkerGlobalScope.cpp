@@ -13,6 +13,7 @@
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/Page/Page.h>
+#include <LibWeb/ServiceWorker/Clients.h>
 #include <LibWeb/ServiceWorker/EventNames.h>
 #include <LibWeb/ServiceWorker/ServiceWorker.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
@@ -36,6 +37,7 @@ void ServiceWorkerGlobalScope::visit_edges(Cell::Visitor& visitor)
     Base::visit_edges(visitor);
 
     visitor.visit(m_cookie_store);
+    visitor.visit(m_clients);
     for (auto const& [url, resource] : m_script_resource_map)
         visitor.visit(resource.response);
     visitor.visit(m_skip_waiting_promises);
@@ -108,6 +110,15 @@ GC::Ref<CookieStore::CookieStore> ServiceWorkerGlobalScope::cookie_store()
     if (!m_cookie_store)
         m_cookie_store = GC::Heap::the().allocate<CookieStore::CookieStore>(page()->client());
     return *m_cookie_store;
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-global-scope-clients
+GC::Ref<Clients> ServiceWorkerGlobalScope::clients()
+{
+    // The clients getter steps are to return the Clients object that is associated with this.
+    if (!m_clients)
+        m_clients = create_clients(HTML::relevant_realm(*this));
+    return *m_clients;
 }
 
 // https://w3c.github.io/ServiceWorker/#service-worker-global-scope-registration

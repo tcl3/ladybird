@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const dedicatedWorkerURL = await server.createEcho("GET", "/dedicated-worker.js", { status: 200, headers: javascript, body: "onmessage = () => postMessage('ready');" });
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: javascript,
+            body: `self.addEventListener("message", async event => {
+                const describe = clients => clients.map(client => \`\${client.constructor.name} \${client.type} \${client.url === "${location.href}" ? "page" : client.url === "${dedicatedWorkerURL}" ? "dedicated worker" : client.url}\`).join(", ") || "none";
+                const results = {};
+                results["matchAll()"] = describe(await clients.matchAll());
+                results["matchAll() of uncontrolled clients"] = describe(await clients.matchAll({ includeUncontrolled: true }));
+                results["matchAll() of uncontrolled workers"] = describe(await clients.matchAll({ includeUncontrolled: true, type: "worker" }));
+                results["matchAll() of all uncontrolled clients"] = describe(await clients.matchAll({ includeUncontrolled: true, type: "all" }));
+                const all = await clients.matchAll({ includeUncontrolled: true, type: "all" });
+                results["matchAll() returns a frozen array"] = Object.isFrozen(all);
+                const client = await clients.get(event.source.id);
+                results["get() of the page"] = describe([client]);
+                results["get() returns the page's id"] = client.id === event.source.id;
+                results["get() returns a new object"] = client !== event.source;
+                results["get() of an unknown id"] = String(await clients.get("unknown"));
+                results["clients is the same object each time"] = self.clients === self.clients;
+                event.source.postMessage(results);
+            });`,
+        });
+
+        const dedicatedWorker = new Worker(dedicatedWorkerURL);
+        await new Promise(resolve => {
+            dedicatedWorker.onmessage = resolve;
+            dedicatedWorker.postMessage("start");
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+        const reply = new Promise(resolve => navigator.serviceWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        worker.postMessage("report");
+        for (const [name, value] of Object.entries(await reply))
+            println(`${name}: ${value}`);
+    });
+</script>

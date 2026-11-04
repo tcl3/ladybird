@@ -91,6 +91,7 @@ public:
     virtual Messages::WebContentClient::DidAddBlobUrlEntryResponse did_add_blob_url_entry(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, Utf16String url, Web::FileAPI::SerializedBlobURLEntry entry) override;
     virtual void did_remove_blob_url_entries(Web::PageId page_id, Web::HTML::EnvironmentId environment_id, Vector<Utf16String> urls) override;
     virtual void close_worker_agent(Web::PageId page_id, Web::HTML::WorkerAgentId agent_id, Web::HTML::WorkerAgentOwnerToken owner_token) override;
+    virtual void did_provide_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) override;
     virtual void did_retain_blob_url_token(Web::HTML::CrossProcessId navigable_id, URL::BlobURLEntry::Token token) override;
     virtual Messages::WebContentClient::DidRequestBlobUrlEntryResponse did_request_blob_url_entry(Utf16String url, Optional<URL::BlobURLEntry::Token> token) override;
 

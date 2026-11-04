@@ -3510,6 +3510,19 @@ void WebContentPage::did_post_message_to_service_worker(Web::ServiceWorker::Serv
     client().session().service_worker_registry->post_message_to_service_worker(client_environment, move(source), service_worker_id, move(message));
 }
 
+void WebContentPage::did_request_navigation_preload(Web::HTML::EnvironmentId environment_id, u64 request_id, u64 registration_id, Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation operation, ByteString header_value)
+{
+    auto settings = hosted_environment(environment_id);
+    if (!settings.has_value())
+        return;
+    ServiceWorkerClientEnvironment client_environment {
+        .connection = ServiceWorkerClientConnection { client() },
+        .settings = *settings,
+        .has_cross_site_ancestor = hosted_environment_has_cross_site_ancestor(environment_id).value_or(true),
+    };
+    client().session().service_worker_registry->navigation_preload(client_environment, request_id, registration_id, operation, move(header_value));
+}
+
 void WebContentPage::did_dispatch_dom_content_loaded_for_service_worker_jobs(Web::HTML::EnvironmentId environment_id)
 {
     if (!hosted_environment(environment_id).has_value())

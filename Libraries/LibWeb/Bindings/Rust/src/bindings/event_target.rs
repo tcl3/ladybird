@@ -90,6 +90,7 @@ unsafe extern "C" {
     fn web_bindings_set_event_owner(event: *mut c_void, interface_name: u16, owner: *mut c_void);
     fn web_bindings_event_set_is_trusted(event: *mut c_void, is_trusted: bool);
     fn web_bindings_event_is_trusted(event: *mut c_void) -> bool;
+    fn web_bindings_event_stop_immediate_propagation(event: *mut c_void);
     fn web_bindings_dispatch_event(target: *mut c_void, event: *mut c_void) -> bool;
     fn web_bindings_dispatch_event_with_legacy_output_did_listeners_throw_flag(
         target: *mut c_void,
@@ -343,6 +344,12 @@ impl CppEvent {
     pub(crate) fn is_trusted(&self) -> bool {
         // SAFETY: The event is live.
         unsafe { web_bindings_event_is_trusted(self.as_ptr()) }
+    }
+
+    /// Sets the event's stop propagation flag and stop immediate propagation flag.
+    pub(crate) fn stop_immediate_propagation(&self) {
+        // SAFETY: The event is live.
+        unsafe { web_bindings_event_stop_immediate_propagation(self.as_ptr()) };
     }
 
     /// https://dom.spec.whatwg.org/#canceled-flag

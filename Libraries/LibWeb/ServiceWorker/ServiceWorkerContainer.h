@@ -46,4 +46,9 @@ WEB_API void time_out_extended_event(u64 event_id);
 
 WEB_API ServiceWorkerId service_worker_id(ServiceWorker const&);
 
+WEB_API GC::Ref<Clients> create_clients(JS::Realm&);
+WEB_API void service_worker_clients_matched(ServiceWorkerRequestId, Vector<ServiceWorkerClientSnapshot> const&);
+WEB_API Vector<ServiceWorkerClientSnapshot> service_worker_client_snapshots(Vector<HTML::EnvironmentId> const&);
+WEB_API void navigation_preload_settled(ServiceWorkerRequestId, Optional<ServiceWorkerNavigationPreloadState> const&);
+
 }

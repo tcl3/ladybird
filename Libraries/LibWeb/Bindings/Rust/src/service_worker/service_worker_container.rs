@@ -176,11 +176,15 @@ fn path_contains_escaped_slash_or_backslash(url: &Url) -> bool {
 
 /// The kinds of request that a container sends the UI process, which say how their promises settle.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ServiceWorkerRequestKind {
+pub(crate) enum ServiceWorkerRequestKind {
     Job,
     GetRegistration,
     GetRegistrations,
     Ready,
+    NavigationPreloadUpdate,
+    NavigationPreloadState,
+    ClientsGet,
+    ClientsMatchAll,
 }
 
 // SAFETY: A kind of request holds no cells.
@@ -192,7 +196,7 @@ unsafe impl Trace for ServiceWorkerRequestKind {
 #[derive(Trace)]
 #[gc(crate = libjs_rust)]
 pub(crate) struct PendingRequest {
-    promise: WebIdlPromise,
+    pub(crate) promise: WebIdlPromise,
     kind: ServiceWorkerRequestKind,
     #[gc(untraced)]
     answered: Cell<bool>,
@@ -205,7 +209,7 @@ impl EmbedderValue for PendingRequest {
 }
 
 pub(crate) type PendingRequestRef = Gc<EmbedderCell<PendingRequest>>;
-type PendingRequestRoot = CellRoot<EmbedderCell<PendingRequest>>;
+pub(crate) type PendingRequestRoot = CellRoot<EmbedderCell<PendingRequest>>;
 type PendingRequestWeak = GcWeak<EmbedderCell<PendingRequest>>;
 
 thread_local! {
@@ -221,7 +225,7 @@ pub(crate) fn forget_pending_requests_of_agent() {
     PENDING_REQUESTS.with_borrow_mut(Vec::clear);
 }
 
-fn add_pending_request(vm: &Vm, promise: WebIdlPromise, kind: ServiceWorkerRequestKind) -> u64 {
+pub(crate) fn add_pending_request(vm: &Vm, promise: WebIdlPromise, kind: ServiceWorkerRequestKind) -> u64 {
     let request_id = NEXT_REQUEST_ID.with(|next| {
         next.set(next.get() + 1);
         next.get()
@@ -248,7 +252,7 @@ fn add_pending_request(vm: &Vm, promise: WebIdlPromise, kind: ServiceWorkerReque
 }
 
 /// The request's promise, and a root that keeps it alive while its caller holds it.
-fn take_pending_request(
+pub(crate) fn take_pending_request(
     request_id: u64,
     kind: ServiceWorkerRequestKind,
 ) -> Option<(PendingRequestRef, PendingRequestRoot)> {

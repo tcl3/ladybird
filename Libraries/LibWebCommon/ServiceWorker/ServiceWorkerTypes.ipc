@@ -52,6 +52,12 @@ struct Web::ServiceWorker::ServiceWorkerScriptFetchParameters {
 }
 
 [ExistingCpp]
+struct Web::ServiceWorker::ServiceWorkerNavigationPreloadState {
+    bool enabled;
+    ByteString header_value;
+}
+
+[ExistingCpp]
 struct Web::ServiceWorker::ServiceWorkerScriptResource {
     URL::URL url;
     u16 status;

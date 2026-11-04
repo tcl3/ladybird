@@ -7,6 +7,7 @@
 #pragma once
 
 #include <AK/ByteBuffer.h>
+#include <AK/ByteString.h>
 #include <AK/Optional.h>
 #include <AK/Types.h>
 #include <AK/Variant.h>
@@ -112,6 +113,19 @@ struct ServiceWorkerScriptFetchParameters {
 
 // https://w3c.github.io/ServiceWorker/#run-service-worker-algorithm
 // https://w3c.github.io/ServiceWorker/#dfn-script-resource-map
+enum class ServiceWorkerNavigationPreloadOperation : u8 {
+    Enable,
+    Disable,
+    SetHeaderValue,
+    GetState,
+};
+
+// https://w3c.github.io/ServiceWorker/#dictdef-navigationpreloadstate
+struct ServiceWorkerNavigationPreloadState {
+    bool enabled { false };
+    ByteString header_value;
+};
+
 // A script of a service worker's script resource map, which the UI process keeps to run an installed worker again.
 struct ServiceWorkerScriptResource {
     URL::URL url;

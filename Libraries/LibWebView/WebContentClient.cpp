@@ -43,6 +43,7 @@
 #include <LibWebView/PictureInPictureManager.h>
 #include <LibWebView/RecordingNotificationBackend.h>
 #include <LibWebView/RequestServerManager.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/ViewImplementation.h>
 #include <LibWebView/WebContentClient.h>
 #include <LibWebView/WebContentTestClient.h>
@@ -70,6 +71,14 @@ void WebContentClient::did_remove_blob_url_entries(Web::PageId page_id, Web::HTM
     // NB: A closed page's environments went with it, so its process can only revoke the entries it added itself.
     if (may_act_for_page(page_id))
         m_session->blob_url_store->remove_entries_added_by(urls, WeakPtr<WebContentClient> { *this });
+}
+
+// NB: The registry waits for every process it asked, so this reaches it even when the page that answers has closed.
+void WebContentClient::did_provide_service_worker_client_snapshots(Web::PageId, u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots)
+{
+    // NB: A process describes only the clients that it hosts.
+    snapshots.remove_all_matching([&](auto const& snapshot) { return !hosted_environment(snapshot.id).has_value(); });
+    session().service_worker_registry->client_did_provide_service_worker_client_snapshots(gather_id, ServiceWorkerClientConnection { *this }, move(snapshots));
 }
 
 void WebContentClient::close_worker_agent(Web::PageId page_id, Web::HTML::WorkerAgentId agent_id, Web::HTML::WorkerAgentOwnerToken owner_token)

@@ -14,7 +14,8 @@ use crate::bindings::interface::{Ref, cell_from_abi, cell_into_abi, realm_argume
 use crate::dom::document::DocumentVisibilityState;
 use crate::html::structured_serialize::cpp::OwnedSerializedTransferRecord;
 use crate::service_worker::client::{FrameType, ServiceWorkerClientSnapshot};
-use crate::service_worker::clients::ClientType;
+use crate::service_worker::clients::{ClientType, Clients, service_worker_clients_matched};
+use crate::service_worker::navigation_preload_manager::navigation_preload_settled;
 use crate::service_worker::service_worker::{
     ServiceWorker, ServiceWorkerState, get_the_service_worker_object, service_worker_state_changed,
 };
@@ -316,4 +317,53 @@ pub unsafe extern "C" fn web_rust_service_worker_id(service_worker: *mut c_void)
     // SAFETY: The caller passes the cell of a ServiceWorker object.
     let service_worker: Ref<ServiceWorker> = unsafe { cell_from_abi(service_worker) };
     service_worker.id()
+}
+
+/// The UI process ran the navigation preload request of this process, and gives the registration's state, which
+/// `enabled` and `header_value` are, if `succeeded` is true.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and the header value must be lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_navigation_preload_settled(
+    vm: *mut c_void,
+    request_id: u64,
+    succeeded: bool,
+    enabled: bool,
+    header_value: ak::Span<'_, u8>,
+) {
+    // SAFETY: The caller passes the live VM.
+    let vm = unsafe { &*vm.cast::<Vm>() };
+    let state = succeeded.then(|| (enabled, header_value.as_slice().to_vec()));
+    navigation_preload_settled(vm, request_id, state);
+}
+
+/// The UI process found the clients that a request of a Clients object of this process matches.
+///
+/// # Safety
+///
+/// `vm` must be the live VM, and the clients must be lent for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_clients_matched(
+    vm: *mut c_void,
+    request_id: u64,
+    clients: ak::Span<'_, FfiServiceWorkerClientSnapshot<'_>>,
+) {
+    // SAFETY: The caller passes the live VM.
+    let vm = unsafe { &*vm.cast::<Vm>() };
+    let clients = clients.as_slice().iter().map(client_snapshot_from_abi).collect();
+    service_worker_clients_matched(vm, request_id, clients);
+}
+
+/// The Clients object of the service worker global scope whose realm this is.
+///
+/// # Safety
+///
+/// The pointers must be the live VM and a live realm.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn web_rust_service_worker_create_clients(vm: *mut c_void, realm: *mut c_void) -> *mut c_void {
+    // SAFETY: The caller passes the live VM and a live realm.
+    let (vm, realm) = unsafe { realm_arguments(vm, realm) };
+    cell_into_abi(Clients::create(vm, realm))
 }

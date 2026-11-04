@@ -345,6 +345,7 @@ NavigationCurrentEntryChangeEvent
 NavigationDestination
 NavigationHistoryEntry
 NavigationPrecommitController
+NavigationPreloadManager
 NavigationTransition
 Navigator
 Node

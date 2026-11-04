@@ -364,6 +364,8 @@ private:
     virtual void service_worker_state_changed(Web::ServiceWorker::ServiceWorkerDescriptor worker) override;
     virtual void service_worker_update_found(u64 registration_id) override;
     virtual void service_worker_ready(u64 request_id, Web::ServiceWorker::ServiceWorkerRegistrationSnapshot registration) override;
+    virtual void navigation_preload_settled(u64 request_id, Optional<Web::ServiceWorker::ServiceWorkerNavigationPreloadState> state) override;
+    virtual void request_service_worker_client_snapshots(Web::PageId page_id, u64 gather_id, Vector<Web::HTML::EnvironmentId> client_ids) override;
     virtual void service_worker_message_to_client(Web::HTML::EnvironmentId client_id, Web::ServiceWorker::ServiceWorkerDescriptor source, URL::Origin origin, Web::HTML::SerializedTransferRecord message) override;
     virtual void did_worker_agent_fail_loading_script(Web::HTML::WorkerAgentOwnerToken owner_token) override;
     virtual void did_worker_agent_report_content_security_policy_violation(Web::HTML::WorkerAgentOwnerToken owner_token, u64 policy_index, String effective_directive, URL::URL resource) override;

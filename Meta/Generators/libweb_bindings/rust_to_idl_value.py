@@ -57,7 +57,7 @@ from Utils.webidl_parser import OperationParameter
 # NB: CSSOMString is a string type that an implementation chooses, https://drafts.csswg.org/cssom/#cssomstring-type,
 #     and it is a DOMString here, as it is in the C++ bindings.
 DOM_STRING_TYPES = ("CSSOMString", "DOMString")
-STRING_TYPES = (*DOM_STRING_TYPES, "USVString")
+STRING_TYPES = ("ByteString", *DOM_STRING_TYPES, "USVString")
 
 
 def buffer_source_rules(idl_type: IDLType, parameter_attributes: dict[str, str]) -> str:
@@ -124,6 +124,8 @@ def rust_to_idl_value(
         return f"to_dom_string(vm, {value})"
     if name == "USVString":
         return f"to_usv_string(vm, {value})"
+    if name == "ByteString":
+        return f"to_byte_string(vm, {value})"
     if name == "boolean":
         return f"to_boolean({value})"
     if name == "any":
@@ -319,6 +321,8 @@ def rust_string_literal(default_value: Optional[str], idl_type_name: str, what: 
         raise UnsupportedByRustBindings(f"{what} has the default value {default_value}")
     if idl_type_name == "USVString":
         return f'UsvString::from_ascii(b"{string}")'
+    if idl_type_name == "ByteString":
+        return f'ByteString::from_ascii(b"{string}")'
     return f'Utf16String::from_ascii(b"{string}")'
 
 

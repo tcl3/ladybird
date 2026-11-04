@@ -12,9 +12,11 @@ pub(crate) mod clients;
 pub(crate) mod exports;
 pub(crate) mod extendable_event;
 pub(crate) mod extendable_message_event;
+pub(crate) mod fetch_event;
 pub(crate) mod install_event;
 pub(crate) mod lifecycle_events;
 pub(crate) mod messages;
+pub(crate) mod navigation_preload_manager;
 #[allow(
     clippy::module_inception,
     reason = "the bindings name the module of an interface after its IDL file"

@@ -1,0 +1,10 @@
+matchAll(): none
+matchAll() of uncontrolled clients: WindowClient window page
+matchAll() of uncontrolled workers: Client worker dedicated worker
+matchAll() of all uncontrolled clients: WindowClient window page, Client worker dedicated worker
+matchAll() returns a frozen array: true
+get() of the page: WindowClient window page
+get() returns the page's id: true
+get() returns a new object: true
+get() of an unknown id: undefined
+clients is the same object each time: true

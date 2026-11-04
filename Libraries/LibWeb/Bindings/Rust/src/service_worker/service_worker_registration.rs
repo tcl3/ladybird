@@ -20,6 +20,7 @@ use crate::bindings::promise::{WebIdlPromise, create_promise};
 use crate::bindings::realm_data::realm_data;
 use crate::bindings::{CallContext, WebIdlResult};
 use crate::html::worker::WorkerType;
+use crate::service_worker::navigation_preload_manager::NavigationPreloadManager;
 use crate::service_worker::service_worker::{ServiceWorker, get_the_service_worker_object};
 use crate::service_worker::service_worker_container::{ServiceWorkerJobType, schedule_job};
 use crate::service_worker::{LiveObjects, ServiceWorkerDescriptor, ServiceWorkerRegistrationSnapshot};
@@ -63,6 +64,9 @@ pub(crate) struct ServiceWorkerRegistration {
     installing: Cell<Option<Ref<ServiceWorker>>>,
     waiting: Cell<Option<Ref<ServiceWorker>>>,
     active: Cell<Option<Ref<ServiceWorker>>>,
+
+    // https://w3c.github.io/ServiceWorker/#dom-serviceworkerregistration-navigationpreload
+    navigation_preload: Cell<Option<Ref<NavigationPreloadManager>>>,
 }
 
 impl Wrappable for ServiceWorkerRegistration {
@@ -127,6 +131,18 @@ impl ServiceWorkerRegistration {
     pub(crate) fn active(&self, _: &mut CallContext) -> WebIdlResult<Option<Ref<ServiceWorker>>> {
         // active attribute must return the value to which it was last set.
         Ok(self.active.get())
+    }
+
+    // https://w3c.github.io/ServiceWorker/#dom-serviceworkerregistration-navigationpreload
+    pub(crate) fn navigation_preload(&self, cx: &mut CallContext) -> WebIdlResult<Ref<NavigationPreloadManager>> {
+        // The navigationPreload getter steps are to return the service worker registration's
+        // NavigationPreloadManager object.
+        if let Some(manager) = self.navigation_preload.get() {
+            return Ok(manager);
+        }
+        let manager = NavigationPreloadManager::create(cx.vm(), self.realm, self.id);
+        self.navigation_preload.set(Some(manager));
+        Ok(manager)
     }
 
     // https://w3c.github.io/ServiceWorker/#dom-serviceworkerregistration-scope
@@ -251,6 +267,7 @@ pub(crate) fn get_the_service_worker_registration_object(
         installing: Cell::new(None),
         waiting: Cell::new(None),
         active: Cell::new(None),
+        navigation_preload: Cell::new(None),
     });
     registration_object.event_target.set_owner(registration_object);
     REGISTRATION_OBJECTS.with_borrow_mut(|objects| objects.add(vm, registration_object));

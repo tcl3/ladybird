@@ -1124,14 +1124,15 @@ RUST_BINDINGS_IMPORTS = """    #![allow(unused_imports)]
     };
 
     use crate::bindings::conversions::{
-        ArrayBufferView, BufferSource, BufferSourceRules, CppInterface, EmptyDictionary, FromJs, ToJs, UsvString,
+        ArrayBufferView, BufferSource, BufferSourceRules, ByteString, CppInterface, EmptyDictionary, FromJs, ToJs,
+        UsvString,
         implements_cpp_interface, iterator_method, record_from_js, record_to_js, rooted_sequence_to_js,
         sequence_from_js, sequence_to_js, to_array_buffer_view, to_boolean, to_buffer_source, to_cpp_interface,
         to_cpp_interface_in_union, to_dom_string,
         to_dom_string_treating_null_as_empty, to_double, to_float, to_long, to_long_enforcing_range, to_long_long,
         to_long_long_clamping, to_long_long_enforcing_range, to_object, to_promise, to_typed_array,
         to_unrestricted_double, to_unrestricted_float, to_unsigned_long, to_unsigned_long_enforcing_range,
-        to_unsigned_long_long, to_unsigned_long_long_enforcing_range, to_usv_string,
+        to_unsigned_long_long, to_unsigned_long_long_enforcing_range, to_usv_string, to_byte_string,
     };
     use crate::bindings::interface::{
         Inherits, Interface, Ref, Wrapped, cell_class, construct_arguments, construct_wrapper, create_dictionary_object,
@@ -2456,15 +2457,16 @@ pub(crate) mod definitions {
     use crate::bindings::CallContext;
     use crate::bindings::callback::{CallbackFunction, CallbackInterface, PromiseCallbackFunction};
     use crate::bindings::conversions::{
-        ArrayBufferView, BufferSource, BufferSourceRules, CppInterface, EmptyDictionary, FromJs, ToJs, UsvString,
+        ArrayBufferView, BufferSource, BufferSourceRules, ByteString, CppInterface, EmptyDictionary, FromJs, ToJs,
+        UsvString,
         buffer_source_if, dictionary_member, dictionary_object, enumeration_value_to_js, implements_cpp_interface,
         iterator_method, record_from_js, record_to_js, rooted_sequence_to_js, sequence_from_iterable, sequence_from_js,
         sequence_to_js, throw_no_union_types_matched, to_array_buffer_view, to_boolean, to_buffer_source,
         to_cpp_interface,
         to_dom_string, to_dom_string_treating_null_as_empty, to_double, to_enumeration_value, to_float, to_long,
-        to_long_enforcing_range, to_long_long, to_long_long_enforcing_range, to_object, to_typed_array,
+        to_long_enforcing_range, to_long_long, to_long_long_enforcing_range, to_object, to_promise, to_typed_array,
         to_unrestricted_double, to_unrestricted_float, to_unsigned_long, to_unsigned_long_enforcing_range,
-        to_unsigned_long_long, to_unsigned_long_long_enforcing_range, to_usv_string,
+        to_unsigned_long_long, to_unsigned_long_long_enforcing_range, to_usv_string, to_byte_string,
     };
     use crate::bindings::interface::{
         Interface, Ref, create_dictionary_object, implementation_if, implementation_of, set_dictionary_member,

@@ -73,6 +73,11 @@ ServiceWorkerClientConnection::ServiceWorkerClientConnection(WebWorkerClient& cl
 {
 }
 
+void const* ServiceWorkerClientConnection::identity() const
+{
+    return m_connection.visit([](auto const& connection) -> void const* { return connection.ptr(); });
+}
+
 void ServiceWorkerClientConnection::service_worker_job_settled(ServiceWorkerRequestId request_id, ServiceWorkerJobResult const& result) const
 {
     m_connection.visit([&](auto const& connection) {
@@ -1377,6 +1382,196 @@ void ServiceWorkerRegistry::stop_idle_workers_of_partition(Partition const& part
         stop_workers_of_partitions_without_clients();
 }
 
+// https://w3c.github.io/ServiceWorker/#navigation-preload-manager
+void ServiceWorkerRegistry::navigation_preload(ServiceWorkerClientEnvironment const& client, ServiceWorkerRequestId request_id, ServiceWorkerRegistrationId registration_id, ServiceWorkerNavigationPreloadOperation operation, ByteString header_value)
+{
+    // 1. Let registration be this's associated service worker registration.
+    // AD-HOC: Only an environment in the partition of the registration can have an object for it.
+    auto* registration = registration_by_id(registration_id);
+    if (registration && partition_of(client.settings, client.has_cross_site_ancestor) != registration->key.partition)
+        registration = nullptr;
+
+    Optional<ServiceWorkerNavigationPreloadState> state;
+    if (registration && operation == ServiceWorkerNavigationPreloadOperation::GetState) {
+        // https://w3c.github.io/ServiceWorker/#navigation-preload-manager-getstate
+        // 2.2. Let state be a new NavigationPreloadState dictionary.
+        // 2.3. If registration's navigation preload enabled flag is set, set state["enabled"] to true.
+        // 2.4. Set state["headerValue"] to registration's navigation preload header value.
+        state = ServiceWorkerNavigationPreloadState { .enabled = registration->navigation_preload_enabled, .header_value = registration->navigation_preload_header_value };
+    } else if (registration && registration->active_worker.has_value()) {
+        // https://w3c.github.io/ServiceWorker/#navigation-preload-manager-enable
+        // 2.2. If registration's active worker is null, queue a task on promise's relevant settings object's
+        //      responsible event loop, using the DOM manipulation task source, to reject promise with an
+        //      "InvalidStateError" DOMException, and abort these steps.
+        switch (operation) {
+        case ServiceWorkerNavigationPreloadOperation::Enable:
+            // 2.3. Set registration's navigation preload enabled flag.
+            registration->navigation_preload_enabled = true;
+            break;
+        case ServiceWorkerNavigationPreloadOperation::Disable:
+            // https://w3c.github.io/ServiceWorker/#navigation-preload-manager-disable
+            // 2.3. Unset registration's navigation preload enabled flag.
+            registration->navigation_preload_enabled = false;
+            break;
+        case ServiceWorkerNavigationPreloadOperation::SetHeaderValue:
+            // https://w3c.github.io/ServiceWorker/#navigation-preload-manager-setheadervalue
+            // 4.3. Set registration's navigation preload header value to value.
+            registration->navigation_preload_header_value = move(header_value);
+            break;
+        case ServiceWorkerNavigationPreloadOperation::GetState:
+            VERIFY_NOT_REACHED();
+        }
+        state = ServiceWorkerNavigationPreloadState {};
+    }
+
+    // NB: The client's process resolves the promise with the state, or rejects it when there is none.
+    client.connection.visit_open_connection([&](auto& connection) {
+        connection.async_navigation_preload_settled(request_id, state);
+    });
+}
+
+// https://w3c.github.io/ServiceWorker/#clients-matchall
+void ServiceWorkerRegistry::service_worker_did_request_clients(Web::HTML::WorkerAgentId agent_id, ServiceWorkerRequestId request_id, String const& client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker)
+        return;
+    using Web::Bindings::ClientType;
+
+    ClientsRequest request {
+        .gather_id = ++m_next_gather_id,
+        .worker_id = worker->id,
+        .request_id = request_id,
+        .is_get = is_get,
+        .window_clients = {},
+        .worker_clients = {},
+        .processes_waited_for = {},
+        .snapshots = {},
+        .timeout = {},
+    };
+
+    // 2.2. For each service worker client client where the result of running obtain a storage key given client equals
+    //      the associated service worker's containing service worker registration's storage key:
+    // AD-HOC: Only the clients in the partition of the worker's registration are clients of the worker.
+    //     3. If options["includeUncontrolled"] is false, and if client's active service worker is not the associated
+    //        service worker, continue.
+    // NB: No client is controlled yet, so without includeUncontrolled, matchAll() matches none. get() matches a client of
+    //     the id, controlled or not.
+    auto matches = [&](Web::HTML::EnvironmentId const& id, bool is_window, Optional<Web::HTML::AgentType> agent_type) {
+        if (is_get)
+            return id.to_string() == client_id;
+        if (!include_uncontrolled)
+            return false;
+        // 2.5.1. If options["type"] is "window" or "all", and client is not an environment settings object or is a
+        //        window client, then:
+        if (is_window)
+            return first_is_one_of(type, ClientType::Window, ClientType::All);
+        // 2.5.2. Else if options["type"] is "worker" or "all" and client is a dedicated worker client, or
+        //        options["type"] is "sharedworker" or "all" and client is a shared worker client, then:
+        if (agent_type == Web::HTML::AgentType::DedicatedWorker)
+            return first_is_one_of(type, ClientType::Worker, ClientType::All);
+        return agent_type == Web::HTML::AgentType::SharedWorker && first_is_one_of(type, ClientType::Sharedworker, ClientType::All);
+    };
+
+    WebContentClient::for_each_client([&](WebContentClient& client) {
+        if (client.is_private() != m_is_private)
+            return IterationDecision::Continue;
+        client.for_each_page([&](WebContentPage& page) {
+            Vector<Web::HTML::EnvironmentId> ids;
+            page.for_each_hosted_environment([&](CanonicalEnvironmentSettingsObject const& settings, bool has_cross_site_ancestor) {
+                if (partition_of(settings, has_cross_site_ancestor) == worker->partition && matches(settings.id(), true, {}))
+                    ids.append(settings.id());
+                return IterationDecision::Continue;
+            });
+            if (ids.is_empty())
+                return IterationDecision::Continue;
+            request.window_clients.extend(ids);
+            request.processes_waited_for.append(ServiceWorkerClientConnection { client }.identity());
+            client.async_request_service_worker_client_snapshots(page.id(), request.gather_id, move(ids));
+            return IterationDecision::Continue;
+        });
+        return IterationDecision::Continue;
+    });
+    WorkerAgentManager::the().for_each_agent_environment([&](WebWorkerClient& client, CanonicalWorkerEnvironmentSettingsObject const& settings, IsPrivate is_private, Web::HTML::AgentType agent_type) {
+        if (agent_type == Web::HTML::AgentType::ServiceWorker || is_private != m_is_private)
+            return;
+        if (partition_of(settings, settings.has_cross_site_ancestor()) != worker->partition || !matches(settings.id(), false, agent_type))
+            return;
+        request.worker_clients.append(settings.id());
+        request.processes_waited_for.append(ServiceWorkerClientConnection { client }.identity());
+        client.async_request_service_worker_client_snapshots(request.gather_id, Vector { settings.id() });
+    });
+
+    auto gather_id = request.gather_id;
+    bool waits_for_processes = !request.processes_waited_for.is_empty();
+    // NB: A process that never describes its clients does not keep the worker waiting.
+    request.timeout = Core::Timer::create_single_shot(AK::Duration::from_seconds(5), [weak_this = make_weak_ptr(), gather_id] {
+        if (auto* registry = weak_this.ptr())
+            registry->finish_clients_request(gather_id);
+    });
+    request.timeout->start();
+    m_clients_requests.append(move(request));
+    if (!waits_for_processes)
+        finish_clients_request(gather_id);
+}
+
+void ServiceWorkerRegistry::client_did_provide_service_worker_client_snapshots(u64 gather_id, ServiceWorkerClientConnection const& provider, Vector<ServiceWorkerClientSnapshot> snapshots)
+{
+    auto request = m_clients_requests.find_if([&](auto const& request) { return request.gather_id == gather_id; });
+    if (request == m_clients_requests.end())
+        return;
+    auto waited_for = request->processes_waited_for.find_first_index(provider.identity());
+    if (!waited_for.has_value())
+        return;
+    request->processes_waited_for.remove(*waited_for);
+
+    // NB: A process describes only the clients it was asked about.
+    for (auto& snapshot : snapshots) {
+        if (request->window_clients.contains_slow(snapshot.id) || request->worker_clients.contains_slow(snapshot.id))
+            request->snapshots.append(move(snapshot));
+    }
+    if (request->processes_waited_for.is_empty())
+        finish_clients_request(gather_id);
+}
+
+void ServiceWorkerRegistry::finish_clients_request(u64 gather_id)
+{
+    auto index = m_clients_requests.find_first_index_if([&](auto const& request) { return request.gather_id == gather_id; });
+    if (!index.has_value())
+        return;
+    auto request = m_clients_requests.take(*index);
+    if (request.timeout) {
+        request.timeout->stop();
+        // NB: The timeout may be what finishes the request, so it outlives its own handler.
+        Core::deferred_invoke([timer = move(request.timeout)] { });
+    }
+
+    // 2.6.4. Sort clientObjects such that:
+    //        - WindowClient objects whose browsing context has been focused are placed first, sorted in the most
+    //          recently focused order.
+    //        - WindowClient objects whose browsing context has never been focused are placed next, sorted in their
+    //          service worker client's creation order.
+    //        - Client objects whose associated service worker client is a worker client are placed next, sorted in
+    //          their service worker client's creation order.
+    // FIXME: Sort the window clients that have been focused by when they were, and the others by when they were
+    //        created. A focused one comes first, and the rest come in the order the UI process finds them.
+    Vector<ServiceWorkerClientSnapshot> clients;
+    for (auto pass : { 0, 1, 2 }) {
+        for (auto& snapshot : request.snapshots) {
+            auto group = snapshot.type != Web::Bindings::ClientType::Window ? 2 : (snapshot.focused ? 0 : 1);
+            if (group == pass)
+                clients.append(move(snapshot));
+        }
+    }
+    if (request.is_get && clients.size() > 1)
+        clients.shrink(1);
+
+    auto worker = m_service_workers.get(request.worker_id);
+    if (!worker.has_value() || !(*worker)->process)
+        return;
+    (*worker)->process->async_service_worker_clients_matched(request.request_id, clients);
+}
+
 // https://w3c.github.io/ServiceWorker/#terminate-service-worker
 void ServiceWorkerRegistry::terminate_service_worker(ServiceWorkerRecord& worker)
 {
@@ -1654,6 +1849,8 @@ ServiceWorkerRegistry::Registration& ServiceWorkerRegistry::set_registration(Job
         .installing_worker = {},
         .waiting_worker = {},
         .active_worker = {},
+        .navigation_preload_enabled = false,
+        .navigation_preload_header_value = "true"sv,
     });
     auto& result = *registration;
 
