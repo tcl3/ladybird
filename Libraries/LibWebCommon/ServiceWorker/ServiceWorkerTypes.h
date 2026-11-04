@@ -179,6 +179,16 @@ struct ServiceWorkerStartRequest {
 
     // NB: How long a functional event that the worker's process dispatches on its own may stay active.
     u64 extendable_event_timeout_ms { 0 };
+
+    // https://w3c.github.io/ServiceWorker/#update-algorithm
+    // NB: What an update compares the new worker's scripts with: the script url, type and recorded scripts of the
+    //     registration's newest worker, if it has one.
+    Optional<URL::URL> newest_worker_script_url;
+    HTML::WorkerType newest_worker_type { HTML::WorkerType::Classic };
+    Vector<ServiceWorkerScriptResource> newest_worker_scripts;
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-stale
+    bool registration_is_stale { false };
 };
 
 using ServiceWorkerScriptFetchResult = Optional<ServiceWorkerJobError>;

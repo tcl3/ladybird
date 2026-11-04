@@ -121,8 +121,8 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
 
     // 5. Let hasUpdatedResources be false.
     // 6. Let updatedResourceMap be an ordered map where the keys are URLs and the values are responses.
-    // NB: Without the byte-for-byte comparison of step 20 of the perform the fetch hook, hasUpdatedResources is always
-    //     true, and the worker's process keeps the script resource map.
+    // NB: The worker's process compares the script with the newest worker's once it is fetched, and keeps the script
+    //     resource map.
     auto state = adopt_ref(*new UpdateScriptFetchState);
 
     // To perform the fetch hook given request, run the following steps:
@@ -134,8 +134,8 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         // 2. Set request's cache mode to "no-cache" if any of the following are true:
         //    - registration's update via cache mode is not "all".
         //    - job's force bypass cache flag is set.
-        //    - FIXME: newestWorker is not null and registration is stale.
-        if (job.update_via_cache != ServiceWorkerUpdateViaCache::All || job.force_bypass_cache)
+        //    - newestWorker is not null and registration is stale.
+        if (job.update_via_cache != ServiceWorkerUpdateViaCache::All || job.force_bypass_cache || job.newest_worker_is_stale)
             request->set_cache_mode(HTTP::CacheMode::NoCache);
 
         // 3. Set request's service-workers mode to "none".
@@ -156,7 +156,8 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         }
 
         // 5. Set request's redirect mode to "error".
-        request->set_redirect_mode(Fetch::Infrastructure::Request::RedirectMode::Error);
+        // AD-HOC: The redirect mode is "manual", so that a redirect can be told apart from other network errors.
+        request->set_redirect_mode(Fetch::Infrastructure::Request::RedirectMode::Manual);
 
         // 6. Fetch request, and asynchronously wait to run the remaining steps as part of fetch's processResponse for the response response.
         // Note: The rest of the steps are in the processCustomFetchResponse algorithm
@@ -167,6 +168,17 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         auto process_response_completion_result = make_ref_counted<ProcessResponseCompletionResult>();
 
         fetch_algorithms_input.process_response = GC::create_function(GC::Heap::the(), GC::captures(job, state, consume_body, process_response_completion_result), [](auto& job, auto& state, auto& consume_body, auto& process_response_completion_result, GC::Ref<Fetch::Infrastructure::ResponseView> response) -> void {
+            // AD-HOC: A redirect, a network error or a response whose status is not ok completes these steps as a network
+            //         error. A redirect rejects the job with a "SecurityError" DOMException, and the others with a
+            //         TypeError rather than as a response of the wrong MIME type, matching other engines.
+            if (response->type() == Fetch::Infrastructure::Response::Type::OpaqueRedirect)
+                state->reject_job_promise(ServiceWorkerJobError::SecurityError);
+            if (response->is_network_error() || !Fetch::Infrastructure::is_ok_status(response->status())) {
+                consume_body->run(Fetch::Infrastructure::ResponseView::network_error("Service Worker script fetch failed"_string), Empty {});
+                process_response_completion_result->value = WebIDL::ExceptionOr<void> {};
+                return;
+            }
+
             // 7. Extract a MIME type from the response's header list. If this MIME type (ignoring parameters) is not a JavaScript MIME type, then:
             auto mime_type = Fetch::Infrastructure::extract_mime_type(response->header_list());
             if (!mime_type.has_value() || !mime_type->is_javascript()) {
@@ -250,11 +262,9 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
             // 18. Set updatedResourceMap[url] to response.
             state->set_response(response);
             // FIXME: 19. If response's cache state is not "local", set registration's last update check time to the current time.
-            // FIXME: 20. Set hasUpdatedResources to true if any of the following are true:
-            //            - newestWorker is null.
-            //            - newestWorker's script url is not url or newestWorker's type is not job's worker type.
-            //            - newestWorker's script resource map[url]'s body is not byte-for-byte identical with response's body.
-            // FIXME: 21. If hasUpdatedResources is false and newestWorker's classic scripts imported flag is set, then:
+            // 20. Set hasUpdatedResources to true if any of the following are true:
+            // 21. If hasUpdatedResources is false and newestWorker's classic scripts imported flag is set, then:
+            // NB: The worker's process compares the scripts once the body is read, before it runs the script.
 
             // 22. Asynchronously complete these steps with response.
             process_response_completion_result->value = WebIDL::ExceptionOr<void> {};
@@ -304,6 +314,100 @@ void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_clien
         (void)HTML::fetch_module_worker_script_graph(job.script_url, job_client, Fetch::Infrastructure::Request::Destination::ServiceWorker, settings_object, perform_the_fetch_hook, on_fetch_complete, Fetch::Infrastructure::Request::CredentialsMode::SameOrigin);
         break;
     }
+}
+
+// https://w3c.github.io/ServiceWorker/#dfn-bad-import-script-response
+bool is_a_bad_import_script_response(Fetch::Infrastructure::ResponseView const& response)
+{
+    // A bad import script response is a response for which any of the following conditions are met:
+    // - response's type is "error"
+    // - response's status is not an ok status
+    // - The result of extracting a MIME type from response's header list is not a JavaScript MIME type
+    if (response.type() == Fetch::Infrastructure::Response::Type::Error || !Fetch::Infrastructure::is_ok_status(response.status()))
+        return true;
+    auto mime_type = Fetch::Infrastructure::extract_mime_type(response.header_list());
+    return !mime_type.has_value() || !mime_type->is_javascript();
+}
+
+// https://w3c.github.io/ServiceWorker/#update-algorithm
+void check_imported_scripts_for_update(HTML::EnvironmentSettingsObject& settings_object, Vector<ServiceWorkerScriptResource> const& newest_worker_scripts, UpdateImportedScriptsCheck check, OnImportedScriptsChecked on_complete)
+{
+    struct State : RefCounted<State> {
+        void visit_edges(GC::Cell::Visitor& visitor) const
+        {
+            visitor.visit(on_complete);
+        }
+
+        size_t remaining_fetches { 0 };
+        bool has_updated_resources { false };
+        GC::Ptr<GC::Function<void(bool)>> on_complete;
+    };
+    auto state = adopt_ref(*new State);
+    state->on_complete = on_complete;
+
+    // 21. If hasUpdatedResources is false and newestWorker's classic scripts imported flag is set, then:
+    // NOTE: The following checks to see if an imported script has been updated, since the main script has not changed.
+    // 1. For each importUrl → storedResponse of newestWorker's script resource map:
+    for (auto const& stored_script : newest_worker_scripts) {
+        // 1. If importUrl is url, then continue.
+        if (stored_script.url == check.script_url)
+            continue;
+
+        // 2. Let importRequest be a new request whose url is importUrl, client is job's client, destination is
+        //    "script", parser metadata is "not parser-inserted", and whose use-URL-credentials flag is set.
+        // NB: The client is the environment settings object of the worker the job creates.
+        auto import_request = Fetch::Infrastructure::Request::create();
+        import_request->set_url(stored_script.url);
+        import_request->set_client(settings_object.address());
+        import_request->set_destination(Fetch::Infrastructure::Request::Destination::Script);
+        import_request->set_parser_metadata(Fetch::Infrastructure::Request::ParserMetadata::NotParserInserted);
+        import_request->set_use_url_credentials(true);
+        import_request->set_service_workers_mode(Fetch::Infrastructure::Request::ServiceWorkersMode::None);
+
+        // 3. Set importRequest's cache mode to "no-cache" if any of the following are true:
+        //    - registration's update via cache mode is "none".
+        //    - job's force bypass cache flag is set.
+        //    - registration is stale.
+        if (check.update_via_cache == ServiceWorkerUpdateViaCache::None || check.force_bypass_cache || check.registration_is_stale)
+            import_request->set_cache_mode(HTTP::CacheMode::NoCache);
+
+        // 4. Let fetchedResponse be the result of fetching importRequest.
+        ++state->remaining_fetches;
+        Fetch::Infrastructure::FetchAlgorithms::Input fetch_algorithms_input { Fetch::Engine::BodyIntent::ConsumeForCallback };
+        auto stored_body = MUST(ByteBuffer::copy(stored_script.body));
+        fetch_algorithms_input.process_response_consume_body = GC::create_function(GC::Heap::the(), GC::captures(state, move(stored_body)), [](auto& state, auto& stored_body, GC::Ref<Fetch::Infrastructure::ResponseView> response, Fetch::Infrastructure::FetchAlgorithms::BodyBytes body_bytes) {
+            // 5. Set updatedResourceMap[importRequest's url] to fetchedResponse.
+            // NB: The new worker fetches its imported scripts again as it runs.
+
+            // 6. Set fetchedResponse to fetchedResponse's unsafe response.
+            auto fetched_response = response->unsafe_response();
+
+            // 7. If fetchedResponse's cache state is not "local", set registration's last update check time to the
+            //    current time.
+            // NB: The UI process sets the registration's last update check time once the job's scripts are fetched.
+
+            // 8. If fetchedResponse is a bad import script response, continue.
+            // NOTE: Bad responses for importScripts() are ignored for the purpose of the byte-to-byte check. Only good
+            //       responses for the incumbent worker and good responses for the potential update worker are
+            //       considered. See issue #1374 for some rationale.
+            // 9. If fetchedResponse's body is not byte-for-byte identical with storedResponse's unsafe response's body,
+            //    set hasUpdatedResources to true.
+            // NOTE: The control does not break the loop in this step to continue with all the imported scripts to
+            //       populate the cache.
+            if (!is_a_bad_import_script_response(*fetched_response)) {
+                auto const* body = body_bytes.get_pointer<Core::ImmutableBytes>();
+                if (!body || body->bytes() != stored_body.bytes())
+                    state->has_updated_resources = true;
+            }
+
+            if (--state->remaining_fetches == 0)
+                state->on_complete->function()(state->has_updated_resources);
+        });
+        Fetch::Fetching::fetch(settings_object.realm(), import_request, Fetch::Infrastructure::FetchAlgorithms::create(move(fetch_algorithms_input)));
+    }
+
+    if (state->remaining_fetches == 0)
+        state->on_complete->function()(false);
 }
 
 }

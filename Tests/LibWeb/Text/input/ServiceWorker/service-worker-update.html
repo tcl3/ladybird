@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // update() installs a new worker only if the worker's script, or a script it imported, changed.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const javascript = { "Content-Type": "text/javascript" };
+        const defineScript = (path, body) => server.createEcho("GET", path, { status: 200, headers: javascript, body, replace: true });
+        const imported = await defineScript("/imported.js", "self.importedVersion = 1;");
+        const script = await defineScript("/worker.js", `importScripts("${imported}"); self.mainVersion = 1;`);
+
+        const registration = await navigator.serviceWorker.register(script);
+        const firstWorker = registration.installing;
+        await waitForCondition(() => firstWorker.state === "activated");
+
+        let updateFoundCount = 0;
+        registration.addEventListener("updatefound", () => ++updateFoundCount);
+        const nextUpdateFound = () => new Promise(resolve => registration.addEventListener("updatefound", resolve, { once: true }));
+
+        const updated = await registration.update();
+        println(`update() of unchanged scripts resolves with the registration: ${updated === registration}`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        println(`It installs no worker: ${registration.installing === null && registration.waiting === null}, updatefound fired: ${updateFoundCount}`);
+
+        await defineScript("/imported.js", "self.importedVersion = 2;");
+        let updateFound = nextUpdateFound();
+        await registration.update();
+        const secondWorker = registration.installing;
+        await updateFound;
+        println(`update() after an imported script changed installs a worker: ${secondWorker !== null && secondWorker !== firstWorker}, updatefound fired: ${updateFoundCount}`);
+        await waitForCondition(() => secondWorker.state === "activated");
+
+        await defineScript("/worker.js", `importScripts("${imported}"); self.mainVersion = 2;`);
+        updateFound = nextUpdateFound();
+        await registration.update();
+        const thirdWorker = registration.installing;
+        await updateFound;
+        println(`update() after the script changed installs a worker: ${thirdWorker !== null && thirdWorker !== secondWorker}, updatefound fired: ${updateFoundCount}`);
+        await waitForCondition(() => thirdWorker.state === "activated");
+        println(`The first worker is ${firstWorker.state}, the second ${secondWorker.state}`);
+
+        println(`unregister(): ${await registration.unregister()}`);
+        try {
+            await registration.update();
+        } catch (error) {
+            println(`update() of an unregistered registration: ${error.name}`);
+        }
+    });
+</script>

@@ -2,8 +2,7 @@ Harness status: OK
 
 Found 175 tests
 
-173 Pass
-2 Fail
+175 Pass
 Pass	idl_test setup
 Pass	idl_test validation
 Pass	Partial interface Navigator: original interface defined
@@ -66,7 +65,7 @@ Pass	ServiceWorkerRegistration interface: attribute active
 Pass	ServiceWorkerRegistration interface: attribute navigationPreload
 Pass	ServiceWorkerRegistration interface: attribute scope
 Pass	ServiceWorkerRegistration interface: attribute updateViaCache
-Fail	ServiceWorkerRegistration interface: operation update()
+Pass	ServiceWorkerRegistration interface: operation update()
 Pass	ServiceWorkerRegistration interface: operation unregister()
 Pass	ServiceWorkerRegistration interface: attribute onupdatefound
 Pass	ServiceWorkerRegistration must be primary interface of registrationInstance
@@ -77,7 +76,7 @@ Pass	ServiceWorkerRegistration interface: registrationInstance must inherit prop
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "navigationPreload" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "scope" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "updateViaCache" with the proper type
-Fail	ServiceWorkerRegistration interface: registrationInstance must inherit property "update()" with the proper type
+Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "update()" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "unregister()" with the proper type
 Pass	ServiceWorkerRegistration interface: registrationInstance must inherit property "onupdatefound" with the proper type
 Pass	ServiceWorkerContainer interface: existence and properties of interface object

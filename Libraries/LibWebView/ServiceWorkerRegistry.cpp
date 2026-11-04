@@ -355,6 +355,13 @@ void ServiceWorkerRegistry::match_reserved_client(ServiceWorkerClientConnection 
         .registration = snapshot_of(*registration),
         .handles_fetch_events = active_worker.set_of_event_types_to_handle.contains_slow("fetch"sv),
     });
+
+    // https://w3c.github.io/ServiceWorker/#create-fetch-event-and-dispatch
+    // 11.1. If shouldSoftUpdate is true, then in parallel run the Soft Update algorithm with registration.
+    // 19. If shouldSoftUpdate is true, then in parallel run the Soft Update algorithm with registration.
+    // NB: shouldSoftUpdate is true for a non-subresource request whichever way its fetch event goes, so the UI process
+    //     runs Soft Update once it has matched the request.
+    schedule_soft_update(*registration);
 }
 
 static bool is_reserved_client_of(auto const& client, NavigationLoader const& navigation, Web::HTML::EnvironmentId const& reserved_client_id)
@@ -547,6 +554,25 @@ void ServiceWorkerRegistry::schedule_job(ServiceWorkerClientEnvironment const& c
         .has_started = false,
     });
 
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-update
+    // 7. Set job's worker type to newestWorker's type.
+    // AD-HOC: An update job checks the registration with the update via cache mode the registration has, which Install
+    //         sets on the registration again.
+    // NB: The client's process names the newest worker's script url, which Update checks.
+    if (job->job_type == ServiceWorkerJobType::Update) {
+        if (auto* registration = get_registration(job->partition, job->scope_url)) {
+            if (auto newest_worker = get_newest_worker(*registration); newest_worker.has_value())
+                job->worker_type = (*m_service_workers.get(*newest_worker))->type;
+            job->update_via_cache = registration->update_via_cache;
+        }
+    }
+
+    schedule_job(move(job));
+}
+
+// https://w3c.github.io/ServiceWorker/#schedule-job-algorithm
+void ServiceWorkerRegistry::schedule_job(NonnullOwnPtr<Job> job)
+{
     // 1. Let jobQueue be null.
     // 2. Let jobScope be job's scope url, serialized.
     auto job_scope = registration_key(job->partition, job->scope_url);
@@ -704,6 +730,84 @@ void ServiceWorkerRegistry::reject_job_promise(Job& job, ServiceWorkerJobError e
     }
 }
 
+// https://w3c.github.io/ServiceWorker/#soft-update-algorithm
+void ServiceWorkerRegistry::soft_update(Registration& registration, bool force_bypass_cache)
+{
+    // 1. Let newestWorker be the result of running Get Newest Worker algorithm passing registration as its argument.
+    auto newest_worker = get_newest_worker(registration);
+
+    // 2. If newestWorker is null, abort these steps.
+    if (!newest_worker.has_value())
+        return;
+    auto const& worker = **m_service_workers.get(*newest_worker);
+
+    // 3. Let job be the result of running Create Job with update, registration's storage key, registration's scope url,
+    //    newestWorker's script url, null, and null.
+    // 4. Set job's worker type to newestWorker's type.
+    // 5. Set job's force bypass cache flag if forceBypassCache is true.
+    auto job = make<Job>(Job {
+        .id = ++m_next_job_id,
+        .job_type = ServiceWorkerJobType::Update,
+        .partition = registration.key.partition,
+        .scope_url = registration.scope_url,
+        .script_url = worker.script_url,
+        .worker_type = worker.type,
+        .update_via_cache = registration.update_via_cache,
+        .client = {},
+        .referrer_origin = registration.key.partition.storage_key.origin,
+        .force_bypass_cache = force_bypass_cache,
+        .list_of_equivalent_jobs = {},
+        .job_promise_has_settled = false,
+        .has_started = false,
+    });
+
+    // 6. Invoke Schedule Job with job.
+    schedule_job(move(job));
+}
+
+// AD-HOC: The Soft Update that a non-subresource request triggers runs a moment later, as in other engines, so that its
+//         script fetch does not compete with the request's own loading. The requests in the meantime share it.
+static AK::Duration soft_update_delay()
+{
+    if (is_test_mode())
+        return AK::Duration::from_milliseconds(100);
+    return AK::Duration::from_seconds(1);
+}
+
+void ServiceWorkerRegistry::schedule_soft_update(Registration& registration)
+{
+    auto registration_id = registration.id;
+    if (any_of(m_scheduled_soft_updates, [&](auto const& scheduled) { return scheduled.registration_id == registration_id; }))
+        return;
+    auto timer = Core::Timer::create_single_shot(soft_update_delay(), [weak_this = make_weak_ptr(), registration_id] {
+        auto* registry = weak_this.ptr();
+        if (!registry)
+            return;
+
+        // NB: The timer outlives its own handler.
+        registry->m_scheduled_soft_updates.remove_all_matching([&](auto& scheduled) {
+            if (scheduled.registration_id != registration_id)
+                return false;
+            Core::deferred_invoke([timer = scheduled.timer] { });
+            return true;
+        });
+        if (auto* registration = registry->registration_by_id(registration_id); registration && !registry->is_unregistered(*registration))
+            registry->soft_update(*registration);
+    });
+    timer->start();
+    m_scheduled_soft_updates.append({ registration_id, move(timer) });
+}
+
+// https://w3c.github.io/ServiceWorker/#service-worker-registration-stale
+bool ServiceWorkerRegistry::is_stale(Registration const& registration) const
+{
+    // A service worker registration is said to be stale if the registration's last update check time is non-null and
+    // the time difference in seconds calculated by the current time minus the registration's last update check time is
+    // greater than 86400.
+    return registration.last_update_check_time.has_value()
+        && (UnixDateTime::now() - *registration.last_update_check_time).to_seconds() > 86400;
+}
+
 // https://w3c.github.io/ServiceWorker/#register-algorithm
 void ServiceWorkerRegistry::register_(RegistrationKey const& job_queue_key, Job& job)
 {
@@ -818,12 +922,16 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
         finish_job(job_queue_key, job);
     };
 
-    if (!job.client.has_value()) {
+    // NB: A job from Soft Update has no client. Its worker is set up as the newest worker was, whose registering client
+    //     the new worker takes, and its script is fetched with that client.
+    ServiceWorkerRecord const* newest_worker_record = newest_worker.has_value() ? *m_service_workers.get(*newest_worker) : nullptr;
+    if (!job.client.has_value() && !newest_worker_record) {
         fail_to_start();
         return;
     }
+    auto const& registering_client = job.client.has_value() ? job.client->settings : newest_worker_record->registering_client;
 
-    auto agent = WorkerAgentManager::the().start_service_worker_agent(m_is_private, job.client->settings.origin, job.client->settings.top_level_origin, job.client->settings.has_cross_site_ancestor);
+    auto agent = WorkerAgentManager::the().start_service_worker_agent(m_is_private, registering_client.origin, registering_client.top_level_origin, registering_client.has_cross_site_ancestor);
     if (agent.is_error()) {
         // NB: A service worker the system cannot give a process fails, as one whose script cannot be fetched does.
         dbgln("Unable to start a service worker process: {}", agent.error());
@@ -850,7 +958,7 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
             .newest_worker = newest_worker,
         },
         .deadline_timer = {},
-        .registering_client = job.client->settings,
+        .registering_client = registering_client,
         .script_resources = {},
         .messages_waiting_for_run = {},
         .heartbeat_timer = {},
@@ -866,15 +974,19 @@ void ServiceWorkerRegistry::update(RegistrationKey const& job_queue_key, Job& jo
         .worker_type = worker->type,
         .registration = snapshot_of(*registration),
         .environment_id = agent.value().environment_id,
-        .origin = job.client->settings.origin,
-        .has_cross_site_ancestor = job.client->settings.has_cross_site_ancestor,
-        .top_level_origin = job.client->settings.top_level_origin,
+        .origin = registering_client.origin,
+        .has_cross_site_ancestor = registering_client.has_cross_site_ancestor,
+        .top_level_origin = registering_client.top_level_origin,
         .script_fetch = ServiceWorkerScriptFetchParameters {
-            .job_client = job.client->settings,
+            .job_client = registering_client,
             .force_bypass_cache = job.force_bypass_cache,
         },
         .stored_scripts = {},
         .extendable_event_timeout_ms = static_cast<u64>(lifecycle_event_deadline().to_milliseconds()),
+        .newest_worker_script_url = newest_worker_record ? newest_worker_record->script_url : Optional<URL::URL> {},
+        .newest_worker_type = newest_worker_record ? newest_worker_record->type : Web::HTML::WorkerType::Classic,
+        .newest_worker_scripts = newest_worker_record ? newest_worker_record->script_resources : Vector<ServiceWorkerScriptResource> {},
+        .registration_is_stale = is_stale(*registration),
     };
     agent.value().client->async_start_service_worker(start_request);
 
@@ -957,6 +1069,43 @@ void ServiceWorkerRegistry::service_worker_did_fetch_script(Web::HTML::WorkerAge
 }
 
 // https://w3c.github.io/ServiceWorker/#update-algorithm
+void ServiceWorkerRegistry::service_worker_did_find_scripts_up_to_date(Web::HTML::WorkerAgentId agent_id)
+{
+    auto* worker = service_worker_of_agent(agent_id);
+    if (!worker || worker->awaited_step != AwaitedStep::Start)
+        return;
+    worker->deadline_timer->stop();
+    auto job_in_progress = worker->job_in_progress.release_value();
+    worker->awaited_step = AwaitedStep::None;
+    auto& job = *m_scope_to_job_queue_map.get(job_in_progress.job_queue_key)->first();
+    auto* registration = registration_by_id(worker->registration_id);
+
+    // 7. [...] 19. If response's cache state is not "local", set registration's last update check time to the current
+    //              time.
+    // NB: The worker's process fetched the scripts, which is when the registration was last checked.
+    if (registration)
+        registration->last_update_check_time = UnixDateTime::now();
+
+    // NB: The worker that the job would have created is not needed.
+    terminate_service_worker(*worker);
+    forget_service_worker_if_unused(worker->id);
+
+    // 9. If hasUpdatedResources is false, then:
+    if (registration) {
+        // 1. Set registration's update via cache mode to job's update via cache mode.
+        registration->update_via_cache = job.update_via_cache;
+
+        // 2. Invoke Resolve Job Promise with job and registration.
+        resolve_job_promise(job, snapshot_of(*registration));
+    } else {
+        reject_job_promise(job, ServiceWorkerJobError::TypeError);
+    }
+
+    // 3. Invoke Finish Job with job and abort these steps.
+    finish_job(job_in_progress.job_queue_key, job);
+}
+
+// https://w3c.github.io/ServiceWorker/#update-algorithm
 void ServiceWorkerRegistry::service_worker_did_run(Web::HTML::WorkerAgentId agent_id, bool succeeded, Vector<String> event_types_to_handle)
 {
     auto* worker = service_worker_of_agent(agent_id);
@@ -988,10 +1137,14 @@ void ServiceWorkerRegistry::service_worker_did_run(Web::HTML::WorkerAgentId agen
         return;
     }
 
-    // FIXME: 9. If hasUpdatedResources is false, then:
-    // FIXME:    1. Set registration's update via cache mode to job's update via cache mode.
-    // FIXME:    2. Invoke Resolve Job Promise with job and registration.
-    // FIXME:    3. Invoke Finish Job with job and abort these steps.
+    // 7. [...] 19. If response's cache state is not "local", set registration's last update check time to the current
+    //              time.
+    // NB: The worker's process fetched the script, which is when the registration was last checked.
+    registration_by_id(worker->registration_id)->last_update_check_time = UnixDateTime::now();
+
+    // 9. If hasUpdatedResources is false, then:
+    // NB: The worker's process compares its scripts with those of the newest worker, and reports an update whose scripts
+    //     are unchanged to service_worker_did_find_scripts_up_to_date().
 
     // 10. Let worker be a new service worker.
     // 11. Set worker's script url to job's script url, worker's script resource to script, worker's type to job's worker
@@ -1539,6 +1692,10 @@ bool ServiceWorkerRegistry::run_service_worker(ServiceWorkerRecord& worker)
         .script_fetch = ServiceWorkerScriptFetchParameters { .job_client = client, .force_bypass_cache = false },
         .stored_scripts = worker.script_resources,
         .extendable_event_timeout_ms = static_cast<u64>(lifecycle_event_deadline().to_milliseconds()),
+        .newest_worker_script_url = {},
+        .newest_worker_type = Web::HTML::WorkerType::Classic,
+        .newest_worker_scripts = {},
+        .registration_is_stale = false,
     });
 
     // 10. Wait for serviceWorker to be running, or for startFailed to be true.
@@ -2302,6 +2459,7 @@ ServiceWorkerRegistry::Registration& ServiceWorkerRegistry::set_registration(Job
         .installing_worker = {},
         .waiting_worker = {},
         .active_worker = {},
+        .last_update_check_time = {},
         .navigation_preload_enabled = false,
         .navigation_preload_header_value = "true"sv,
     });

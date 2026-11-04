@@ -19,6 +19,7 @@
 #include <LibWeb/ServiceWorker/ServiceWorkerContainer.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 #include <LibWeb/ServiceWorker/ServiceWorkerRegistration.h>
+#include <LibWeb/ServiceWorker/Update.h>
 #include <LibWebCommon/Fetch/Infrastructure/HTTP/Statuses.h>
 
 namespace Web::ServiceWorker {
@@ -238,19 +239,6 @@ GC::Ref<Fetch::Infrastructure::ResponseView> response_from_script_resource(Servi
     response->set_status(resource.status);
     response->set_header_list(HTTP::HeaderList::create(resource.header_list));
     return Fetch::Infrastructure::ResponseView::create(response, nullptr);
-}
-
-// https://w3c.github.io/ServiceWorker/#dfn-bad-import-script-response
-static bool is_a_bad_import_script_response(Fetch::Infrastructure::ResponseView const& response)
-{
-    // A bad import script response is a response for which any of the following conditions are met:
-    // - response's type is "error"
-    // - response's status is not an ok status
-    // - The result of extracting a MIME type from response's header list is not a JavaScript MIME type
-    if (response.type() == Fetch::Infrastructure::Response::Type::Error || !Fetch::Infrastructure::is_ok_status(response.status()))
-        return true;
-    auto mime_type = Fetch::Infrastructure::extract_mime_type(response.header_list());
-    return !mime_type.has_value() || !mime_type->is_javascript();
 }
 
 // https://w3c.github.io/ServiceWorker/#importscripts

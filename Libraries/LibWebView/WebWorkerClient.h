@@ -99,6 +99,7 @@ public:
     virtual void did_request_service_worker_clients(u64 request_id, String client_id, bool is_get, bool include_uncontrolled, Web::Bindings::ClientType type) override;
     virtual void did_provide_service_worker_client_snapshots(u64 gather_id, Vector<Web::ServiceWorker::ServiceWorkerClientSnapshot> snapshots) override;
     virtual void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult) override;
+    virtual void did_find_service_worker_scripts_up_to_date() override;
     virtual void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) override;
     virtual void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded) override;
     virtual void did_call_service_worker_skip_waiting(u64 request_id) override;

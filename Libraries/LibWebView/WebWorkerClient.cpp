@@ -446,6 +446,12 @@ ServiceWorkerRegistry* WebWorkerClient::service_worker_registry_of_this_service_
     return session->service_worker_registry.ptr();
 }
 
+void WebWorkerClient::did_find_service_worker_scripts_up_to_date()
+{
+    if (auto* registry = service_worker_registry_of_this_service_worker("did_find_service_worker_scripts_up_to_date"sv))
+        registry->service_worker_did_find_scripts_up_to_date(m_agent_id);
+}
+
 void WebWorkerClient::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
 {
     if (auto* registry = service_worker_registry_of_this_service_worker("did_fetch_service_worker_script"sv))

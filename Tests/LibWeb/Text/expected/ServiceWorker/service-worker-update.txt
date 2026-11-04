@@ -1,0 +1,7 @@
+update() of unchanged scripts resolves with the registration: true
+It installs no worker: true, updatefound fired: 0
+update() after an imported script changed installs a worker: true, updatefound fired: 1
+update() after the script changed installs a worker: true, updatefound fired: 2
+The first worker is redundant, the second redundant
+unregister(): true
+update() of an unregistered registration: TypeError

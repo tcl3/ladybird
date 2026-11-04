@@ -80,6 +80,7 @@ public:
     void did_finish_loading_worker_script(bool worker_is_secure_context);
     void did_fail_loading_worker_script();
     void did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult);
+    void did_find_service_worker_scripts_up_to_date();
     void did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle);
     void did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
     void did_change_service_worker_pending_events(bool has_pending_events);

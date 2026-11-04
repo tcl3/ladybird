@@ -36,6 +36,7 @@ endpoint WebWorkerClient {
     did_request_service_worker_registrations(Web::HTML::EnvironmentId environment_id, u64 request_id) =|
     did_request_service_worker_ready(Web::HTML::EnvironmentId environment_id, u64 request_id, URL::URL creation_url) =|
     did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result) =|
+    did_find_service_worker_scripts_up_to_date() =|
     did_run_service_worker(bool succeeded, Vector<String> event_types_to_handle) =|
     did_finish_service_worker_lifecycle_event(Web::ServiceWorker::ServiceWorkerLifecycleEvent event, bool succeeded) =|
     did_call_service_worker_skip_waiting(u64 request_id) =|

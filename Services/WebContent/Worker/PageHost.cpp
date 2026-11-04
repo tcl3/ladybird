@@ -223,6 +223,11 @@ void PageHost::did_fail_loading_worker_script()
     m_client.async_did_fail_loading_worker_script();
 }
 
+void PageHost::did_find_service_worker_scripts_up_to_date()
+{
+    m_client.async_did_find_service_worker_scripts_up_to_date();
+}
+
 void PageHost::did_fetch_service_worker_script(Web::ServiceWorker::ServiceWorkerScriptFetchResult result)
 {
     m_client.async_did_fetch_service_worker_script(result);

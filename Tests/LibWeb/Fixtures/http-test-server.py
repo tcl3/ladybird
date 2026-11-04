@@ -33,6 +33,7 @@ Description:
 
 Endpoints:
     - POST /echo <json body>, Creates an echo response for later use. See "Echo" class below for body properties.
+      With "replace": true, the echo replaces one that exists for its method and path.
     - Echo responses accept chunks=<byte-counts> and chunk_unblock_tokens=<tokens> query parameters.
     - Echo responses accept request_body_read_size=<bytes> and request_body_read_delay_ms=<ms> query parameters,
       which read the request's body that many bytes at a time, waiting that long before each read.
@@ -533,7 +534,7 @@ class TestHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         # Return 409: Conflict if the method+path combination already exists
         key = f"{echo.method} {urllib.parse.urlparse(echo.path).path}"
-        if key in echo_store and echo_store[key] != echo:
+        if key in echo_store and echo_store[key] != echo and not data.get("replace", False):
             self.send_response(409)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()

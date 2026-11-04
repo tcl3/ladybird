@@ -10,6 +10,7 @@
 #include <AK/NonnullOwnPtr.h>
 #include <AK/Optional.h>
 #include <AK/RefPtr.h>
+#include <AK/Time.h>
 #include <AK/Utf16String.h>
 #include <AK/Variant.h>
 #include <AK/Vector.h>
@@ -102,6 +103,7 @@ public:
 
     bool is_service_worker_agent(Web::HTML::WorkerAgentId) const;
     void service_worker_did_fetch_script(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerScriptFetchResult);
+    void service_worker_did_find_scripts_up_to_date(Web::HTML::WorkerAgentId);
     void service_worker_did_run(Web::HTML::WorkerAgentId, bool succeeded, Vector<String> event_types_to_handle);
     void service_worker_did_finish_lifecycle_event(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerLifecycleEvent, bool succeeded);
     void service_worker_did_call_skip_waiting(Web::HTML::WorkerAgentId, Web::ServiceWorker::ServiceWorkerRequestId);
@@ -234,6 +236,9 @@ private:
         Optional<Web::ServiceWorker::ServiceWorkerId> waiting_worker;
         Optional<Web::ServiceWorker::ServiceWorkerId> active_worker;
 
+        // https://w3c.github.io/ServiceWorker/#dfn-last-update-check-time
+        Optional<UnixDateTime> last_update_check_time;
+
         // https://w3c.github.io/ServiceWorker/#service-worker-registration-navigation-preload-enabled-flag
         bool navigation_preload_enabled { false };
 
@@ -321,6 +326,10 @@ private:
     void settle_job_promise(Job&, Web::ServiceWorker::ServiceWorkerJobResult const&);
 
     void register_(RegistrationKey const& job_queue_key, Job&);
+    void soft_update(Registration&, bool force_bypass_cache = false);
+    void schedule_soft_update(Registration&);
+    void schedule_job(NonnullOwnPtr<Job>);
+    bool is_stale(Registration const&) const;
     void update(RegistrationKey const& job_queue_key, Job&);
     void fail_update(ServiceWorkerRecord&, Web::ServiceWorker::ServiceWorkerJobError);
     void install(ServiceWorkerRecord&);
@@ -386,6 +395,12 @@ private:
     Vector<ReadyRequest> m_ready_requests;
 
     Vector<ControlledClient> m_controlled_clients;
+
+    struct ScheduledSoftUpdate {
+        Web::ServiceWorker::ServiceWorkerRegistrationId registration_id { 0 };
+        NonnullRefPtr<Core::Timer> timer;
+    };
+    Vector<ScheduledSoftUpdate> m_scheduled_soft_updates;
 
     Web::ServiceWorker::ServiceWorkerRegistrationId m_next_registration_id { 0 };
     Web::ServiceWorker::ServiceWorkerId m_next_service_worker_id { 0 };

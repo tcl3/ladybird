@@ -651,6 +651,7 @@ fn start_register(
 #[repr(u8)]
 pub(crate) enum ServiceWorkerJobType {
     Register = 0,
+    Update = 1,
     Unregister = 2,
 }
 

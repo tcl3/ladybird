@@ -92,4 +92,8 @@ struct Web::ServiceWorker::ServiceWorkerStartRequest {
     Web::ServiceWorker::ServiceWorkerScriptFetchParameters script_fetch;
     Vector<Web::ServiceWorker::ServiceWorkerScriptResource> stored_scripts;
     u64 extendable_event_timeout_ms;
+    Optional<URL::URL> newest_worker_script_url;
+    Web::HTML::WorkerType newest_worker_type;
+    Vector<Web::ServiceWorker::ServiceWorkerScriptResource> newest_worker_scripts;
+    bool registration_is_stale;
 }

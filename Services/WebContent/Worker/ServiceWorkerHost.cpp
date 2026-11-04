@@ -236,6 +236,7 @@ void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
         .worker_type = m_request.worker_type,
         .update_via_cache = m_request.registration.update_via_cache,
         .force_bypass_cache = m_request.script_fetch.force_bypass_cache,
+        .newest_worker_is_stale = m_request.newest_worker_script_url.has_value() && m_request.registration_is_stale,
     };
     Web::ServiceWorker::fetch_the_script_of_a_new_service_worker(job_client, *m_settings_object, move(job), GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page), [](auto& host, auto& page, GC::Ptr<Web::HTML::Script> script, GC::Ptr<Web::Fetch::Infrastructure::ResponseView> response, Core::ImmutableBytes body, Optional<Web::ServiceWorker::ServiceWorkerJobError> rejection) {
         if (!script || !response) {
@@ -244,7 +245,49 @@ void ServiceWorkerHost::fetch_script(GC::Ref<Web::Page> page)
         }
         host->m_main_script_response = response;
         host->m_main_script_body = move(body);
-        host->run_service_worker(page, *script, *response);
+        host->check_for_updated_resources(page, *script, *response);
+    }));
+}
+
+// https://w3c.github.io/ServiceWorker/#update-algorithm
+void ServiceWorkerHost::check_for_updated_resources(GC::Ref<Web::Page> page, GC::Ref<Web::HTML::Script> script, GC::Ref<Web::Fetch::Infrastructure::ResponseView> response)
+{
+    auto const& script_url = m_request.worker.script_url;
+
+    // 7. [...] 20. Set hasUpdatedResources to true if any of the following are true:
+    //              - newestWorker is null.
+    //              - newestWorker's script url is not url or newestWorker's type is not job's worker type.
+    //              - newestWorker's script resource map[url]'s body is not byte-for-byte identical with response's
+    //                body.
+    bool has_updated_resources = !m_request.newest_worker_script_url.has_value()
+        || *m_request.newest_worker_script_url != script_url
+        || m_request.newest_worker_type != m_request.worker_type;
+    if (!has_updated_resources) {
+        auto stored_script = m_request.newest_worker_scripts.find_if([&](auto const& resource) { return resource.url == script_url; });
+        has_updated_resources = stored_script == m_request.newest_worker_scripts.end() || stored_script->body.bytes() != m_main_script_body.bytes();
+    }
+    if (has_updated_resources) {
+        run_service_worker(page, script, response);
+        return;
+    }
+
+    // 21. If hasUpdatedResources is false and newestWorker's classic scripts imported flag is set, then:
+    // NB: The newest worker imported classic scripts if its process recorded scripts other than its main script.
+    Web::ServiceWorker::UpdateImportedScriptsCheck check {
+        .script_url = script_url,
+        .update_via_cache = m_request.registration.update_via_cache,
+        .force_bypass_cache = m_request.script_fetch.force_bypass_cache,
+        .registration_is_stale = m_request.registration_is_stale,
+    };
+    Web::ServiceWorker::check_imported_scripts_for_update(*m_settings_object, m_request.newest_worker_scripts, check, GC::create_function(GC::Heap::the(), GC::captures(NonnullRefPtr { *this }, page, script, response), [](auto& host, auto& page, auto& script, auto& response, bool imported_scripts_changed) {
+        if (imported_scripts_changed) {
+            host->run_service_worker(page, script, response);
+            return;
+        }
+
+        // 9. If hasUpdatedResources is false, then:
+        // NB: The UI process runs the substeps, and stops this worker.
+        as<PageHost>(page->client()).did_find_service_worker_scripts_up_to_date();
     }));
 }
 

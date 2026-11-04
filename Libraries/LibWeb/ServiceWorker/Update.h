@@ -25,11 +25,33 @@ struct UpdateScriptFetch {
     HTML::WorkerType worker_type { HTML::WorkerType::Classic };
     ServiceWorkerUpdateViaCache update_via_cache { ServiceWorkerUpdateViaCache::Imports };
     bool force_bypass_cache { false };
+
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-stale
+    // Whether the registration has a newest worker and is stale.
+    bool newest_worker_is_stale { false };
 };
 
 // NB: The body is that of the main script's response, which the worker's process records once the worker installs.
 using OnUpdateScriptFetchComplete = GC::Ref<GC::Function<void(GC::Ptr<HTML::Script>, GC::Ptr<Fetch::Infrastructure::ResponseView>, Core::ImmutableBytes body, Optional<ServiceWorkerJobError>)>>;
 
 WEB_API void fetch_the_script_of_a_new_service_worker(HTML::FetchClient const& job_client, HTML::EnvironmentSettingsObject& settings_object, UpdateScriptFetch, OnUpdateScriptFetchComplete);
+
+// https://w3c.github.io/ServiceWorker/#dfn-bad-import-script-response
+WEB_API bool is_a_bad_import_script_response(Fetch::Infrastructure::ResponseView const&);
+
+struct UpdateImportedScriptsCheck {
+    GC_HOLDS_NO_CELL_EDGES;
+
+    URL::URL script_url;
+    ServiceWorkerUpdateViaCache update_via_cache { ServiceWorkerUpdateViaCache::Imports };
+    bool force_bypass_cache { false };
+    bool registration_is_stale { false };
+};
+
+// https://w3c.github.io/ServiceWorker/#update-algorithm
+// Step 21 of the perform the fetch hook, for the scripts that the newest worker imported. Calls back with whether any of
+// them changed.
+using OnImportedScriptsChecked = GC::Ref<GC::Function<void(bool has_updated_resources)>>;
+WEB_API void check_imported_scripts_for_update(HTML::EnvironmentSettingsObject&, Vector<ServiceWorkerScriptResource> const& newest_worker_scripts, UpdateImportedScriptsCheck, OnImportedScriptsChecked);
 
 }

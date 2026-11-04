@@ -55,6 +55,7 @@ private:
     void fetch_script(GC::Ref<Web::Page>);
     void run_stored_scripts(GC::Ref<Web::Page>);
     bool finish_setting_up_service_worker_global_scope(GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
+    void check_for_updated_resources(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void run_service_worker(GC::Ref<Web::Page>, GC::Ref<Web::HTML::Script>, GC::Ref<Web::Fetch::Infrastructure::ResponseView>);
     void lifecycle_event_finished(bool failed);
     void pending_events_changed(bool has_pending_events);

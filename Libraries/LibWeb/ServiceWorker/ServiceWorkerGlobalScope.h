@@ -52,6 +52,7 @@ public:
     GC::Ref<ServiceWorker> service_worker();
 
     void set_service_worker(ServiceWorkerDescriptor service_worker) { m_service_worker = move(service_worker); }
+    ServiceWorkerDescriptor const& service_worker_descriptor() const { return m_service_worker; }
     void set_registration(ServiceWorkerRegistrationSnapshot registration) { m_registration = move(registration); }
 
     // https://w3c.github.io/ServiceWorker/#dfn-active-worker

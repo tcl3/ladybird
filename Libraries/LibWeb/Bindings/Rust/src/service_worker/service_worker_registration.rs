@@ -11,14 +11,15 @@ use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
+use ak::Utf16String;
 use libjs_rust::api::{Gc, Realm, Trace, Vm};
 
 use crate::bindings::conversions::UsvString;
 use crate::bindings::event_target::{CppEvent, CppEventTarget, GetTheParent};
 use crate::bindings::interface::{Ref, Wrappable, allocate};
-use crate::bindings::promise::{WebIdlPromise, create_promise};
+use crate::bindings::promise::{WebIdlPromise, create_promise, create_rejected_promise_from_exception};
 use crate::bindings::realm_data::realm_data;
-use crate::bindings::{CallContext, WebIdlResult};
+use crate::bindings::{CallContext, Exception, WebIdlResult};
 use crate::html::worker::WorkerType;
 use crate::service_worker::navigation_preload_manager::NavigationPreloadManager;
 use crate::service_worker::service_worker::{ServiceWorker, get_the_service_worker_object};
@@ -45,6 +46,11 @@ impl ServiceWorkerUpdateViaCache {
             _ => None,
         }
     }
+}
+
+unsafe extern "C" {
+    /// Whether the realm's global object is a ServiceWorkerGlobalScope whose service worker is installing.
+    fn web_service_worker_global_scope_is_installing(realm: *mut c_void) -> bool;
 }
 
 // https://w3c.github.io/ServiceWorker/#serviceworkerregistration-interface
@@ -157,6 +163,67 @@ impl ServiceWorkerRegistration {
         Ok(self.update_via_cache.get())
     }
 
+    // https://w3c.github.io/ServiceWorker/#service-worker-registration-update
+    pub(crate) fn update(&self, cx: &mut CallContext) -> WebIdlResult<WebIdlPromise> {
+        let vm = cx.vm();
+
+        // 1. Let registration be the service worker registration.
+        // 2. Let newestWorker be the result of running Get Newest Worker algorithm passing registration as its
+        //    argument.
+        // NB: The UI process gets the newest worker again when the job runs. This one names its script url.
+        let newest_worker = self.installing.get().or(self.waiting.get()).or(self.active.get());
+
+        // 3. If newestWorker is null, return a promise rejected with an "InvalidStateError" DOMException and abort these
+        //    steps.
+        let Some(newest_worker) = newest_worker else {
+            return Ok(create_rejected_promise_from_exception(
+                vm,
+                self.realm,
+                Exception::Dom(
+                    "InvalidStateError",
+                    Utf16String::from_utf8("The registration has no service worker to update"),
+                ),
+            ));
+        };
+
+        // 4. If this's relevant global object globalObject is a ServiceWorkerGlobalScope object, and globalObject's
+        //    associated service worker's state is "installing", return a promise rejected with an "InvalidStateError"
+        //    DOMException and abort these steps.
+        // SAFETY: The realm is live.
+        if unsafe { web_service_worker_global_scope_is_installing(self.realm.as_ptr().cast()) } {
+            return Ok(create_rejected_promise_from_exception(
+                vm,
+                self.realm,
+                Exception::Dom(
+                    "InvalidStateError",
+                    Utf16String::from_utf8("An installing service worker cannot update its registration"),
+                ),
+            ));
+        }
+
+        // 5. Let promise be a promise.
+        let promise = create_promise(vm, self.realm);
+
+        // 6. Let job be the result of running Create Job with update, registration's storage key, registration's scope
+        //    url, newestWorker's script url, promise, and this's relevant settings object.
+        // 7. Set job's worker type to newestWorker's type.
+        // 8. Invoke Schedule Job with job.
+        // NB: The UI process sets the job's worker type to the newest worker's type.
+        schedule_job(
+            vm,
+            self.realm,
+            promise,
+            ServiceWorkerJobType::Update,
+            &self.scope_url.to_utf8(),
+            Some(&newest_worker.script_url_string()),
+            WorkerType::Classic,
+            self.update_via_cache.get(),
+        );
+
+        // 9. Return promise.
+        Ok(promise)
+    }
+
     // https://w3c.github.io/ServiceWorker/#navigator-service-worker-unregister
     pub(crate) fn unregister(&self, cx: &mut CallContext) -> WebIdlResult<WebIdlPromise> {
         // NOTE: The unregister() method unregisters the service worker registration. It is important to note that the
@@ -248,6 +315,10 @@ pub(crate) fn get_the_service_worker_registration_object(
         .iter()
         .find(|object| object.id == registration.id)
     {
+        // NB: The UI process describes the registration as it is now, whose update via cache mode an update or a
+        //     register job can have changed.
+        registration_object.update_via_cache.set(registration.update_via_cache);
+
         // 3. Return objectMap[registration].
         return *registration_object;
     }

@@ -82,6 +82,7 @@ void web_service_worker_request_navigation_preload(void* realm, u64 request_id, 
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type);
 bool web_service_worker_claim(void* realm, u64 request_id);
 bool web_service_worker_is_response_object(void* object);
+bool web_service_worker_global_scope_is_installing(void* realm);
 
 // Defined on the Rust side.
 void* web_rust_service_worker_create_container(JSVM*, void* realm);
@@ -279,6 +280,12 @@ void web_service_worker_request_navigation_preload(void* realm, u64 request_id, 
 void web_service_worker_request_clients(void* realm, u64 request_id, ReadonlyBytes client_id, bool is_get, bool include_uncontrolled, u8 type)
 {
     Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_request_service_worker_clients(request_id, String::from_utf8_without_validation(client_id), is_get, include_uncontrolled, static_cast<Bindings::ClientType>(type));
+}
+
+bool web_service_worker_global_scope_is_installing(void* realm)
+{
+    auto* global_scope = Bindings::impl_from<ServiceWorkerGlobalScope>(&realm_from_abi(realm).global_object());
+    return global_scope && global_scope->service_worker_descriptor().state == ServiceWorkerState::Installing;
 }
 
 bool web_service_worker_is_response_object(void* object)

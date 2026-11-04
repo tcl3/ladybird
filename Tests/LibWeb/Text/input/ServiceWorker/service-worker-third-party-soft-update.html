@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A navigation that a third-party frame's worker controls runs Soft Update, which fetches the worker's script for
+    // the worker's own partition even though the embedding document's process fetches the navigation.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const otherSite = uniqueLocalhostHostname("service-worker-third-party");
+        const onOtherSite = url => {
+            const result = new URL(url);
+            result.hostname = otherSite;
+            return result.href;
+        };
+        const html = async (name, body) =>
+            onOtherSite(await server.createEcho("GET", `/third-party/${name}.html`, { status: 200, headers: { "Content-Type": "text/html" }, body: `<!DOCTYPE html>${body}` }));
+        const defineScript = async version =>
+            onOtherSite(await server.createEcho("GET", "/third-party/worker.js", { status: 200, headers: { "Content-Type": "text/javascript" }, body: `self.version = ${version};`, replace: true }));
+
+        const script = await defineScript(1);
+        const pageURL = await html("page", `<script>parent.postMessage({ from: "page", controlled: navigator.serviceWorker.controller !== null }, "*");<\/script>`);
+        const registeringFrameURL = await html("registering-frame", `<script>
+            window.addEventListener("message", async () => {
+                const registration = await navigator.serviceWorker.register("${script}");
+                const worker = registration.installing;
+                await new Promise(resolve => worker.addEventListener("statechange", () => {
+                    if (worker.state === "activated")
+                        resolve();
+                }));
+                registration.addEventListener("updatefound", () => parent.postMessage({ from: "registering-frame", updateFound: true }, "*"));
+                parent.postMessage({ from: "registering-frame", activated: true }, "*");
+            });
+            parent.postMessage({ from: "registering-frame", loaded: true }, "*");
+        <\/script>`);
+
+        const nextMessage = (from, key) =>
+            new Promise(resolve => {
+                window.addEventListener("message", function listener(event) {
+                    if (event.data?.from !== from || event.data[key] === undefined)
+                        return;
+                    window.removeEventListener("message", listener);
+                    resolve(event.data[key]);
+                });
+            });
+
+        let message = nextMessage("registering-frame", "loaded");
+        const registeringFrame = document.createElement("iframe");
+        registeringFrame.src = registeringFrameURL;
+        document.body.append(registeringFrame);
+        await message;
+
+        message = nextMessage("registering-frame", "activated");
+        registeringFrame.contentWindow.postMessage("register", "*");
+        await message;
+
+        await defineScript(2);
+        const updateFound = nextMessage("registering-frame", "updateFound");
+        message = nextMessage("page", "controlled");
+        const page = document.createElement("iframe");
+        page.src = pageURL;
+        document.body.append(page);
+        println(`The frame the embedding document navigated is controlled: ${await message}`);
+        println(`Soft Update found the updated script: ${await updateFound}`);
+    });
+</script>
