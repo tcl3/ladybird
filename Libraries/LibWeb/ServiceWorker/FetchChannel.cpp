@@ -368,7 +368,9 @@ static FetchEventRequest describe_request(Fetch::Infrastructure::Request const& 
 
     return FetchEventRequest {
         .method = request.method(),
-        .url_list = request.url_list(),
+        // AD-HOC: The fetch event of a request that a redirect brought to the service worker is for the URL the request
+        //         was redirected to, as in other engines.
+        .url_list = { request.current_url() },
         .header_list = request.header_list()->headers(),
         .body = move(body),
         .destination = request.destination(),

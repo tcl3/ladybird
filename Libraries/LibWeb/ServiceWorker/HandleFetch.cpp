@@ -174,7 +174,7 @@ void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> requ
         // 2. Else:
         else {
             // 1. If request's url is not a potentially trustworthy URL, return null.
-            if (SecureContexts::is_url_potentially_trustworthy(request->url()) != SecureContexts::Trustworthiness::PotentiallyTrustworthy) {
+            if (SecureContexts::is_url_potentially_trustworthy(request->current_url()) != SecureContexts::Trustworthiness::PotentiallyTrustworthy) {
                 on_complete->function()(nullptr);
                 return;
             }
@@ -199,7 +199,9 @@ void handle_fetch(Page& page, NonnullRefPtr<Fetch::Infrastructure::Request> requ
         ServiceWorkerReservedClient reserved_client_to_match {
             .id = reserved_client->id,
             .creation_url = reserved_client->creation_url,
-            .url = request->url(),
+            // AD-HOC: A navigation that a redirect brought into the scope of a registration matches that registration,
+            //         as in other engines, so this is the request's current URL rather than its first.
+            .url = request->current_url(),
             .navigable_id = {},
         };
         Optional<HTML::EnvironmentSettingsObjectAddress> reserved_settings_object;

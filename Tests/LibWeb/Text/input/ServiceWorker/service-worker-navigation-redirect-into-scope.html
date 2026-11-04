@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // A navigation that the network redirects into a registration's scope is intercepted there.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const scopedServer = server.withEchoScope(`${uniqueID()}/scope`);
+        const script = await scopedServer.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("fetch", event => {
+                if (event.request.mode === "navigate")
+                    event.respondWith(new Response("<!DOCTYPE html><p id=from>Intercepted " + new URL(event.request.url).pathname.split("/").pop() + " " + event.request.redirect + "</p>", { headers: { "Content-Type": "text/html" } }));
+            });`,
+        });
+        const target = scopedServer.echoURL("/target.html");
+        const redirect = await server.createEcho("GET", "/redirect.html", {
+            status: 302,
+            headers: { "Location": target },
+            body: "",
+        });
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.src = redirect;
+        document.body.appendChild(frame);
+        await loaded;
+        const from = frame.contentDocument.getElementById("from");
+        println(`Frame content: ${from ? from.textContent : frame.contentDocument.body?.textContent}`);
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>
