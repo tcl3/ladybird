@@ -257,15 +257,16 @@ static ServiceWorkerClientSnapshot client_snapshot_of(HTML::EnvironmentSettingsO
     return snapshot;
 }
 
-void web_service_worker_post_message_to_service_worker(void*, u64 service_worker_id, HTML::SerializedTransferRecord* record)
+void web_service_worker_post_message_to_service_worker(void* realm, u64 service_worker_id, HTML::SerializedTransferRecord* record)
 {
     auto message = adopt_own(*record);
 
     // https://w3c.github.io/ServiceWorker/#service-worker-postmessage-options
     // 2. Let incumbentSettings be the incumbent settings object.
+    // AD-HOC: This is the relevant settings object of the ServiceWorker object instead, matching other engines.
     // NB: The UI process substitutes the service worker for the client of a ServiceWorkerGlobalScope.
-    auto& incumbent_settings = HTML::incumbent_settings_object();
-    Bindings::principal_host_defined_page(incumbent_settings.realm()).client().page_did_post_message_to_service_worker(client_snapshot_of(incumbent_settings), service_worker_id, move(*message));
+    auto& settings = relevant_settings_object_of(realm);
+    Bindings::principal_host_defined_page(realm_from_abi(realm)).client().page_did_post_message_to_service_worker(client_snapshot_of(settings), service_worker_id, move(*message));
 }
 
 void web_service_worker_post_message_to_client(void* realm, ReadonlyBytes client_id, HTML::SerializedTransferRecord* record)

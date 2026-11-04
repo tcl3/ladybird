@@ -1,0 +1,9 @@
+Harness status: OK
+
+Found 4 tests
+
+4 Pass
+Pass	Post an extendable message from a top-level client
+Pass	Post an extendable message from a nested client
+Pass	Post loopback extendable messages
+Pass	Post extendable messages among service workers

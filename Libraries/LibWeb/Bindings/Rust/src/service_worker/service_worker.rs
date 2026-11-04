@@ -156,7 +156,7 @@ impl ServiceWorker {
         // 1. Let serviceWorker be the service worker represented by this.
         // 2. Let incumbentSettings be the incumbent settings object.
         // 3. Let incumbentGlobal be incumbentSettings's global object.
-        // NB: LibWeb reads the incumbent settings object when it sends the message.
+        // NB: LibWeb reads the settings object when it sends the message.
 
         // 4. Let serializeWithTransferResult be StructuredSerializeWithTransfer(message, options["transfer"]). Rethrow
         //    any exceptions.
