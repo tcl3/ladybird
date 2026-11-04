@@ -9,6 +9,7 @@
 #include <LibCore/Timer.h>
 #include <LibIPC/File.h>
 #include <LibURL/Parser.h>
+#include <LibWebCommon/Fetch/Infrastructure/URL.h>
 #include <LibWebCommon/WebView/SiteIsolation.h>
 #include <LibWebView/Application.h>
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
@@ -16,6 +17,7 @@
 #include <LibWebView/HelperProcess.h>
 #include <LibWebView/PermissionManager.h>
 #include <LibWebView/RequestServerManager.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/Utilities.h>
 #include <LibWebView/ViewImplementation.h>
 #include <LibWebView/WebContentClient.h>
@@ -329,7 +331,20 @@ void WorkerAgentManager::start_worker(WebWorkerClient& client, Web::HTML::Worker
     if (auto session = client.session())
         client.keep_script_blob_url_until_script_loads(BlobURLHandle::for_url(session->blob_url_store.ptr(), request.url));
 
-    client.async_start_worker(request.url, request.type, request.credentials, request.name, move(request.outside_port), request.outside_settings, request.agent_type, move(inside_origin), move(environment_id), has_process_to_itself);
+    // https://w3c.github.io/ServiceWorker/#control-and-use-worker-client
+    // When the fetch is routed through HTTP fetch, the worker client's active service worker is set to the result of the
+    // service worker registration matching. Otherwise, if the worker client's origin is an opaque origin, or the
+    // request's URL is a blob URL and the worker client's origin is not the same as the origin of the last item in the
+    // worker client's global object's owner set, the worker client's active service worker is set to null. Otherwise, it
+    // is set to the active service worker of the environment settings object of the last item in the worker client's
+    // global object's owner set.
+    // NB: The owner that starts the worker is the last item of its owner set.
+    Optional<Web::ServiceWorker::ServiceWorkerDescriptor> active_service_worker;
+    if (!Web::Fetch::Infrastructure::is_http_or_https_scheme(request.url.scheme()) && !inside_origin.is_opaque()
+        && (request.url.scheme() != "blob"sv || inside_origin.is_same_origin(outside_settings.origin())))
+        active_service_worker = ServiceWorkerRegistry::client_inherits_active_service_worker(environment_id, outside_settings.id());
+
+    client.async_start_worker(request.url, request.type, request.credentials, request.name, move(request.outside_port), request.outside_settings, request.agent_type, move(inside_origin), move(environment_id), has_process_to_itself, move(active_service_worker));
 }
 
 // Sites decide what runs together in a process, as for the documents of CanonicalNavigable::process_to_host(). The worker's

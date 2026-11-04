@@ -30,7 +30,8 @@ endpoint WebWorkerServer {
                  Web::HTML::AgentType agent_type,
                  URL::Origin origin,
                  Web::HTML::EnvironmentId environment_id,
-                 bool has_process_to_itself) =|
+                 bool has_process_to_itself,
+                 Optional<Web::ServiceWorker::ServiceWorkerDescriptor> active_service_worker) =|
 
     start_service_worker(Web::ServiceWorker::ServiceWorkerStartRequest request) =|
 

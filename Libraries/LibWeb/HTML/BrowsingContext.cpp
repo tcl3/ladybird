@@ -173,6 +173,14 @@ BrowsingContext::BrowsingContextAndDocument BrowsingContext::create_a_new_browsi
         || (creator && origin.is_same_origin(*creator_origin) && as<WindowEnvironmentSettingsObject>(creator->relevant_settings_object()).agent_cluster_is_origin_keyed());
     as<WindowEnvironmentSettingsObject>(relevant_settings_object(*window)).set_agent_cluster_is_origin_keyed(agent_cluster_is_origin_keyed);
 
+    // https://w3c.github.io/ServiceWorker/#control-and-use-window-client
+    // When a window client is created in the process of a browsing context creation:
+    // If the browsing context's initial active document's origin is an opaque origin, the window client's active service
+    // worker is set to null. Otherwise, it is set to the creator document's service worker client's active service
+    // worker.
+    if (creator && !origin.is_opaque())
+        relevant_settings_object(*window).active_service_worker = creator->relevant_settings_object().active_service_worker;
+
     // 14. Let loadTimingInfo be a new document load timing info with its navigation start time set to the result of calling
     //     coarsen time with unsafeContextCreationTime and the new environment settings object's cross-origin isolated capability.
     auto load_timing_info = DOM::DocumentLoadTimingInfo();

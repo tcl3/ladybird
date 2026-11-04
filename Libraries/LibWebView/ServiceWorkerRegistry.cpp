@@ -397,6 +397,34 @@ Optional<ServiceWorkerDescriptor> ServiceWorkerRegistry::reserved_client_became_
     return {};
 }
 
+Optional<ServiceWorkerDescriptor> ServiceWorkerRegistry::client_inherits_active_service_worker(Web::HTML::EnvironmentId const& client_id, Web::HTML::EnvironmentId const& creator_id)
+{
+    for (auto* registry : live_registries()) {
+        auto creator = registry->m_controlled_clients.find_if([&](ControlledClient const& client) {
+            return client.id == creator_id && !client.is_reserved();
+        });
+        if (creator == registry->m_controlled_clients.end())
+            continue;
+        auto active_service_worker = creator->active_service_worker;
+        registry->m_controlled_clients.remove_all_matching([&](ControlledClient const& client) { return client.id == client_id; });
+        registry->m_controlled_clients.append(ControlledClient {
+            .id = client_id,
+            .active_service_worker = active_service_worker,
+            .reserving_navigable = {},
+            .reserving_navigation = nullptr,
+            .reserving_process = nullptr,
+        });
+        return registry->descriptor_of(active_service_worker);
+    }
+    return {};
+}
+
+void ServiceWorkerRegistry::client_has_no_active_service_worker(Web::HTML::EnvironmentId const& client_id)
+{
+    for (auto* registry : live_registries())
+        registry->handle_service_worker_client_unload(client_id);
+}
+
 void ServiceWorkerRegistry::navigation_loader_will_be_destroyed(NavigationLoader const& navigation)
 {
     for (auto* registry : live_registries())

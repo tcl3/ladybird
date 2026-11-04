@@ -1,0 +1,6 @@
+The frame is controlled: true
+A srcdoc frame in it is controlled: true
+Its fetches are intercepted: Intercepted
+An about:blank frame in it is controlled: true
+A blob URL worker it starts is controlled: true, and its fetch is: Intercepted
+unregister(): true

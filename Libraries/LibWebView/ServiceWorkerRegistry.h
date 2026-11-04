@@ -86,6 +86,14 @@ public:
 
     static void navigation_loader_will_be_destroyed(NavigationLoader const&);
 
+    // https://w3c.github.io/ServiceWorker/#control-and-use
+    // A client whose creator or owner a service worker controls takes that worker as its active service worker, unless
+    // its fetch went through HTTP fetch. Returns the active service worker it takes, if any.
+    static Optional<Web::ServiceWorker::ServiceWorkerDescriptor> client_inherits_active_service_worker(Web::HTML::EnvironmentId const& client_id, Web::HTML::EnvironmentId const& creator_id);
+
+    // A reused window that its navigation left without an active service worker stops using the registration it used.
+    static void client_has_no_active_service_worker(Web::HTML::EnvironmentId const&);
+
     void schedule_job(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerJobRequest);
     void get_registration(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId, URL::URL client_url);
     void get_registrations(ServiceWorkerClientEnvironment const&, Web::ServiceWorker::ServiceWorkerRequestId);

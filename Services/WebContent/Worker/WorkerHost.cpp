@@ -101,7 +101,7 @@ static Web::HTML::WorkerGlobalScope::Owner relevant_owner_to_add(Web::HTML::Seri
 }
 
 // https://html.spec.whatwg.org/multipage/workers.html#run-a-worker
-void WorkerHost::run(GC::Ref<Web::Page> page, Web::HTML::TransferDataEncoder message_port_data, Web::HTML::SerializedEnvironmentSettingsObject const& outside_settings_snapshot, Web::HTML::RequestCredentials credentials, bool is_shared, URL::Origin origin, Web::HTML::EnvironmentId environment_id, bool has_process_to_itself)
+void WorkerHost::run(GC::Ref<Web::Page> page, Web::HTML::TransferDataEncoder message_port_data, Web::HTML::SerializedEnvironmentSettingsObject const& outside_settings_snapshot, Web::HTML::RequestCredentials credentials, bool is_shared, URL::Origin origin, Web::HTML::EnvironmentId environment_id, bool has_process_to_itself, Optional<Web::ServiceWorker::ServiceWorkerDescriptor> active_service_worker)
 {
     m_is_shared = is_shared;
 
@@ -155,6 +155,11 @@ void WorkerHost::run(GC::Ref<Web::Page> page, Web::HTML::TransferDataEncoder mes
     //    unsafeWorkerCreationTime, and let inside settings be the result.
     auto inside_settings = Web::HTML::WorkerEnvironmentSettingsObject::setup(page, move(realm_execution_context), outside_settings_snapshot, unsafe_worker_creation_time, move(origin), move(environment_id));
     m_inside_settings = inside_settings;
+
+    // https://w3c.github.io/ServiceWorker/#control-and-use-worker-client
+    // NB: The UI process gives a worker whose script is not fetched over HTTP the active service worker of its owner,
+    //     unless it is of another origin.
+    inside_settings->active_service_worker = move(active_service_worker);
 
     // AD-HOC: Create a console object for the worker.
     auto& console_object = *inside_settings->realm().intrinsics().console_object();

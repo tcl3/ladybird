@@ -508,8 +508,26 @@ void NavigationLoader::set_document(CanonicalDocument const& document, Canonical
             .active_service_worker = {},
         };
     }
-    auto reserved_environment_id = exchange(navigation_params->reserved_environment->id, window.relevant_settings_object().id());
-    navigation_params->reserved_environment->active_service_worker = ServiceWorkerRegistry::reserved_client_became_window(*this, reserved_environment_id, window.relevant_settings_object().id());
+    auto const& window_id = window.relevant_settings_object().id();
+    auto reserved_environment_id = exchange(navigation_params->reserved_environment->id, window_id);
+    auto active_service_worker = ServiceWorkerRegistry::reserved_client_became_window(*this, reserved_environment_id, window_id);
+
+    // https://w3c.github.io/ServiceWorker/#control-and-use-window-client
+    // When a window client is created in the process of the browsing context's navigation:
+    // If the fetch is routed through HTTP fetch, the window client's active service worker is set to the result of the
+    // service worker registration matching. Otherwise, if the created document's origin is an opaque origin or not the
+    // same as its creator document's origin, the window client's active service worker is set to null. Otherwise, it is
+    // set to the creator document's service worker client's active service worker.
+    // NB: The creator document of a child navigable's document is its container's node document.
+    // FIXME: Find the creator document of a top-level navigable's document.
+    if (!active_service_worker.has_value() && !Web::Fetch::Infrastructure::is_http_or_https_scheme(document.creation_url().scheme())) {
+        if (auto const* parent = navigable.parent(); parent && !document.origin().is_opaque() && document.origin().is_same_origin(parent->active_document().origin()))
+            active_service_worker = ServiceWorkerRegistry::client_inherits_active_service_worker(window_id, parent->active_document().relevant_global_object().relevant_settings_object().id());
+    }
+    // NB: A reused initial about:blank window took its creator's active service worker, which its navigation replaces.
+    if (!active_service_worker.has_value())
+        ServiceWorkerRegistry::client_has_no_active_service_worker(window_id);
+    navigation_params->reserved_environment->active_service_worker = move(active_service_worker);
     navigation_params->agent_cluster_id = window.agent().agent_cluster_id();
     navigation_params->agent_cluster_is_origin_keyed = window.agent().agent_cluster_is_origin_keyed();
     navigation_params->agent_cluster_cross_origin_isolation_mode = window.agent().agent_cluster_cross_origin_isolation_mode();

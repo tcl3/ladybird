@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    // Documents and workers whose fetch does not go through HTTP take the active service worker of their creator or
+    // owner.
+    promiseTest(async () => {
+        const server = httpTestServer();
+        const script = await server.createEcho("GET", "/worker.js", {
+            status: 200,
+            headers: { "Content-Type": "text/javascript" },
+            body: `self.addEventListener("fetch", event => {
+                if (new URL(event.request.url).searchParams.has("intercept"))
+                    event.respondWith(new Response("Intercepted"));
+            });`,
+        });
+        const frameURL = await server.createEcho("GET", "/frame.html", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+            body: "<!DOCTYPE html><p>In scope</p>",
+        });
+        const dataURL = server.echoURL("/data.txt?intercept");
+
+        const registration = await navigator.serviceWorker.register(script);
+        const worker = registration.installing;
+        await waitForCondition(() => worker.state === "activated");
+
+        const loadFrame = (parentDocument, setUp) => {
+            const frame = parentDocument.createElement("iframe");
+            const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+            setUp(frame);
+            parentDocument.body.appendChild(frame);
+            return loaded.then(() => frame);
+        };
+        const frame = await loadFrame(document, frame => { frame.src = frameURL; });
+        const frameWindow = frame.contentWindow;
+        println(`The frame is controlled: ${frameWindow.navigator.serviceWorker.controller !== null}`);
+
+        const srcdocFrame = await loadFrame(frame.contentDocument, frame => { frame.srcdoc = "<p>srcdoc</p>"; });
+        println(`A srcdoc frame in it is controlled: ${srcdocFrame.contentWindow.navigator.serviceWorker.controller !== null}`);
+        println(`Its fetches are intercepted: ${await (await srcdocFrame.contentWindow.fetch(dataURL)).text()}`);
+
+        const blankFrame = await loadFrame(frame.contentDocument, () => {});
+        println(`An about:blank frame in it is controlled: ${blankFrame.contentWindow.navigator.serviceWorker.controller !== null}`);
+
+        const blob = new frameWindow.Blob([`fetch("${dataURL}").then(response => response.text()).then(text => postMessage({ controlled: navigator.serviceWorker.controller !== null, text }));`], { type: "text/javascript" });
+        const blobWorker = new frameWindow.Worker(frameWindow.URL.createObjectURL(blob));
+        const reply = await new Promise(resolve => blobWorker.addEventListener("message", event => resolve(event.data), { once: true }));
+        println(`A blob URL worker it starts is controlled: ${reply.controlled}, and its fetch is: ${reply.text}`);
+        blobWorker.terminate();
+
+        frame.remove();
+        println(`unregister(): ${await registration.unregister()}`);
+    });
+</script>

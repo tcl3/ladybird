@@ -12,6 +12,7 @@
 #include <LibWebView/CanonicalEnvironmentSettingsObject.h>
 #include <LibWebView/CanonicalTraversable.h>
 #include <LibWebView/CanonicalWindow.h>
+#include <LibWebView/ServiceWorkerRegistry.h>
 #include <LibWebView/WebContentClient.h>
 
 namespace WebView {
@@ -95,6 +96,14 @@ CanonicalBrowsingContext::BrowsingContextAndDocument CanonicalBrowsingContext::c
     // 13. Set up a window environment settings object with about:blank, realm execution context, null,
     //     topLevelCreationURL, and topLevelOrigin.
     window->set_up_a_window_environment_settings_object(move(environment_id), move(top_level_creation_url));
+
+    // https://w3c.github.io/ServiceWorker/#control-and-use-window-client
+    // When a window client is created in the process of a browsing context creation:
+    // If the browsing context's initial active document's origin is an opaque origin, the window client's active service
+    // worker is set to null. Otherwise, it is set to the creator document's service worker client's active service
+    // worker.
+    if (creator && !origin.is_opaque())
+        (void)ServiceWorkerRegistry::client_inherits_active_service_worker(window->relevant_settings_object().id(), creator->relevant_global_object().relevant_settings_object().id());
 
     // 15. Let document be a new Document, with:
     //     origin: origin
