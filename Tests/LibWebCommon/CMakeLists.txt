@@ -11,6 +11,7 @@ set(TEST_SOURCES
     TestPermissionsPolicy.cpp
     TestProhibitsMixedSecurityContexts.cpp
     TestRemoteViolationDirective.cpp
+    TestServiceWorkerTypes.cpp
     TestSiteCompatibility.cpp
     TestStorageEndpoint.cpp
     TestStorageKey.cpp

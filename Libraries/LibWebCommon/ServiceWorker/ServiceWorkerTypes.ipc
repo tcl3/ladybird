@@ -5,6 +5,83 @@
 
 #include <LibWebCommon/ServiceWorker/ServiceWorkerTypes.h>
 
+// NB: Each enum here is refused over IPC when a peer sends a value it does not declare. The binding enums are generated
+//     from IDL into headers that cannot include these codecs, so a message that sends one of them must include
+//     ServiceWorkerTypes.h for the value to be checked. Only the service worker types send them today.
+
+[ExistingCpp]
+enum Web::Bindings::ClientType : u8 {
+    Window,
+    Worker,
+    Sharedworker,
+    All,
+}
+
+[ExistingCpp]
+enum Web::Bindings::FrameType : u8 {
+    Auxiliary,
+    TopLevel,
+    Nested,
+    None,
+}
+
+[ExistingCpp]
+enum Web::Bindings::DocumentVisibilityState : u8 {
+    Visible,
+    Hidden,
+}
+
+[ExistingCpp]
+enum Web::Bindings::ServiceWorkerState : u8 {
+    Parsed,
+    Installing,
+    Installed,
+    Activating,
+    Activated,
+    Redundant,
+}
+
+[ExistingCpp]
+enum Web::Bindings::ServiceWorkerUpdateViaCache : u8 {
+    Imports,
+    All,
+    None,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::ServiceWorkerJobType : u8 {
+    Register,
+    Update,
+    Unregister,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::ServiceWorkerJobError : u8 {
+    TypeError,
+    SecurityError,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::ServiceWorkerRegistrationSlot : u8 {
+    Installing,
+    Waiting,
+    Active,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::ServiceWorkerLifecycleEvent : u8 {
+    Install,
+    Activate,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::ServiceWorkerNavigationPreloadOperation : u8 {
+    Enable,
+    Disable,
+    SetHeaderValue,
+    GetState,
+}
+
 [ExistingCpp]
 struct Web::ServiceWorker::ServiceWorkerDescriptor {
     u64 id;

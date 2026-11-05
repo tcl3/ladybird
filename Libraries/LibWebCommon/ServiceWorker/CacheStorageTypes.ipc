@@ -5,6 +5,35 @@
 
 #include <LibWebCommon/ServiceWorker/CacheStorageTypes.h>
 
+// NB: Each enum here is refused over IPC when a peer sends a value it does not declare.
+
+[ExistingCpp]
+enum Web::ServiceWorker::CacheBatchOperationType : u8 {
+    Delete,
+    Put,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::CacheStorageNameOperation : u8 {
+    Has,
+    Open,
+    Delete,
+    Keys,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::CacheQueryKind : u8 {
+    MatchAll,
+    Keys,
+}
+
+[ExistingCpp]
+enum Web::ServiceWorker::CacheStorageError : u8 {
+    TypeError,
+    InvalidStateError,
+    SecurityError,
+}
+
 [ExistingCpp]
 struct Web::ServiceWorker::CachedRequest {
     ByteString method;
