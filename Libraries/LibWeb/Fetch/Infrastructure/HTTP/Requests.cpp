@@ -117,14 +117,41 @@ HTTP::Cookie::SameSiteStatus Request::same_site_status() const
             return SameSiteStatus::CrossSite;
     }
 
+    // AD-HOC: A service worker that fetches a navigation request again, as `fetch(event.request)` or as its navigation
+    //         preload, becomes the request's client, while the request keeps the origin of whoever started the
+    //         navigation. As in other engines, the request is only same-site if that origin is same-site with its URLs
+    //         too, as tested by service-workers/service-worker/same-site-cookies.https.html.
+    if (auto const* initiator_origin = initiator_origin_other_than_client()) {
+        for (auto const& url : url_list()) {
+            if (!url.origin().is_same_site(*initiator_origin))
+                return SameSiteStatus::CrossSite;
+        }
+    }
+
     return SameSiteStatus::SameSite;
+}
+
+// The request's origin, if its client is a service worker and the origin is not the worker's: that of a navigation
+// request that the service worker fetches again.
+URL::Origin const* Request::initiator_origin_other_than_client() const
+{
+    if (!m_client_snapshot || m_client_snapshot->is_service_worker == ClientContextSnapshot::IsServiceWorker::No)
+        return nullptr;
+    auto const* origin = m_origin.get_pointer<URL::Origin>();
+    if (!origin || origin->is_same_origin(m_client_snapshot->origin))
+        return nullptr;
+    return origin;
 }
 
 HTTP::Cookie::SameSiteContext Request::same_site_context() const
 {
+    // AD-HOC: A top-level navigation request that a service worker fetches again is still one, as it is in other
+    //         engines, though a new Request object does not take over its destination.
+    auto is_top_level_navigation = m_mode == Mode::Navigate
+        && (m_destination == Destination::Document || (!m_destination.has_value() && m_original_destination == Destination::Document));
     return {
         .status = same_site_status(),
-        .is_top_level_navigation = m_mode == Mode::Navigate && m_destination == Destination::Document,
+        .is_top_level_navigation = is_top_level_navigation,
         .is_safe_method = m_method.is_one_of("GET"sv, "HEAD"sv, "OPTIONS"sv, "TRACE"sv),
     };
 }
@@ -285,6 +312,7 @@ NonnullRefPtr<Request> Request::clone() const
     new_request->set_service_workers_mode(m_service_workers_mode);
     new_request->set_initiator(m_initiator);
     new_request->set_destination(m_destination);
+    new_request->set_original_destination(m_original_destination);
     new_request->set_priority(m_priority);
     new_request->set_origin(m_origin);
     new_request->set_policy_container(m_policy_container);

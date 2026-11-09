@@ -9,6 +9,7 @@
 struct Web::ServiceWorker::FetchEventRequest {
     ByteString method;
     Vector<URL::URL> url_list;
+    Optional<URL::Origin> origin;
     Vector<HTTP::Header> header_list;
     Optional<ByteBuffer> body;
     Optional<Web::Fetch::Infrastructure::Request::Destination> destination;

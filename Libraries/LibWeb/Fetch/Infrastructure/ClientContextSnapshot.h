@@ -51,6 +51,12 @@ struct ClientContext {
         Yes,
     };
 
+    // Whether the global object is a ServiceWorkerGlobalScope.
+    enum class IsServiceWorker : u8 {
+        No,
+        Yes,
+    };
+
     URL::Origin origin;
     URL::Origin site_for_cookies;
     URL::URL creation_url;
@@ -63,6 +69,7 @@ struct ClientContext {
     IsSecureContext is_secure_context { IsSecureContext::No };
     MixedContent::ProhibitsMixedSecurityContexts prohibits_mixed_security_contexts { MixedContent::ProhibitsMixedSecurityContexts::DoesNotRestrictMixedSecurityContexts };
     IsLoadingBypassingCache is_loading_bypassing_cache { IsLoadingBypassingCache::No };
+    IsServiceWorker is_service_worker { IsServiceWorker::No };
     double time_origin { 0 };
 
     // The navigable of the Window that is the global object, if it has one and this process hosts the Window.

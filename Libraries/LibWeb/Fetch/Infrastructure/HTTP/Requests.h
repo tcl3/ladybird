@@ -231,6 +231,11 @@ public:
     [[nodiscard]] Optional<Destination> const& destination() const { return m_destination; }
     void set_destination(Optional<Destination> destination) { m_destination = move(destination); }
 
+    // AD-HOC: The destination of the request that a Request object was created from, which a new Request object does
+    //         not take over. A service worker that fetches a navigation request again makes such a request.
+    [[nodiscard]] Optional<Destination> const& original_destination() const { return m_original_destination; }
+    void set_original_destination(Optional<Destination> destination) { m_original_destination = move(destination); }
+
     [[nodiscard]] Priority const& priority() const { return m_priority; }
     void set_priority(Priority priority) { m_priority = priority; }
 
@@ -363,6 +368,8 @@ public:
     void set_webdriver_bidi_network_request(RefPtr<WebDriver::BiDi::NetworkRequest>);
 
 private:
+    URL::Origin const* initiator_origin_other_than_client() const;
+
     explicit Request(NonnullRefPtr<HTTP::HeaderList>);
 
     // https://fetch.spec.whatwg.org/#concept-request-method
@@ -440,6 +447,7 @@ private:
     // NOTE: These are reflected on RequestDestination except for "serviceworker" and "webidentity" as fetches with
     //       those destinations skip service workers.
     Optional<Destination> m_destination;
+    Optional<Destination> m_original_destination;
 
     // https://fetch.spec.whatwg.org/#request-priority
     // A request has an associated priority, which is "high", "low", or "auto". Unless stated otherwise it is "auto".

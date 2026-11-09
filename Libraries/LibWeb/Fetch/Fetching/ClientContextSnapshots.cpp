@@ -13,6 +13,7 @@
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HTML/WorkerGlobalScope.h>
 #include <LibWeb/MixedContent/AbstractOperations.h>
+#include <LibWeb/ServiceWorker/ServiceWorkerGlobalScope.h>
 
 namespace Web::Fetch::Fetching {
 
@@ -141,6 +142,7 @@ NonnullRefPtr<Infrastructure::ClientContextSnapshot const> snapshot_client_conte
         .is_secure_context = HTML::is_secure_context(client) ? Context::IsSecureContext::Yes : Context::IsSecureContext::No,
         .prohibits_mixed_security_contexts = MixedContent::does_settings_prohibit_mixed_security_contexts(client),
         .is_loading_bypassing_cache = window && window->associated_document().is_loading_bypassing_cache() ? Context::IsLoadingBypassingCache::Yes : Context::IsLoadingBypassingCache::No,
+        .is_service_worker = worker && is<ServiceWorker::ServiceWorkerGlobalScope>(*worker) ? Context::IsServiceWorker::Yes : Context::IsServiceWorker::No,
         .time_origin = client.time_origin(),
         .navigable_id = navigable ? navigable->id() : Optional<HTML::CrossProcessId> {},
         .referrer_source = referrer_source_of_client(client),

@@ -403,6 +403,10 @@ WebIDL::ExceptionOr<GC::Ref<Request>> Request::create_with_settings(HTML::Enviro
     //     request’s origin. The propagation of the origin is only significant for navigation requests being handled by a service worker. In this scenario a request can have an origin that is different from the current client.
     request->set_origin(input_request->origin());
 
+    // AD-HOC: Remember the destination of the request, which the new request does not take over, so that a navigation
+    //         request that a service worker fetches again still gets the cookies of one.
+    request->set_original_destination(input_request->destination().has_value() ? input_request->destination() : input_request->original_destination());
+
     // referrer
     //     request’s referrer.
     request->set_referrer(input_request->referrer());

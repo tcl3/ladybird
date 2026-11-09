@@ -14,6 +14,7 @@
 #include <AK/Vector.h>
 #include <LibHTTP/Cache/CacheMode.h>
 #include <LibHTTP/Header.h>
+#include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Requests.h>
 #include <LibWeb/Fetch/Infrastructure/HTTP/Responses.h>
@@ -30,6 +31,9 @@ using FetchEventId = u64;
 struct FetchEventRequest {
     ByteString method;
     Vector<URL::URL> url_list;
+    // NB: The request's origin, unless it is "client". A request that the service worker makes from the fetch event's
+    //     request keeps it, as it can differ from the service worker's for a navigation request.
+    Optional<URL::Origin> origin;
     Vector<HTTP::Header> header_list;
     Optional<ByteBuffer> body;
     Optional<Fetch::Infrastructure::Request::Destination> destination;

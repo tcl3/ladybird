@@ -618,6 +618,8 @@ static NonnullRefPtr<Web::Fetch::Infrastructure::Request> request_from(Web::Serv
     auto request = Web::Fetch::Infrastructure::Request::create();
     request->set_method(move(descriptor.method));
     request->set_url_list(move(descriptor.url_list));
+    if (descriptor.origin.has_value())
+        request->set_origin(descriptor.origin.release_value());
     request->set_header_list(HTTP::HeaderList::create(move(descriptor.header_list)));
     if (descriptor.body.has_value())
         request->set_body(Web::Fetch::Infrastructure::FetchBody::from_bytes(Core::ImmutableBytes::adopt(descriptor.body.release_value())));
