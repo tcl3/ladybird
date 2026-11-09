@@ -7,13 +7,14 @@
 
 //! FontFaceSetLoadEvent, https://drafts.csswg.org/css-font-loading/#fontfacesetloadevent
 
+use core::cell::Cell;
 use core::ffi::c_void;
 use core::ptr::NonNull;
 
 use ak::Utf16String;
-use libjs_rust::api::{Gc, MarkedVec, Realm, Trace, Vm};
+use libjs_rust::api::{Gc, MarkedVec, Object, Realm, Trace, Vm};
 
-use crate::bindings::conversions::CppInterface;
+use crate::bindings::conversions::{CppInterface, ToJs, frozen_array_to_js, rooted_sequence_to_js};
 use crate::bindings::event_target::CppEvent;
 use crate::bindings::interface::{Ref, Wrappable, allocate};
 use crate::bindings::{CallContext, WebIdlResult};
@@ -32,6 +33,7 @@ pub(crate) struct FontFaceSetLoadEventInit<'vm> {
 pub(crate) struct FontFaceSetLoadEvent {
     event: CppEvent,
     fontfaces: Vec<CppFontFaceState>,
+    fontfaces_array: Cell<Option<Gc<Object>>>,
 }
 
 impl Wrappable for FontFaceSetLoadEvent {
@@ -58,6 +60,7 @@ impl FontFaceSetLoadEvent {
         let object = allocate(vm, |_| FontFaceSetLoadEvent {
             event,
             fontfaces: fontfaces.to_vec(),
+            fontfaces_array: Cell::new(None),
         });
         object.event.set_owner(object);
         object
@@ -87,11 +90,21 @@ impl FontFaceSetLoadEvent {
     }
 
     // https://drafts.csswg.org/css-font-loading/#dom-fontfacesetloadevent-fontfaces
-    pub(crate) fn fontfaces<'vm>(&self, cx: &mut CallContext<'vm>) -> WebIdlResult<MarkedVec<'vm, CppInterface>> {
+    pub(crate) fn fontfaces(&self, cx: &mut CallContext) -> WebIdlResult<Gc<Object>> {
+        // NB: The attribute is [SameObject], so the frozen array of the font faces is created once.
+        if let Some(fontfaces_array) = self.fontfaces_array.get() {
+            return Ok(fontfaces_array);
+        }
         let fontfaces = MarkedVec::with_capacity(cx.vm(), self.fontfaces.len());
         for font_face in &self.fontfaces {
             fontfaces.push(font_face.interface(cx));
         }
-        Ok(fontfaces)
+        let fontfaces_array = frozen_array_to_js(
+            cx,
+            rooted_sequence_to_js(cx, fontfaces, |font_face| ToOwned::to_owned(font_face).to_js(cx)),
+        )?
+        .as_object();
+        self.fontfaces_array.set(Some(fontfaces_array));
+        Ok(fontfaces_array)
     }
 }

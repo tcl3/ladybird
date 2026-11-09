@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<style>
+    @layer first, second;
+    @container sidebar (min-width: 400px) {
+        div {
+            color: green;
+        }
+    }
+</style>
+<script>
+    test(() => {
+        const sheet = document.styleSheets[0];
+        const statement = sheet.cssRules[0];
+        const container = sheet.cssRules[1];
+        println(`nameList: ${statement.nameList === statement.nameList}, frozen: ${Object.isFrozen(statement.nameList)}`);
+        println(`conditions: ${container.conditions === container.conditions}, frozen: ${Object.isFrozen(container.conditions)}`);
+
+        const fontFace = new FontFace("Test", "url(missing.woff)");
+        const event = new FontFaceSetLoadEvent("loading", { fontfaces: [fontFace] });
+        println(`fontfaces: ${event.fontfaces === event.fontfaces}, frozen: ${Object.isFrozen(event.fontfaces)}`);
+        println(`font face: ${event.fontfaces[0] === fontFace}`);
+    });
+</script>

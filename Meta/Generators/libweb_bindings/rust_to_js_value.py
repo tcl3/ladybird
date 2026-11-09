@@ -53,7 +53,10 @@ def rust_to_js_value(
             Some(value) => {inner(optional_member)},
             None => Ok(Value::UNDEFINED),
         }}"""
-    if isinstance(idl_type, IDLParameterizedType) and idl_type.name in ("sequence", "FrozenArray"):
+    # NB: The implementation returns the frozen array that it created, see rust_type().
+    if isinstance(idl_type, IDLParameterizedType) and idl_type.name == "FrozenArray":
+        return f"{expression}.to_js({call_context})"
+    if isinstance(idl_type, IDLParameterizedType) and idl_type.name == "sequence":
         element_type = idl_type.parameters[0]
         # NB: The conversion of an element can allocate, as that of an object of an interface does for its wrapper,
         #     and the elements after it must live through that, in the MarkedVec that holds them (see rust_type()).
@@ -66,8 +69,6 @@ def rust_to_js_value(
             array = f"rooted_sequence_to_js({call_context}, {expression}, |value| {conversion})"
         else:
             array = f"sequence_to_js({call_context}, {expression}, |value| {inner(element_type)})"
-        if idl_type.name == "FrozenArray":
-            return f"frozen_array_to_js({call_context}, {array})"
         return array
     if isinstance(idl_type, IDLParameterizedType) and idl_type.name == "record":
         value_type = idl_type.parameters[1]

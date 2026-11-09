@@ -415,6 +415,10 @@ def rust_type(idl_type: IDLType, context: GenerationContext, what: str, is_resul
         return f"Option<{rust_type(idl_type.without_nullable(), context, what, is_result)}>"
     name = idl_type.name
     if isinstance(idl_type, IDLParameterizedType):
+        if name == "FrozenArray" and is_result:
+            # NB: The implementation creates the frozen array that it returns, so that it can return the same one
+            #     each time, as a [SameObject] attribute or one that returns the value it was initialized to does.
+            return "Gc<Object>"
         if name in ("sequence", "FrozenArray"):
             element_type = idl_type.parameters[0]
             element = rust_type(element_type, context, what, is_result)

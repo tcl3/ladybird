@@ -10,10 +10,12 @@ use super::css_condition_rule::CSSConditionRule;
 use super::css_grouping_rule::CSSGroupingRule;
 use super::css_rule::impl_rule_wrappable;
 use super::css_rule::{CSSRule, RuleText, serialize_block_of_rules};
-use crate::bindings::interface::{Inherits, Ref, allocate};
+use crate::bindings::conversions::{ToJs, frozen_array_to_js, sequence_to_js};
+use crate::bindings::interface::{Inherits, Ref, allocate, create_dictionary_object, set_dictionary_member};
 use crate::bindings::{CallContext, WebIdlResult};
 use ak::Utf16String;
-use libjs_rust::api::{Trace, Vm};
+use core::cell::Cell;
+use libjs_rust::api::{Gc, Object, PropertyKey, Trace, Value, Vm};
 use libweb_rust::NativeRule;
 use std::rc::Rc;
 
@@ -27,6 +29,7 @@ pub(crate) struct CSSContainerCondition {
 #[gc(crate = libjs_rust)]
 pub(crate) struct CSSContainerRule {
     condition_rule: CSSConditionRule,
+    conditions: Cell<Option<Gc<Object>>>,
 }
 
 impl_rule_wrappable!(CSSContainerRule);
@@ -41,6 +44,7 @@ impl CSSContainerRule {
     pub(crate) fn create(vm: &Vm, native_rule: Rc<NativeRule>) -> Ref<Self> {
         allocate(vm, |_| Self {
             condition_rule: CSSConditionRule::new(native_rule),
+            conditions: Cell::new(None),
         })
     }
 
@@ -138,7 +142,27 @@ impl CSSContainerRule {
     }
 
     // https://drafts.csswg.org/css-conditional-5/#dom-csscontainerrule-conditions
-    pub(crate) fn conditions(&self, _: &mut CallContext) -> WebIdlResult<Vec<CSSContainerCondition>> {
+    pub(crate) fn conditions(&self, cx: &mut CallContext) -> WebIdlResult<Gc<Object>> {
+        // NB: The conditions of a rule never change, so the frozen array of them is created once.
+        if let Some(conditions) = self.conditions.get() {
+            return Ok(conditions);
+        }
+        let conditions = frozen_array_to_js(
+            cx,
+            sequence_to_js(cx, self.condition_list(), |condition| {
+                // https://webidl.spec.whatwg.org/#js-dictionary
+                let object = create_dictionary_object(cx);
+                set_dictionary_member(cx, object, &PropertyKey::from_utf8("name"), condition.name.to_js(cx)?)?;
+                set_dictionary_member(cx, object, &PropertyKey::from_utf8("query"), condition.query.to_js(cx)?)?;
+                Ok(Value::from_object(object))
+            }),
+        )?
+        .as_object();
+        self.conditions.set(Some(conditions));
+        Ok(conditions)
+    }
+
+    fn condition_list(&self) -> Vec<CSSContainerCondition> {
         // The conditions attribute, on getting, must return a value as follows:
 
         // 1. Let result be an empty list.
@@ -153,8 +177,7 @@ impl CSSContainerRule {
         //    unneeded parentheses, or simplification based on evaluating results) are not allowed.
         // 2. Append dict to result.
         // 3. Return result.
-        Ok(self
-            .rule()
+        self.rule()
             .native_rule()
             .container_conditions()
             .into_iter()
@@ -162,6 +185,6 @@ impl CSSContainerRule {
                 name: condition.name,
                 query: condition.query,
             })
-            .collect())
+            .collect()
     }
 }
