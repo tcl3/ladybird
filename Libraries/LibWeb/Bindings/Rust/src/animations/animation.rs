@@ -37,8 +37,8 @@ use crate::bindings::interface::{
     Inherits, Ref, Wrappable, allocate, cell_from_abi, cell_into_abi, with_temporary_execution_context,
 };
 use crate::bindings::promise::{
-    TaskSource, WebIdlPromise, create_promise, mark_promise_as_handled, queue_a_global_task,
-    reject_promise_with_exception, resolve_promise,
+    TaskSource, WebIdlPromise, create_promise, mark_promise_as_handled, microtask_checkpoints_are_deferred,
+    queue_a_global_task, queue_a_microtask, reject_promise_with_exception, resolve_promise,
 };
 use crate::bindings::{CallContext, Exception, WebIdlResult};
 use crate::css::css_animation::CSSAnimation;
@@ -71,6 +71,16 @@ unsafe extern "C" {
     );
     fn web_animation_event_set_time_stamp(event: *mut c_void, time_stamp: f64);
     fn web_animation_commit_styles(animation: *const c_void) -> CommitStylesResult;
+}
+
+/// How a promise of an animation settles.
+#[derive(Clone, Copy, PartialEq, Trace)]
+#[gc(crate = libjs_rust)]
+enum PromiseSettlement {
+    /// Resolved with the animation.
+    Resolve,
+    /// Rejected with an AbortError.
+    Reject,
 }
 
 /// What committing the computed styles of an animation to the style attribute of its target answers.
@@ -277,6 +287,9 @@ pub(crate) struct Animation {
     // NB: Created as script first asks for it. Until then, it is resolved while the animation is finished, and pending
     //     otherwise.
     current_finished_promise: Cell<Option<WebIdlPromise>>,
+
+    // NB: How many settlements of the promises of the animation wait in microtasks, which later ones wait behind.
+    queued_promise_settlements: Cell<u32>,
 }
 
 // SAFETY: Visits the event target, the realm, the promises and the cells of the host the record names.
@@ -420,6 +433,7 @@ impl Animation {
             record,
             current_ready_promise: Cell::new(None),
             current_finished_promise: Cell::new(None),
+            queued_promise_settlements: Cell::new(0),
         }
     }
 
@@ -792,12 +806,7 @@ impl Animation {
             let Some(promise) = promise.take() else {
                 return;
             };
-            reject_promise_with_exception(
-                vm,
-                promise,
-                Exception::Dom("AbortError", Utf16String::from_ascii(b"Animation was cancelled")),
-            );
-            mark_promise_as_handled(vm, promise);
+            self.settle_promise(vm, promise, PromiseSettlement::Reject);
         };
         let resolve = |promise: &Cell<Option<WebIdlPromise>>| {
             // NB: Resolving a promise with the animation reads its "then" property, which script can observe, so a
@@ -810,7 +819,7 @@ impl Animation {
                     created
                 }
             };
-            resolve_promise(vm, promise, self.object().value_in(vm, self.realm));
+            self.settle_promise(vm, promise, PromiseSettlement::Resolve);
         };
         match kind {
             // NB: The new promise is the pending one the record now implies, which script creates as it asks for it.
@@ -821,6 +830,48 @@ impl Animation {
             HostEffectKind::ResolveFinishedPromise => resolve(&self.current_finished_promise),
             HostEffectKind::RejectFinishedPromise => reject(&self.current_finished_promise),
             _ => unreachable!("the effect is one of the promises of the animation"),
+        }
+    }
+
+    /// Settles `promise` of the animation, now or from a microtask.
+    fn settle_promise(&self, vm: &Vm, promise: WebIdlPromise, settlement: PromiseSettlement) {
+        // NB: Resolving a promise with the animation reads its "then" property, which can run script. No script may run
+        //     in a style update or layout, so while one defers microtask checkpoints, the promise is resolved from a
+        //     microtask, which runs once it is done. Later settlements wait behind it, in the order the procedures
+        //     asked for them.
+        let waits = self.queued_promise_settlements.get() > 0
+            || (settlement == PromiseSettlement::Resolve && microtask_checkpoints_are_deferred());
+        if !waits {
+            self.settle_promise_now(vm, promise, settlement);
+            return;
+        }
+        self.queued_promise_settlements
+            .set(self.queued_promise_settlements.get() + 1);
+        queue_a_microtask(
+            vm,
+            self.realm,
+            (self.object(), promise, settlement),
+            |vm, (animation, promise, settlement)| {
+                animation
+                    .queued_promise_settlements
+                    .set(animation.queued_promise_settlements.get() - 1);
+                animation.settle_promise_now(vm, promise, settlement);
+            },
+        );
+    }
+
+    /// Settles `promise` of the animation now.
+    fn settle_promise_now(&self, vm: &Vm, promise: WebIdlPromise, settlement: PromiseSettlement) {
+        match settlement {
+            PromiseSettlement::Resolve => resolve_promise(vm, promise, self.object().value_in(vm, self.realm)),
+            PromiseSettlement::Reject => {
+                reject_promise_with_exception(
+                    vm,
+                    promise,
+                    Exception::Dom("AbortError", Utf16String::from_ascii(b"Animation was cancelled")),
+                );
+                mark_promise_as_handled(vm, promise);
+            }
         }
     }
 

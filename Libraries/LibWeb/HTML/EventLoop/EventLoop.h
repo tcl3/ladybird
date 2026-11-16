@@ -157,6 +157,7 @@ public:
         VERIFY(m_microtask_checkpoint_deferrals > 0);
         --m_microtask_checkpoint_deferrals;
     }
+    bool microtask_checkpoints_are_deferred() const { return m_microtask_checkpoint_deferrals > 0; }
 
     void register_document(Badge<DOM::Document>, DOM::Document&);
     void unregister_document(Badge<DOM::Document>, DOM::Document&);

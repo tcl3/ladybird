@@ -87,6 +87,7 @@ void* web_bindings_wrapper_world(void* realm, bool* is_main_world);
 JSObject* web_bindings_rust_wrapper_for(void* realm, void* cell);
 void web_bindings_set_rust_wrapper(void* realm, void* cell, JSObject* wrapper);
 void web_bindings_queue_a_microtask(void* realm, JSObject* function);
+bool web_bindings_microtask_checkpoints_are_deferred();
 void web_bindings_deferred_invoke(void* cell, void (*steps)(JSVM*, void*));
 void web_bindings_run_in_parallel(void* realm, void* cell, void (*steps)(JSVM*, void*));
 void web_bindings_queue_a_task(void* realm, u8 task_source, void* cell, void (*steps)(JSVM*, void*));
@@ -493,6 +494,11 @@ void web_bindings_queue_a_microtask(void* realm, JSObject* function)
         auto result = JS::call(vm, *steps, JS::js_undefined());
         VERIFY(!result.is_error() || vm.interrupt_requested());
     }));
+}
+
+bool web_bindings_microtask_checkpoints_are_deferred()
+{
+    return HTML::current_event_loop().microtask_checkpoints_are_deferred();
 }
 
 void web_bindings_deferred_invoke(void* cell, void (*steps)(JSVM*, void*))

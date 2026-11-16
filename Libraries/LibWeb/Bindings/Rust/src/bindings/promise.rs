@@ -27,6 +27,9 @@ unsafe extern "C" {
     /// the realm is on the stack, as HTML::queue_a_microtask() queues one without a document.
     fn web_bindings_queue_a_microtask(realm: *mut c_void, function: *mut c_void);
 
+    /// Whether the event loop defers microtask checkpoints, as it does while a style update or layout runs.
+    fn web_bindings_microtask_checkpoints_are_deferred() -> bool;
+
     fn web_bindings_deferred_invoke(cell: *mut c_void, steps: unsafe extern "C" fn(*mut c_void, *mut c_void));
 
     /// Calls the steps with the VM and the cell in parallel: later, outside of any task, while an execution context of
@@ -536,6 +539,12 @@ pub(crate) fn queue_a_microtask<C: Trace + Copy + 'static>(vm: &Vm, realm: Gc<Re
     );
     // SAFETY: The realm and the function are live.
     unsafe { web_bindings_queue_a_microtask(realm.as_ptr().cast(), function.as_ptr().cast()) };
+}
+
+/// Whether the event loop defers microtask checkpoints, as it does while a style update or layout runs.
+pub(crate) fn microtask_checkpoints_are_deferred() -> bool {
+    // SAFETY: The call has no preconditions.
+    unsafe { web_bindings_microtask_checkpoints_are_deferred() }
 }
 
 /// Steps with what they capture, which run once, later, from a task or in parallel. They run as C++ code would, with
