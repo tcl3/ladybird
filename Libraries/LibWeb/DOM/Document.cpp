@@ -10150,6 +10150,19 @@ bool Document::has_skipped_resize_observations()
     return false;
 }
 
+bool Document::has_resize_observation_targets_in(Document const& document)
+{
+    for (auto const& observer : m_resize_observers) {
+        if (!observer)
+            continue;
+        for (auto const& observation : observer->observation_targets()) {
+            if (auto target = observation->target(); target && &target->document() == &document)
+                return true;
+        }
+    }
+    return false;
+}
+
 GC::Ref<WebIDL::ObservableArray> Document::adopted_style_sheets() const
 {
     if (!m_adopted_style_sheets)

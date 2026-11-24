@@ -817,7 +817,7 @@ static HeldTasks tasks_rendering_update_holds(Vector<GC::Root<DOM::Document>> co
     return HeldTasks::None;
 }
 
-static void update_style_and_layout_for_rendering(DOM::Document&, u64 update_serial);
+static void update_style_and_layout_for_rendering(DOM::Document&, ReadonlySpan<GC::Root<DOM::Document>> docs, u64 update_serial);
 
 // https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
 // NB: The documents step 3 of update the rendering keeps.
@@ -1156,7 +1156,7 @@ void EventLoop::update_the_rendering()
                 }
             }
         }
-        update_style_and_layout_for_rendering(document, m_rendering_update_serial);
+        update_style_and_layout_for_rendering(document, docs, m_rendering_update_serial);
     }
 
     update_the_rendering_after_style_and_layout(docs, frame_timestamp, m_rendering_update_serial);
@@ -1178,18 +1178,12 @@ void EventLoop::update_whether_font_face_sets_are_pending_on_the_environment(Vec
     }
 }
 
-// Step 16 of updating the rendering, for one doc of docs: its style and layout, and the resize observations they
-// answer.
-static void update_style_and_layout_for_rendering(DOM::Document& document, u64 update_serial)
+static bool settle_style_and_layout_for_resize_observations(DOM::Document& document)
 {
-    // 1. Let resizeObserverDepth be 0.
-    size_t resize_observer_depth = 0;
-
     // https://github.com/whatwg/html/pull/11613
     // AD-HOC: Let didRunSnapshotPostLayoutStateSteps be false.
     bool did_run_snapshot_post_layout_state_steps = false;
 
-    // 2. While true:
     while (true) {
         // 1. Recalculate styles and update layout for doc.
         // NOTE: Recalculation of styles is handled by update_layout()
@@ -1201,7 +1195,7 @@ static void update_style_and_layout_for_rendering(DOM::Document& document, u64 u
         //         by detaching it from its navigable after its iframe was removed. update_layout() is a no-op for
         //         such documents, which can leave them without a paint tree, so skip the rest of this step.
         if (!document.navigable() || document.navigable()->active_document().ptr() != &document)
-            break;
+            return false;
 
         // Clamp viewport scroll offset to valid range after layout, in case the
         // scrollable overflow area has shrunk (e.g. after a viewport size change).
@@ -1262,6 +1256,32 @@ static void update_style_and_layout_for_rendering(DOM::Document& document, u64 u
         // 4. If hadInitialVisibleContentVisibilityDetermination is true, then continue.
         if (had_initial_visible_content_visibility_determination)
             continue;
+
+        return true;
+    }
+}
+
+// Step 16 of updating the rendering, for one doc of docs: its style and layout, and the resize observations they
+// answer.
+static void update_style_and_layout_for_rendering(DOM::Document& document, ReadonlySpan<GC::Root<DOM::Document>> docs, u64 update_serial)
+{
+    // 1. Let resizeObserverDepth be 0.
+    size_t resize_observer_depth = 0;
+
+    // 2. While true:
+    while (true) {
+        // NB: Steps 1 to 4 are run by settle_style_and_layout_for_resize_observations().
+        if (!settle_style_and_layout_for_resize_observations(document))
+            break;
+
+        // AD-HOC: A target in another doc of docs is measured once steps 1 to 4 have run for that doc too, since script
+        //         may have left its layout out of date.
+        for (auto const& other_document : docs) {
+            if (other_document.ptr() != &document && document.has_resize_observation_targets_in(*other_document))
+                settle_style_and_layout_for_resize_observations(*other_document);
+        }
+
+        Layout::ForcedReadScope read { document };
 
         // 5. Gather active resize observations at depth resizeObserverDepth for doc.
         document.gather_active_observations_at_depth(resize_observer_depth, update_serial);
@@ -1522,7 +1542,7 @@ void EventLoop::resume_rendering_update_in_flight()
     {
         TemporaryChange running { m_running_rendering_task, true };
         // The style and layout of the doc whose transaction flew take it in, waiting for it to land.
-        update_style_and_layout_for_rendering(update->document(), update->serial);
+        update_style_and_layout_for_rendering(update->document(), update->docs, update->serial);
         update_the_rendering_after_style_and_layout(update->docs, update->frame_timestamp, update->serial, TakenLayout::UpToDate, update.ptr());
     }
     // What the steps asked for, an animation frame of a promise they resolved for one, asks for the next rendering

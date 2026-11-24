@@ -1581,6 +1581,7 @@ public:
     [[nodiscard]] size_t broadcast_active_resize_observations(Layout::BegunRead const& read);
     [[nodiscard]] bool has_active_resize_observations();
     [[nodiscard]] bool has_skipped_resize_observations();
+    [[nodiscard]] bool has_resize_observation_targets_in(Document const&);
 
     // Moves on whenever a style sheet may have come or gone for the document or one of its shadow roots, as with a
     // scope's rule cache or the document's shadow roots.

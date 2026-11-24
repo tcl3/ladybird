@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<script src="../include.js"></script>
+<script>
+    async function reportedSizes(content, dimension, change) {
+        const frame = document.createElement("iframe");
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, { once: true }));
+        frame.srcdoc = content;
+        document.body.append(frame);
+        await loaded;
+        const target = frame.contentDocument.getElementById("target");
+        const sizes = [];
+        new ResizeObserver(entries => sizes.push(entries[0].contentRect[dimension])).observe(target);
+        await animationFrame();
+        await animationFrame();
+
+        change(frame.contentDocument);
+        await animationFrame();
+        await animationFrame();
+        frame.remove();
+        return sizes.join(", ");
+    }
+
+    promiseTest(async () => {
+        const heights = await reportedSizes(`<div id="target" style="height: 100px"></div>`, "height", frameDocument => {
+            const target = frameDocument.getElementById("target");
+            target.style.height = "0px";
+            target.getBoundingClientRect();
+            target.style.height = "100px";
+        });
+        println(`Heights reported for a box in an iframe whose height was changed and restored: ${heights}`);
+
+        const widths = await reportedSizes(`
+            <style>
+                #scroller { container-type: scroll-state; overflow: auto; height: 50px; }
+                #filler { height: 200px; }
+                #target { width: 100px; height: 10px; }
+                @container scroll-state(scrollable: block) { #target.narrow { width: 20px; } }
+            </style>
+            <div id="scroller"><div id="target"></div><div id="filler"></div></div>`, "width", frameDocument => {
+            const target = frameDocument.getElementById("target");
+            target.classList.add("narrow");
+            target.getBoundingClientRect();
+            frameDocument.getElementById("filler").style.height = "0px";
+        });
+        println(`Widths reported for a box in an iframe whose scroll-state container stopped overflowing: ${widths}`);
+    });
+</script>
